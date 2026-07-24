@@ -1,0 +1,6 @@
+"""Minimal placed-part project used to test atopile/KiCad compatibility."""
+
+from "parts/UNI_ROYAL_0603WAF1003T5E/UNI_ROYAL_0603WAF1003T5E.ato" import UNI_ROYAL_0603WAF1003T5E_package
+
+module App:
+    resistor = new UNI_ROYAL_0603WAF1003T5E_package

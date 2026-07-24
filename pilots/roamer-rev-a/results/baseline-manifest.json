@@ -1,0 +1,130 @@
+{
+  "erc": {
+    "canonical_report_sha256": "5216f67d2612220c69e0554eae5f319a6a67e815c3e90d043329cfcff1e53aa5",
+    "ignored_checks": 4,
+    "returncode": 0,
+    "stdout": "Found 0 violations\nSaved ERC Report to /Users/kylestewart/Projects/pcbforge/pilots/roamer-rev-a/results/generated/rev-a.erc.json",
+    "violations": 0
+  },
+  "expected_ioc_mismatches": {
+    "PB10": {
+      "ioc_label": "SENSOR_I2C_SCL",
+      "ioc_signal": "I2C2_SCL",
+      "released_net": "unconnected-(U1-PB10-Pad21)"
+    },
+    "PB11": {
+      "ioc_label": "SENSOR_I2C_SDA",
+      "ioc_signal": "I2C2_SDA",
+      "released_net": "unconnected-(U1-PB11-Pad22)"
+    }
+  },
+  "files": {
+    "firmware/roamer_rev_a.ioc": {
+      "bytes": 7176,
+      "sha256": "fceca8b4cdc3a2bb829bcce8e4c198417b53e9c89a6e735e7bf47238eee94853"
+    },
+    "hardware/README.md": {
+      "bytes": 18373,
+      "sha256": "74ae608922142b80fec0499b3f4c1c30885806b38911deeb517bcf65283aaf8a"
+    },
+    "hardware/driver-board/3dmodels/GT-USB-7010ASV.step": {
+      "bytes": 50260,
+      "sha256": "09992a8f40cc3d248d5e3eb8b28f69b308b01706829bd963104254326cf87765"
+    },
+    "hardware/driver-board/3dmodels/SK-3296S-01-L2.wrl": {
+      "bytes": 184643,
+      "sha256": "24557eac907a65dad33daa6699aea39b539410674e7fa6264252cbb8117729f1"
+    },
+    "hardware/driver-board/CustomParts.pretty/AO4407A_SO-8_GSD.kicad_mod": {
+      "bytes": 3338,
+      "sha256": "78421acfda784d51369e44693642c2a9a81e195aef48688c36aec50becbf1b39"
+    },
+    "hardware/driver-board/CustomParts.pretty/MountingHole_2.3mm_2-56.kicad_mod": {
+      "bytes": 1154,
+      "sha256": "7b3df19fefc3659979ca5436a7eae4ba42443c01cec2f872f37b65fe8430f3cd"
+    },
+    "hardware/driver-board/CustomParts.pretty/Romi_Chassis_BatteryContactPair_2Slot_14_50mm.kicad_mod": {
+      "bytes": 2172,
+      "sha256": "cad5f8df9b7d972db5f1274ea507c0073367d7900ca791dc653b3de0d2cc44ae"
+    },
+    "hardware/driver-board/CustomParts.pretty/SW_SPDT_Angled_YuenFung_MT-O-102-C003-N003-RS.kicad_mod": {
+      "bytes": 5849,
+      "sha256": "a9e6bd00f47e1a1a14b74a171c2749fe3f0b14684b5047f188a5d08c2769a1a8"
+    },
+    "hardware/driver-board/CustomParts.pretty/SW_SPDT_RightAngle_XKB_SK-3296S-01-L2.kicad_mod": {
+      "bytes": 4515,
+      "sha256": "2ce2adcee12bc035cace58725a4caed3c3deab6d3576613a19188f8a7824f8e1"
+    },
+    "hardware/driver-board/driver-board.csv": {
+      "bytes": 2889,
+      "sha256": "4d27bdf4d1d563cd2b65c21667708eb086eb3b3c1d39a4c2e74d186bc56a5ee9"
+    },
+    "hardware/driver-board/driver-board.kicad_pcb": {
+      "bytes": 1251799,
+      "sha256": "e04f6c20f57d42fa0a57ec5c2aa19e5a8bb18250b94119320026c57ad961ae8f"
+    },
+    "hardware/driver-board/driver-board.kicad_prl": {
+      "bytes": 2705,
+      "sha256": "7aab3363343fa35d672ab47d1c17ca9ed362eee17aefc9a580e2c01851015d53"
+    },
+    "hardware/driver-board/driver-board.kicad_pro": {
+      "bytes": 20580,
+      "sha256": "bad1ceea51b8d80b543abe92cdd0f53d6287e341af6ea2fbba2662008f324343"
+    },
+    "hardware/driver-board/driver-board.kicad_sch": {
+      "bytes": 179735,
+      "sha256": "68cdf351e3349577ad27eef175cc2d70ac30f20b884fc9f5b9c64fb83e0b98c3"
+    },
+    "hardware/driver-board/fp-lib-table": {
+      "bytes": 135,
+      "sha256": "2e3858543a646b3b457495d316eaa95cb83c5c5b2b0bbb38e041326942eb484b"
+    },
+    "hardware/driver-board/mfr/Archive.zip": {
+      "bytes": 200147,
+      "sha256": "2fa4bc9299dedf3daeadd7bcf76799896939166ab728aa14c1a1434a415308a5"
+    },
+    "hardware/driver-board/mfr/driver-board-jlc-bom.csv": {
+      "bytes": 1753,
+      "sha256": "09befc26d306caf2595d57af9a16463424a30b2fd342b907b6d6cff0e5063712"
+    },
+    "hardware/driver-board/mfr/driver-board-jlc-cpl.csv": {
+      "bytes": 2139,
+      "sha256": "672cb036feffceff9ac96b1f98a63404802aedea3e041ae011d15d0772670f0f"
+    },
+    "hardware/driver-board/motor_control.kicad_sch": {
+      "bytes": 99822,
+      "sha256": "9fb80131a69cd034e53fc0170b98e4a392f1a9cd6cd89139cc3ed43a53bf9dbb"
+    },
+    "hardware/driver-board/power.kicad_sch": {
+      "bytes": 141179,
+      "sha256": "cb7b74f953c42f4992e91cc84b3773d550194b39f97520623651405a7e4d7afd"
+    },
+    "hardware/driver-board/usb.kicad_sch": {
+      "bytes": 161,
+      "sha256": "72a191f6d8bcac063cb4e8bb5ae51b66f52e7a51b0ff36aded5baa0743d8e863"
+    },
+    "hardware/releases/rev-a-jlcpcb-2026-07-18.md": {
+      "bytes": 2037,
+      "sha256": "8e7fc70e5be63751212a5c63410cce0551ac655e9de5038c9596f128204c8f20"
+    }
+  },
+  "manufacturing": {
+    "bom_rows": 30,
+    "cpl_rows": 57
+  },
+  "source": {
+    "commit": "3bc3361573dd21070efe9f76bba473947e2a0c21",
+    "repository": "/Users/kylestewart/Projects/roamer-bot",
+    "tag": "rev-a-jlcpcb-2026-07-18"
+  },
+  "statistics": {
+    "components": 69,
+    "connected_nets": 43,
+    "explicit_no_connect_nets": 24,
+    "nets": 67
+  },
+  "toolchain": {
+    "board_format": "20260206",
+    "kicad": "10.0.3"
+  }
+}

@@ -1,0 +1,5 @@
+command: scripts/ato build compat/project --keep-picked-parts --keep-net-names --keep-designators
+returncode: 1
+stage: Loading PCB
+error: UnexpectedType in kicad.pcb.Pad field 'number': got string "2" but expected unquoted number
+source: (net "2")

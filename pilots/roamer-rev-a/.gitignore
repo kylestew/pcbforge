@@ -1,0 +1,9 @@
+.state/
+toolchain/.venv/
+toolchain/.uv-cache/
+compat/work/
+build/
+results/generated/
+scripts/__pycache__/
+compat/project/layouts/**/*.kicad_prl
+*.log

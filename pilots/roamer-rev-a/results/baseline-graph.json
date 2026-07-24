@@ -1,0 +1,2942 @@
+{
+  "components": [
+    {
+      "fields": {
+        "Datasheet": "https://www.pololu.com/file/0J1259/romi-32u4-control-board-dimensions.pdf",
+        "Description": "Multiple-cell battery",
+        "Footprint": "CustomParts:Romi_Chassis_BatteryContactPair_2Slot_14_50mm",
+        "Sim.Device": "V",
+        "Sim.Pins": "1=+ 2=-",
+        "Sim.Type": "DC"
+      },
+      "footprint": "CustomParts:Romi_Chassis_BatteryContactPair_2Slot_14_50mm",
+      "pins": {
+        "1": "VBAT",
+        "2": "/Power/BT2+"
+      },
+      "reference": "BT1",
+      "value": "BATT (4xAA)"
+    },
+    {
+      "fields": {
+        "Datasheet": "https://www.pololu.com/file/0J1259/romi-32u4-control-board-dimensions.pdf",
+        "Description": "Multiple-cell battery",
+        "Footprint": "CustomParts:Romi_Chassis_BatteryContactPair_2Slot_14_50mm",
+        "Sim.Device": "V",
+        "Sim.Pins": "1=+ 2=-",
+        "Sim.Type": "DC"
+      },
+      "footprint": "CustomParts:Romi_Chassis_BatteryContactPair_2Slot_14_50mm",
+      "pins": {
+        "1": "/Power/BT2+",
+        "2": "GND"
+      },
+      "reference": "BT2",
+      "value": "BATT (2xAA)"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Unpolarized capacitor",
+        "Footprint": "Capacitor_SMD:C_0402_1005Metric",
+        "JLCPCB": "C32949",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Capacitor_SMD:C_0402_1005Metric",
+      "pins": {
+        "1": "/HSE_IN",
+        "2": "GND"
+      },
+      "reference": "C1",
+      "value": "10p"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Unpolarized capacitor",
+        "Footprint": "Capacitor_SMD:C_0402_1005Metric",
+        "JLCPCB": "C32949",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Capacitor_SMD:C_0402_1005Metric",
+      "pins": {
+        "1": "/HSE_OUT",
+        "2": "GND"
+      },
+      "reference": "C2",
+      "value": "10p"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Unpolarized capacitor",
+        "Footprint": "Capacitor_SMD:C_0402_1005Metric",
+        "JLCPCB": "C307331",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Capacitor_SMD:C_0402_1005Metric",
+      "pins": {
+        "1": "GND",
+        "2": "/NRST"
+      },
+      "reference": "C3",
+      "value": "100n"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Unpolarized capacitor",
+        "Footprint": "Capacitor_SMD:C_0402_1005Metric",
+        "JLCPCB": "C307331",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Capacitor_SMD:C_0402_1005Metric",
+      "pins": {
+        "1": "+3V3",
+        "2": "GND"
+      },
+      "reference": "C4",
+      "value": "100n"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Unpolarized capacitor",
+        "Footprint": "Capacitor_SMD:C_0402_1005Metric",
+        "JLCPCB": "C307331",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Capacitor_SMD:C_0402_1005Metric",
+      "pins": {
+        "1": "+3V3",
+        "2": "GND"
+      },
+      "reference": "C5",
+      "value": "100n"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Unpolarized capacitor",
+        "Footprint": "Capacitor_SMD:C_0402_1005Metric",
+        "JLCPCB": "C307331",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Capacitor_SMD:C_0402_1005Metric",
+      "pins": {
+        "1": "+3V3",
+        "2": "GND"
+      },
+      "reference": "C6",
+      "value": "100n"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Unpolarized capacitor",
+        "Footprint": "Capacitor_SMD:C_0402_1005Metric",
+        "JLCPCB": "C307331",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Capacitor_SMD:C_0402_1005Metric",
+      "pins": {
+        "1": "+3V3",
+        "2": "GND"
+      },
+      "reference": "C7",
+      "value": "100n"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Unpolarized capacitor",
+        "Footprint": "Capacitor_SMD:C_0805_2012Metric",
+        "JLCPCB": "C15850",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Capacitor_SMD:C_0805_2012Metric",
+      "pins": {
+        "1": "+3V3",
+        "2": "GND"
+      },
+      "reference": "C8",
+      "value": "10u"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Unpolarized capacitor",
+        "Footprint": "Capacitor_SMD:C_0402_1005Metric",
+        "JLCPCB": "C307331",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Capacitor_SMD:C_0402_1005Metric",
+      "pins": {
+        "1": "VBUS",
+        "2": "GND"
+      },
+      "reference": "C9",
+      "value": "100n"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "10uF MLCC, X7R, 25V, +/-10%",
+        "Footprint": "Capacitor_SMD:C_0805_2012Metric",
+        "JLCPCB": "C15850",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Capacitor_SMD:C_0805_2012Metric",
+      "pins": {
+        "1": "VBAT_SW",
+        "2": "GND"
+      },
+      "reference": "C10",
+      "value": "10u"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Unpolarized capacitor",
+        "Footprint": "Capacitor_SMD:C_0402_1005Metric",
+        "JLCPCB": "C307331",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Capacitor_SMD:C_0402_1005Metric",
+      "pins": {
+        "1": "VBAT_SW",
+        "2": "GND"
+      },
+      "reference": "C11",
+      "value": "100n"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Unpolarized capacitor",
+        "Footprint": "Capacitor_SMD:C_0402_1005Metric",
+        "JLCPCB": "C307331",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Capacitor_SMD:C_0402_1005Metric",
+      "pins": {
+        "1": "+3V3",
+        "2": "GND"
+      },
+      "reference": "C12",
+      "value": "100n"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "10uF MLCC, X7R, 25V, +/-10%",
+        "Footprint": "Capacitor_SMD:C_0805_2012Metric",
+        "JLCPCB": "C15850",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Capacitor_SMD:C_0805_2012Metric",
+      "pins": {
+        "1": "VBAT_SW",
+        "2": "GND"
+      },
+      "reference": "C13",
+      "value": "10u"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Unpolarized capacitor",
+        "Footprint": "Capacitor_SMD:C_0402_1005Metric",
+        "JLCPCB": "C307331",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Capacitor_SMD:C_0402_1005Metric",
+      "pins": {
+        "1": "VBAT_SW",
+        "2": "GND"
+      },
+      "reference": "C14",
+      "value": "100n"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Unpolarized capacitor",
+        "Footprint": "Capacitor_SMD:C_0402_1005Metric",
+        "JLCPCB": "C307331",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Capacitor_SMD:C_0402_1005Metric",
+      "pins": {
+        "1": "+3V3",
+        "2": "GND"
+      },
+      "reference": "C15",
+      "value": "100n"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Aluminum electrolytic or aluminum polymer, polarized, 25V, 105 C, low ESR",
+        "Footprint": "Capacitor_SMD:CP_Elec_6.3x7.7",
+        "JLCPCB": "C190724"
+      },
+      "footprint": "Capacitor_SMD:CP_Elec_6.3x7.7",
+      "pins": {
+        "1": "VBAT_SW",
+        "2": "GND"
+      },
+      "reference": "C16",
+      "value": "220u"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "10uF, 25V+, X7R/X5R, local VIN bulk",
+        "Footprint": "Capacitor_SMD:C_0805_2012Metric",
+        "JLCPCB": "C15850",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Capacitor_SMD:C_0805_2012Metric",
+      "pins": {
+        "1": "VBAT_SW",
+        "2": "GND"
+      },
+      "reference": "C17",
+      "value": "10u"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "0.1uF, 25V+, X7R/X5R, local VIN bypass",
+        "Footprint": "Capacitor_SMD:C_0402_1005Metric",
+        "JLCPCB": "C307331",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Capacitor_SMD:C_0402_1005Metric",
+      "pins": {
+        "1": "VBAT_SW",
+        "2": "GND"
+      },
+      "reference": "C18",
+      "value": "100n"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "0.1uF, 16V or 25V, X7R, 0402/0603",
+        "Footprint": "Capacitor_SMD:C_0402_1005Metric",
+        "JLCPCB": "C307331",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Capacitor_SMD:C_0402_1005Metric",
+      "pins": {
+        "1": "Net-(U5-CB)",
+        "2": "/Power/REG_SW"
+      },
+      "reference": "C19",
+      "value": "100n"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "22uF, 25V, X7R/X5R, 1206 preferred",
+        "Footprint": "Capacitor_SMD:C_1206_3216Metric",
+        "JLCPCB": "C12891",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Capacitor_SMD:C_1206_3216Metric",
+      "pins": {
+        "1": "+3V3",
+        "2": "GND"
+      },
+      "reference": "C20",
+      "value": "22u"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "22uF, 25V, X7R/X5R, 1206 preferred",
+        "Footprint": "Capacitor_SMD:C_1206_3216Metric",
+        "JLCPCB": "C12891",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Capacitor_SMD:C_1206_3216Metric",
+      "pins": {
+        "1": "+3V3",
+        "2": "GND"
+      },
+      "reference": "C21",
+      "value": "22u"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "STM32F103 VDDA high-frequency bypass: 10 nF ceramic, X7R preferred, 10 V or higher, 0402 recommended; connect across VDDA/VSSA and place immediately adjacent to U1 pins 9/8 with the shortest possible loop, with this 10 nF capacitor closest to the pins",
+        "Footprint": "Capacitor_SMD:C_0402_1005Metric",
+        "JLCPCB": "C15195",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Capacitor_SMD:C_0402_1005Metric",
+      "pins": {
+        "1": "+3V3",
+        "2": "GND"
+      },
+      "reference": "C22",
+      "value": "10n"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "STM32F103 VDDA local decoupling: 1 uF ceramic, X5R or X7R, 10 V or higher, 0603 recommended; 0402 is acceptable only when its DC-bias effective capacitance is adequate; connect across VDDA/VSSA and place immediately adjacent to U1 pins 9/8 with a short ground return",
+        "Footprint": "Capacitor_SMD:C_0603_1608Metric",
+        "JLCPCB": "C15849",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Capacitor_SMD:C_0603_1608Metric",
+      "pins": {
+        "1": "+3V3",
+        "2": "GND"
+      },
+      "reference": "C23",
+      "value": "1u"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Light emitting diode",
+        "Footprint": "LED_SMD:LED_0603_1608Metric",
+        "JLCPCB": "C2286",
+        "JLCPCB Type": "Basic",
+        "Sim.Pins": "1=K 2=A"
+      },
+      "footprint": "LED_SMD:LED_0603_1608Metric",
+      "pins": {
+        "1": "Net-(D1-K)",
+        "2": "+3V3"
+      },
+      "reference": "D1",
+      "value": "PWR_ON_LED"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Light emitting diode",
+        "Footprint": "LED_SMD:LED_0805_2012Metric",
+        "JLCPCB": "C2297",
+        "JLCPCB Type": "Basic",
+        "Sim.Pins": "1=K 2=A"
+      },
+      "footprint": "LED_SMD:LED_0805_2012Metric",
+      "pins": {
+        "1": "Net-(D2-K)",
+        "2": "Net-(D2-A)"
+      },
+      "reference": "D2",
+      "value": "STATUS"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "16 V, ~2.5-2.6 A",
+        "Footprint": "Fuse:Fuse_1812_4532Metric",
+        "JLCPCB": "C16490"
+      },
+      "footprint": "Fuse:Fuse_1812_4532Metric",
+      "pins": {
+        "1": "VBAT",
+        "2": "/Power/VBAT_FUSED"
+      },
+      "reference": "F1",
+      "value": "PTC_2.6A_16V"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Mounting Hole without connection",
+        "Footprint": "CustomParts:MountingHole_2.3mm_2-56"
+      },
+      "footprint": "CustomParts:MountingHole_2.3mm_2-56",
+      "pins": {},
+      "reference": "H1",
+      "value": "MountingHole"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Mounting Hole without connection",
+        "Footprint": "CustomParts:MountingHole_2.3mm_2-56"
+      },
+      "footprint": "CustomParts:MountingHole_2.3mm_2-56",
+      "pins": {},
+      "reference": "H2",
+      "value": "MountingHole"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Mounting Hole without connection",
+        "Footprint": "CustomParts:MountingHole_2.3mm_2-56"
+      },
+      "footprint": "CustomParts:MountingHole_2.3mm_2-56",
+      "pins": {},
+      "reference": "H3",
+      "value": "MountingHole"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Mounting Hole without connection",
+        "Footprint": "CustomParts:MountingHole_2.3mm_2-56"
+      },
+      "footprint": "CustomParts:MountingHole_2.3mm_2-56",
+      "pins": {},
+      "reference": "H4",
+      "value": "MountingHole"
+    },
+    {
+      "fields": {
+        "Datasheet": "http://infocenter.arm.com/help/topic/com.arm.doc.ddi0314h/DDI0314H_coresight_components_trm.pdf",
+        "Description": "Cortex Debug Connector, standard ARM Cortex-M SWD and JTAG interface",
+        "Footprint": "Connector_PinHeader_1.27mm:PinHeader_2x05_P1.27mm_Vertical_SMD",
+        "JLCPCB": "C2932107"
+      },
+      "footprint": "Connector_PinHeader_1.27mm:PinHeader_2x05_P1.27mm_Vertical_SMD",
+      "pins": {
+        "1": "+3V3",
+        "10": "/NRST",
+        "2": "/SWDIO",
+        "3": "GND",
+        "4": "/SWCLK",
+        "5": "GND",
+        "6": "unconnected-(J1-SWO/TDO-Pad6)",
+        "7": "unconnected-(J1-KEY-Pad7)",
+        "8": "unconnected-(J1-NC/TDI-Pad8)",
+        "9": "GND"
+      },
+      "reference": "J1",
+      "value": "Conn_ARM_JTAG_SWD_10"
+    },
+    {
+      "fields": {
+        "Datasheet": "https://www.usb.org/sites/default/files/documents/usb_type-c.zip",
+        "Description": "USB 2.0-only 16P Type-C Receptacle connector",
+        "Footprint": "Connector_USB:USB_C_Receptacle_G-Switch_GT-USB-7010ASV",
+        "JLCPCB": "C2988369"
+      },
+      "footprint": "Connector_USB:USB_C_Receptacle_G-Switch_GT-USB-7010ASV",
+      "pins": {
+        "A1": "GND",
+        "A12": "GND",
+        "A4": "VBUS",
+        "A5": "Net-(J2-CC1)",
+        "A6": "/USB_CONN_D+",
+        "A7": "/USB_CONN_D-",
+        "A8": "unconnected-(J2-SBU1-PadA8)",
+        "A9": "VBUS",
+        "B1": "GND",
+        "B12": "GND",
+        "B4": "VBUS",
+        "B5": "Net-(J2-CC2)",
+        "B6": "/USB_CONN_D+",
+        "B7": "/USB_CONN_D-",
+        "B8": "unconnected-(J2-SBU2-PadB8)",
+        "B9": "VBUS",
+        "SH": "GND"
+      },
+      "reference": "J2",
+      "value": "USB_C_Receptacle_USB2.0_16P"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Generic connector, single row, 01x06, script generated (kicad-library-utils/schlib/autogen/connector/)",
+        "Footprint": "Connector_PinSocket_2.54mm:PinSocket_1x06_P2.54mm_Vertical"
+      },
+      "footprint": "Connector_PinSocket_2.54mm:PinSocket_1x06_P2.54mm_Vertical",
+      "pins": {
+        "1": "GND",
+        "2": "ENC_R_B",
+        "3": "ENC_R_A",
+        "4": "VBAT_SW",
+        "5": "/Motor Control/MR+",
+        "6": "/Motor Control/MR-"
+      },
+      "reference": "J3",
+      "value": "CONN_MOTOR_R"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Generic connector, single row, 01x06, script generated (kicad-library-utils/schlib/autogen/connector/)",
+        "Footprint": "Connector_PinSocket_2.54mm:PinSocket_1x06_P2.54mm_Vertical"
+      },
+      "footprint": "Connector_PinSocket_2.54mm:PinSocket_1x06_P2.54mm_Vertical",
+      "pins": {
+        "1": "/Motor Control/ML-",
+        "2": "/Motor Control/ML+",
+        "3": "VBAT_SW",
+        "4": "ENC_L_B",
+        "5": "ENC_L_A",
+        "6": "GND"
+      },
+      "reference": "J4",
+      "value": "CONN_MOTOR_L"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "SWPA8065S5R6MT, 5.6uH \u00b120%, Isat 8.0A min, Irms 4.5A min, DCR 26m\u03a9 max",
+        "Footprint": "Inductor_SMD:L_APV_ANR8065",
+        "JLCPCB": "C96977"
+      },
+      "footprint": "Inductor_SMD:L_APV_ANR8065",
+      "pins": {
+        "1": "/Power/REG_SW",
+        "2": "+3V3"
+      },
+      "reference": "L1",
+      "value": "5.6u"
+    },
+    {
+      "fields": {
+        "Datasheet": "http://www.aosmd.com/pdfs/datasheet/AO3401A.pdf",
+        "Description": "-4.0A Id, -30V Vds, P-Channel MOSFET, SOT-23",
+        "Footprint": "Package_TO_SOT_SMD:SOT-23",
+        "JLCPCB": "C15127",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Package_TO_SOT_SMD:SOT-23",
+      "pins": {
+        "1": "GND",
+        "2": "/Power/VBAT_SAFE",
+        "3": "/Power/VBAT_FUSED"
+      },
+      "reference": "Q1",
+      "value": "AO3401A"
+    },
+    {
+      "fields": {
+        "Datasheet": "https://www.aosmd.com/sites/default/files/res/datasheets/AO4407A.pdf",
+        "Description": "AO4407A 30V P-channel MOSFET, SOIC-8; physical pins 1-3 source, pin 4 gate, pins 5-8 drain",
+        "Footprint": "CustomParts:AO4407A_SO-8_GSD",
+        "JLCPCB": "C16072"
+      },
+      "footprint": "CustomParts:AO4407A_SO-8_GSD",
+      "pins": {
+        "1": "Net-(Q2-G)",
+        "2": "/Power/VBAT_SAFE",
+        "3": "VBAT_SW"
+      },
+      "reference": "Q2",
+      "value": "AO4407A"
+    },
+    {
+      "fields": {
+        "Datasheet": "https://www.lcsc.com/product-detail/C25804.html",
+        "Description": "10k, 1%, 100mW, 0603 thick film resistor",
+        "Footprint": "Resistor_SMD:R_0402_1005Metric",
+        "JLCPCB": "C25744",
+        "JLCPCB Type": "Basic",
+        "MPN": "0603WAF1002T5E",
+        "Manufacturer": "UNI-ROYAL"
+      },
+      "footprint": "Resistor_SMD:R_0402_1005Metric",
+      "pins": {
+        "1": "GND",
+        "2": "/BOOT0"
+      },
+      "reference": "R1",
+      "value": "10k"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Resistor",
+        "Footprint": "Resistor_SMD:R_0402_1005Metric",
+        "JLCPCB": "C25867",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Resistor_SMD:R_0402_1005Metric",
+      "pins": {
+        "1": "+3V3",
+        "2": "/USB_D+"
+      },
+      "reference": "R5",
+      "value": "1k5"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Resistor",
+        "Footprint": "Resistor_SMD:R_0402_1005Metric",
+        "JLCPCB": "C25905",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Resistor_SMD:R_0402_1005Metric",
+      "pins": {
+        "1": "Net-(J2-CC1)",
+        "2": "GND"
+      },
+      "reference": "R6",
+      "value": "5k1"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Resistor",
+        "Footprint": "Resistor_SMD:R_0402_1005Metric",
+        "JLCPCB": "C25905",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Resistor_SMD:R_0402_1005Metric",
+      "pins": {
+        "1": "Net-(J2-CC2)",
+        "2": "GND"
+      },
+      "reference": "R7",
+      "value": "5k1"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Resistor, small symbol",
+        "Footprint": "Resistor_SMD:R_0402_1005Metric",
+        "JLCPCB": "C25744",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Resistor_SMD:R_0402_1005Metric",
+      "pins": {
+        "1": "+3V3",
+        "2": "ENC_R_A"
+      },
+      "reference": "R10",
+      "value": "10k"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Resistor, small symbol",
+        "Footprint": "Resistor_SMD:R_0402_1005Metric",
+        "JLCPCB": "C25744",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Resistor_SMD:R_0402_1005Metric",
+      "pins": {
+        "1": "+3V3",
+        "2": "ENC_R_B"
+      },
+      "reference": "R11",
+      "value": "10k"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "-55\u2103~+155\u2103 100k\u03a9 100mW 75V Thick Film Resistor \u00b11%",
+        "Footprint": "Resistor_SMD:R_0402_1005Metric",
+        "JLCPCB": "C25741",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Resistor_SMD:R_0402_1005Metric",
+      "pins": {
+        "1": "GND",
+        "2": "DRV_L_SLEEP_N"
+      },
+      "reference": "R12",
+      "value": "100k"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "-55\u2103~+155\u2103 100k\u03a9 100mW 75V Thick Film Resistor \u00b11%",
+        "Footprint": "Resistor_SMD:R_0402_1005Metric",
+        "JLCPCB": "C25741",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Resistor_SMD:R_0402_1005Metric",
+      "pins": {
+        "1": "GND",
+        "2": "DRV_R_SLEEP_N"
+      },
+      "reference": "R13",
+      "value": "100k"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Resistor, small symbol",
+        "Footprint": "Resistor_SMD:R_0402_1005Metric",
+        "JLCPCB": "C25744",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Resistor_SMD:R_0402_1005Metric",
+      "pins": {
+        "1": "+3V3",
+        "2": "ENC_L_A"
+      },
+      "reference": "R14",
+      "value": "10k"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Resistor, small symbol",
+        "Footprint": "Resistor_SMD:R_0402_1005Metric",
+        "JLCPCB": "C25744",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Resistor_SMD:R_0402_1005Metric",
+      "pins": {
+        "1": "+3V3",
+        "2": "ENC_L_B"
+      },
+      "reference": "R15",
+      "value": "10k"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Resistor, small symbol",
+        "Footprint": "Resistor_SMD:R_0402_1005Metric",
+        "JLCPCB": "C25741",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Resistor_SMD:R_0402_1005Metric",
+      "pins": {
+        "1": "VBAT_SW",
+        "2": "BATLEV"
+      },
+      "reference": "R16",
+      "value": "100k"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Resistor, small symbol",
+        "Footprint": "Resistor_SMD:R_0402_1005Metric",
+        "JLCPCB": "C25779",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Resistor_SMD:R_0402_1005Metric",
+      "pins": {
+        "1": "BATLEV",
+        "2": "GND"
+      },
+      "reference": "R17",
+      "value": "33k"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "LMR51430 upper feedback resistor (+3V3 to FB): 100k\u03a9, \u00b11% or better, low temperature coefficient; place close to U5 FB and route away from the SW node and inductor; standard 0402 power rating is sufficient",
+        "Footprint": "Resistor_SMD:R_0402_1005Metric",
+        "JLCPCB": "C25741",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Resistor_SMD:R_0402_1005Metric",
+      "pins": {
+        "1": "+3V3",
+        "2": "Net-(U5-FB)"
+      },
+      "reference": "R18",
+      "value": "100k"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "LMR51430 lower feedback resistor (FB to GND): 22.1k\u03a9, \u00b11% or better, low temperature coefficient; place close to U5 FB with a quiet ground return and route away from the SW node and inductor; standard 0402 power rating is sufficient",
+        "Footprint": "Resistor_SMD:R_0402_1005Metric",
+        "JLCPCB": "C43473"
+      },
+      "footprint": "Resistor_SMD:R_0402_1005Metric",
+      "pins": {
+        "1": "Net-(U5-FB)",
+        "2": "GND"
+      },
+      "reference": "R19",
+      "value": "22.1k"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Resistor",
+        "Footprint": "Resistor_SMD:R_0603_1608Metric",
+        "JLCPCB": "C21190",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Resistor_SMD:R_0603_1608Metric",
+      "pins": {
+        "1": "Net-(D1-K)",
+        "2": "GND"
+      },
+      "reference": "R20",
+      "value": "1k"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Resistor",
+        "Footprint": "Resistor_SMD:R_0603_1608Metric",
+        "JLCPCB": "C21190",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Resistor_SMD:R_0603_1608Metric",
+      "pins": {
+        "1": "+3V3",
+        "2": "Net-(D2-A)"
+      },
+      "reference": "R21",
+      "value": "1k"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Resistor, small symbol",
+        "Footprint": "Resistor_SMD:R_0603_1608Metric",
+        "JLCPCB": "C25803",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Resistor_SMD:R_0603_1608Metric",
+      "pins": {
+        "1": "Net-(Q2-G)",
+        "2": "/Power/VBAT_SAFE"
+      },
+      "reference": "R22",
+      "value": "100k"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Resistor",
+        "Footprint": "Resistor_SMD:R_0603_1608Metric",
+        "JLCPCB": "C21190",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Resistor_SMD:R_0603_1608Metric",
+      "pins": {
+        "1": "Net-(Q2-G)",
+        "2": "Net-(SW2-B)"
+      },
+      "reference": "R23",
+      "value": "1k"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Push button switch, generic, two pins",
+        "Footprint": "Button_Switch_SMD:SW_SPST_TS-1088-xR020",
+        "JLCPCB": "C720477",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Button_Switch_SMD:SW_SPST_TS-1088-xR020",
+      "pins": {
+        "1": "GND",
+        "2": "/NRST"
+      },
+      "reference": "SW1",
+      "value": "SW_Push"
+    },
+    {
+      "fields": {
+        "Datasheet": "https://pf01.ickimg.com/datasheet/08/04/aa2f/0804aa2fc516ad0929689dd72d22ae0f.pdf",
+        "Description": "",
+        "Footprint": "CustomParts:SW_SPDT_RightAngle_XKB_SK-3296S-01-L2",
+        "JLCPCB": "C500051"
+      },
+      "footprint": "CustomParts:SW_SPDT_RightAngle_XKB_SK-3296S-01-L2",
+      "pins": {
+        "1": "/Power/VBAT_SAFE",
+        "2": "Net-(SW2-B)",
+        "3": "GND"
+      },
+      "reference": "SW2",
+      "value": "SK-3296S-01-L2"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "test point",
+        "Footprint": "TestPoint:TestPoint_Pad_2.0x2.0mm"
+      },
+      "footprint": "TestPoint:TestPoint_Pad_2.0x2.0mm",
+      "pins": {
+        "1": "+3V3"
+      },
+      "reference": "TP1",
+      "value": "TP_3V3"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "test point",
+        "Footprint": "TestPoint:TestPoint_Pad_2.0x2.0mm"
+      },
+      "footprint": "TestPoint:TestPoint_Pad_2.0x2.0mm",
+      "pins": {
+        "1": "GND"
+      },
+      "reference": "TP2",
+      "value": "TP_GND"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "test point",
+        "Footprint": "TestPoint:TestPoint_Pad_2.0x2.0mm"
+      },
+      "footprint": "TestPoint:TestPoint_Pad_2.0x2.0mm",
+      "pins": {
+        "1": "VBAT"
+      },
+      "reference": "TP3",
+      "value": "TP_BAT"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "test point",
+        "Footprint": "TestPoint:TestPoint_Pad_2.0x2.0mm"
+      },
+      "footprint": "TestPoint:TestPoint_Pad_2.0x2.0mm",
+      "pins": {
+        "1": "VBAT_SW"
+      },
+      "reference": "TP4",
+      "value": "TP_BAT_SW"
+    },
+    {
+      "fields": {
+        "Datasheet": "https://www.st.com/resource/en/datasheet/stm32f103cb.pdf",
+        "Description": "STMicroelectronics Arm Cortex-M3 MCU, 128KB flash, 20KB RAM, 72 MHz, 2.0-3.6V, 37 GPIO, LQFP48",
+        "Footprint": "Package_QFP:LQFP-48_7x7mm_P0.5mm",
+        "JLCPCB": "C8304"
+      },
+      "footprint": "Package_QFP:LQFP-48_7x7mm_P0.5mm",
+      "pins": {
+        "1": "+3V3",
+        "10": "unconnected-(U1-PA0-Pad10)",
+        "11": "unconnected-(U1-PA1-Pad11)",
+        "12": "unconnected-(U1-PA2-Pad12)",
+        "13": "unconnected-(U1-PA3-Pad13)",
+        "14": "unconnected-(U1-PA4-Pad14)",
+        "15": "unconnected-(U1-PA5-Pad15)",
+        "16": "ENC_L_A",
+        "17": "ENC_L_B",
+        "18": "BATLEV",
+        "19": "unconnected-(U1-PB1-Pad19)",
+        "2": "unconnected-(U1-PC13-Pad2)",
+        "20": "unconnected-(U1-PB2-Pad20)",
+        "21": "unconnected-(U1-PB10-Pad21)",
+        "22": "unconnected-(U1-PB11-Pad22)",
+        "23": "GND",
+        "24": "+3V3",
+        "25": "DRV_L_SLEEP_N",
+        "26": "DRV_L_PH",
+        "27": "DRV_L_EN",
+        "28": "unconnected-(U1-PB15-Pad28)",
+        "29": "unconnected-(U1-PA8-Pad29)",
+        "3": "unconnected-(U1-PC14-Pad3)",
+        "30": "unconnected-(U1-PA9-Pad30)",
+        "31": "unconnected-(U1-PA10-Pad31)",
+        "32": "/USB_D-",
+        "33": "/USB_D+",
+        "34": "/SWDIO",
+        "35": "GND",
+        "36": "+3V3",
+        "37": "/SWCLK",
+        "38": "ENC_R_B",
+        "39": "ENC_R_A",
+        "4": "unconnected-(U1-PC15-Pad4)",
+        "40": "Net-(D2-K)",
+        "41": "DRV_R_SLEEP_N",
+        "42": "DRV_R_PH",
+        "43": "DRV_R_EN",
+        "44": "/BOOT0",
+        "45": "unconnected-(U1-PB8-Pad45)",
+        "46": "unconnected-(U1-PB9-Pad46)",
+        "47": "GND",
+        "48": "+3V3",
+        "5": "/HSE_IN",
+        "6": "/HSE_OUT",
+        "7": "/NRST",
+        "8": "GND",
+        "9": "+3V3"
+      },
+      "reference": "U1",
+      "value": "STM32F103CBT6"
+    },
+    {
+      "fields": {
+        "Datasheet": "https://www.st.com/resource/en/datasheet/usblc6-2.pdf",
+        "Description": "Very low capacitance ESD protection diode, 2 data-line, SOT-23-6",
+        "Footprint": "Package_TO_SOT_SMD:SOT-23-6",
+        "JLCPCB": "C7519"
+      },
+      "footprint": "Package_TO_SOT_SMD:SOT-23-6",
+      "pins": {
+        "1": "/USB_CONN_D-",
+        "2": "GND",
+        "3": "/USB_CONN_D+",
+        "4": "/USB_D+",
+        "5": "VBUS",
+        "6": "/USB_D-"
+      },
+      "reference": "U2",
+      "value": "USBLC6-2SC6"
+    },
+    {
+      "fields": {
+        "Datasheet": "http://www.ti.com/lit/ds/symlink/drv8837.pdf",
+        "Description": "H-Bridge driver, 1.8A, Low Voltage, PH/EN input, WSON-8",
+        "Footprint": "Package_SON:WSON-8-1EP_2x2mm_P0.5mm_EP0.9x1.6mm",
+        "JLCPCB": "C86667"
+      },
+      "footprint": "Package_SON:WSON-8-1EP_2x2mm_P0.5mm_EP0.9x1.6mm",
+      "pins": {
+        "1": "VBAT_SW",
+        "2": "/Motor Control/ML+",
+        "3": "/Motor Control/ML-",
+        "4": "GND",
+        "5": "DRV_L_EN",
+        "6": "DRV_L_PH",
+        "7": "DRV_L_SLEEP_N",
+        "8": "+3V3",
+        "9": "GND"
+      },
+      "reference": "U3",
+      "value": "DRV8838"
+    },
+    {
+      "fields": {
+        "Datasheet": "http://www.ti.com/lit/ds/symlink/drv8837.pdf",
+        "Description": "H-Bridge driver, 1.8A, Low Voltage, PH/EN input, WSON-8",
+        "Footprint": "Package_SON:WSON-8-1EP_2x2mm_P0.5mm_EP0.9x1.6mm",
+        "JLCPCB": "C86667"
+      },
+      "footprint": "Package_SON:WSON-8-1EP_2x2mm_P0.5mm_EP0.9x1.6mm",
+      "pins": {
+        "1": "VBAT_SW",
+        "2": "/Motor Control/MR+",
+        "3": "/Motor Control/MR-",
+        "4": "GND",
+        "5": "DRV_R_EN",
+        "6": "DRV_R_PH",
+        "7": "DRV_R_SLEEP_N",
+        "8": "+3V3",
+        "9": "GND"
+      },
+      "reference": "U4",
+      "value": "DRV8838"
+    },
+    {
+      "fields": {
+        "Datasheet": "https://www.ti.com/lit/gpn/LMR51430",
+        "Description": "4.5-V to 36-V, 3-A synchronous buck converter with 40-\u00b5A IQ, SOT-23-6",
+        "Footprint": "Package_TO_SOT_SMD:SOT-23-6",
+        "JLCPCB": "C5185863"
+      },
+      "footprint": "Package_TO_SOT_SMD:SOT-23-6",
+      "pins": {
+        "1": "GND",
+        "2": "/Power/REG_SW",
+        "3": "VBAT_SW",
+        "4": "Net-(U5-FB)",
+        "5": "VBAT_SW",
+        "6": "Net-(U5-CB)"
+      },
+      "reference": "U5",
+      "value": "LMR51430XDDCR"
+    },
+    {
+      "fields": {
+        "Datasheet": "",
+        "Description": "Four pin crystal, GND on pins 2 and 4",
+        "Footprint": "Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm",
+        "JLCPCB": "C13738",
+        "JLCPCB Type": "Basic"
+      },
+      "footprint": "Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm",
+      "pins": {
+        "1": "/HSE_IN",
+        "2": "GND",
+        "3": "/HSE_OUT",
+        "4": "GND"
+      },
+      "reference": "Y1",
+      "value": "16Mhz"
+    }
+  ],
+  "nets": [
+    {
+      "class": "Power,Default",
+      "code": 1,
+      "name": "+3V3",
+      "nodes": [
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "C12"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "C15"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "C20"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "C21"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "C22"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "C23"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "C4"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "C5"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "C6"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "C7"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "C8"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "A_2",
+          "pintype": "passive",
+          "ref": "D1"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "VTref_1",
+          "pintype": "power_in",
+          "ref": "J1"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2_2",
+          "pintype": "passive",
+          "ref": "L1"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "R10"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "R11"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "R14"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "R15"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "R18"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "R21"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "R5"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1_1",
+          "pintype": "passive",
+          "ref": "TP1"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "VBAT_1",
+          "pintype": "power_in",
+          "ref": "U1"
+        },
+        {
+          "pin": "24",
+          "pinfunction": "VDD_24",
+          "pintype": "power_in",
+          "ref": "U1"
+        },
+        {
+          "pin": "36",
+          "pinfunction": "VDD_36",
+          "pintype": "power_in",
+          "ref": "U1"
+        },
+        {
+          "pin": "48",
+          "pinfunction": "VDD_48",
+          "pintype": "power_in",
+          "ref": "U1"
+        },
+        {
+          "pin": "9",
+          "pinfunction": "VDDA_9",
+          "pintype": "power_in",
+          "ref": "U1"
+        },
+        {
+          "pin": "8",
+          "pinfunction": "VCC_8",
+          "pintype": "power_in",
+          "ref": "U3"
+        },
+        {
+          "pin": "8",
+          "pinfunction": "VCC_8",
+          "pintype": "power_in",
+          "ref": "U4"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 2,
+      "name": "/BOOT0",
+      "nodes": [
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "R1"
+        },
+        {
+          "pin": "44",
+          "pinfunction": "BOOT0_44",
+          "pintype": "input",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 3,
+      "name": "/HSE_IN",
+      "nodes": [
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "C1"
+        },
+        {
+          "pin": "5",
+          "pinfunction": "PD0_5",
+          "pintype": "bidirectional",
+          "ref": "U1"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1_1",
+          "pintype": "passive",
+          "ref": "Y1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 4,
+      "name": "/HSE_OUT",
+      "nodes": [
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "C2"
+        },
+        {
+          "pin": "6",
+          "pinfunction": "PD1_6",
+          "pintype": "bidirectional",
+          "ref": "U1"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "3_3",
+          "pintype": "passive",
+          "ref": "Y1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 5,
+      "name": "/Motor Control/ML+",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "Pin_2_2",
+          "pintype": "passive",
+          "ref": "J4"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "OUT1_2",
+          "pintype": "output",
+          "ref": "U3"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 6,
+      "name": "/Motor Control/ML-",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "Pin_1_1",
+          "pintype": "passive",
+          "ref": "J4"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "OUT2_3",
+          "pintype": "output",
+          "ref": "U3"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 7,
+      "name": "/Motor Control/MR+",
+      "nodes": [
+        {
+          "pin": "5",
+          "pinfunction": "Pin_5_5",
+          "pintype": "passive",
+          "ref": "J3"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "OUT1_2",
+          "pintype": "output",
+          "ref": "U4"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 8,
+      "name": "/Motor Control/MR-",
+      "nodes": [
+        {
+          "pin": "6",
+          "pinfunction": "Pin_6_6",
+          "pintype": "passive",
+          "ref": "J3"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "OUT2_3",
+          "pintype": "output",
+          "ref": "U4"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 9,
+      "name": "/NRST",
+      "nodes": [
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "C3"
+        },
+        {
+          "pin": "10",
+          "pinfunction": "~{RESET}_10",
+          "pintype": "open_collector",
+          "ref": "J1"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2_2",
+          "pintype": "passive",
+          "ref": "SW1"
+        },
+        {
+          "pin": "7",
+          "pinfunction": "NRST_7",
+          "pintype": "input",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 10,
+      "name": "/Power/BT2+",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "-_2",
+          "pintype": "passive",
+          "ref": "BT1"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "+_1",
+          "pintype": "passive",
+          "ref": "BT2"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 11,
+      "name": "/Power/REG_SW",
+      "nodes": [
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "C19"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1_1",
+          "pintype": "passive",
+          "ref": "L1"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "SW_2",
+          "pintype": "power_out",
+          "ref": "U5"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 12,
+      "name": "/Power/VBAT_FUSED",
+      "nodes": [
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "F1"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "D_3",
+          "pintype": "passive",
+          "ref": "Q1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 13,
+      "name": "/Power/VBAT_SAFE",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "S_2",
+          "pintype": "passive",
+          "ref": "Q1"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "S_2",
+          "pintype": "passive",
+          "ref": "Q2"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "R22"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "A_1",
+          "pintype": "passive",
+          "ref": "SW2"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 14,
+      "name": "/SWCLK",
+      "nodes": [
+        {
+          "pin": "4",
+          "pinfunction": "SWCLK/TCK_4",
+          "pintype": "output",
+          "ref": "J1"
+        },
+        {
+          "pin": "37",
+          "pinfunction": "PA14_37",
+          "pintype": "bidirectional",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 15,
+      "name": "/SWDIO",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "SWDIO/TMS_2",
+          "pintype": "bidirectional",
+          "ref": "J1"
+        },
+        {
+          "pin": "34",
+          "pinfunction": "PA13_34",
+          "pintype": "bidirectional",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 16,
+      "name": "/USB_CONN_D+",
+      "nodes": [
+        {
+          "pin": "A6",
+          "pinfunction": "D+_A6",
+          "pintype": "bidirectional",
+          "ref": "J2"
+        },
+        {
+          "pin": "B6",
+          "pinfunction": "D+_B6",
+          "pintype": "bidirectional",
+          "ref": "J2"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "I/O2_3",
+          "pintype": "passive",
+          "ref": "U2"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 17,
+      "name": "/USB_CONN_D-",
+      "nodes": [
+        {
+          "pin": "A7",
+          "pinfunction": "D-_A7",
+          "pintype": "bidirectional",
+          "ref": "J2"
+        },
+        {
+          "pin": "B7",
+          "pinfunction": "D-_B7",
+          "pintype": "bidirectional",
+          "ref": "J2"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "I/O1_1",
+          "pintype": "passive",
+          "ref": "U2"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 18,
+      "name": "/USB_D+",
+      "nodes": [
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "R5"
+        },
+        {
+          "pin": "33",
+          "pinfunction": "PA12_33",
+          "pintype": "bidirectional",
+          "ref": "U1"
+        },
+        {
+          "pin": "4",
+          "pinfunction": "I/O2_4",
+          "pintype": "passive",
+          "ref": "U2"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 19,
+      "name": "/USB_D-",
+      "nodes": [
+        {
+          "pin": "32",
+          "pinfunction": "PA11_32",
+          "pintype": "bidirectional",
+          "ref": "U1"
+        },
+        {
+          "pin": "6",
+          "pinfunction": "I/O1_6",
+          "pintype": "passive",
+          "ref": "U2"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 20,
+      "name": "BATLEV",
+      "nodes": [
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "R16"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "R17"
+        },
+        {
+          "pin": "18",
+          "pinfunction": "PB0_18",
+          "pintype": "bidirectional",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 21,
+      "name": "DRV_L_EN",
+      "nodes": [
+        {
+          "pin": "27",
+          "pinfunction": "PB14_27",
+          "pintype": "bidirectional",
+          "ref": "U1"
+        },
+        {
+          "pin": "5",
+          "pinfunction": "EN_5",
+          "pintype": "input",
+          "ref": "U3"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 22,
+      "name": "DRV_L_PH",
+      "nodes": [
+        {
+          "pin": "26",
+          "pinfunction": "PB13_26",
+          "pintype": "bidirectional",
+          "ref": "U1"
+        },
+        {
+          "pin": "6",
+          "pinfunction": "PH_6",
+          "pintype": "input",
+          "ref": "U3"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 23,
+      "name": "DRV_L_SLEEP_N",
+      "nodes": [
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "R12"
+        },
+        {
+          "pin": "25",
+          "pinfunction": "PB12_25",
+          "pintype": "bidirectional",
+          "ref": "U1"
+        },
+        {
+          "pin": "7",
+          "pinfunction": "~{SLEEP}_7",
+          "pintype": "input",
+          "ref": "U3"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 24,
+      "name": "DRV_R_EN",
+      "nodes": [
+        {
+          "pin": "43",
+          "pinfunction": "PB7_43",
+          "pintype": "bidirectional",
+          "ref": "U1"
+        },
+        {
+          "pin": "5",
+          "pinfunction": "EN_5",
+          "pintype": "input",
+          "ref": "U4"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 25,
+      "name": "DRV_R_PH",
+      "nodes": [
+        {
+          "pin": "42",
+          "pinfunction": "PB6_42",
+          "pintype": "bidirectional",
+          "ref": "U1"
+        },
+        {
+          "pin": "6",
+          "pinfunction": "PH_6",
+          "pintype": "input",
+          "ref": "U4"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 26,
+      "name": "DRV_R_SLEEP_N",
+      "nodes": [
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "R13"
+        },
+        {
+          "pin": "41",
+          "pinfunction": "PB5_41",
+          "pintype": "bidirectional",
+          "ref": "U1"
+        },
+        {
+          "pin": "7",
+          "pinfunction": "~{SLEEP}_7",
+          "pintype": "input",
+          "ref": "U4"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 27,
+      "name": "ENC_L_A",
+      "nodes": [
+        {
+          "pin": "5",
+          "pinfunction": "Pin_5_5",
+          "pintype": "passive",
+          "ref": "J4"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "R14"
+        },
+        {
+          "pin": "16",
+          "pinfunction": "PA6_16",
+          "pintype": "bidirectional",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 28,
+      "name": "ENC_L_B",
+      "nodes": [
+        {
+          "pin": "4",
+          "pinfunction": "Pin_4_4",
+          "pintype": "passive",
+          "ref": "J4"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "R15"
+        },
+        {
+          "pin": "17",
+          "pinfunction": "PA7_17",
+          "pintype": "bidirectional",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 29,
+      "name": "ENC_R_A",
+      "nodes": [
+        {
+          "pin": "3",
+          "pinfunction": "Pin_3_3",
+          "pintype": "passive",
+          "ref": "J3"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "R10"
+        },
+        {
+          "pin": "39",
+          "pinfunction": "PB3_39",
+          "pintype": "bidirectional",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 30,
+      "name": "ENC_R_B",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "Pin_2_2",
+          "pintype": "passive",
+          "ref": "J3"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "R11"
+        },
+        {
+          "pin": "38",
+          "pinfunction": "PA15_38",
+          "pintype": "bidirectional",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Ground,Default",
+      "code": 31,
+      "name": "GND",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "-_2",
+          "pintype": "passive",
+          "ref": "BT2"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "C1"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "C10"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "C11"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "C12"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "C13"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "C14"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "C15"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "C16"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "C17"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "C18"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "C2"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "C20"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "C21"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "C22"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "C23"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "C3"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "C4"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "C5"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "C6"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "C7"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "C8"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "C9"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "GND_3",
+          "pintype": "power_in",
+          "ref": "J1"
+        },
+        {
+          "pin": "5",
+          "pinfunction": "GND_5",
+          "pintype": "passive",
+          "ref": "J1"
+        },
+        {
+          "pin": "9",
+          "pinfunction": "GNDDetect_9",
+          "pintype": "passive",
+          "ref": "J1"
+        },
+        {
+          "pin": "A1",
+          "pinfunction": "GND_A1",
+          "pintype": "passive",
+          "ref": "J2"
+        },
+        {
+          "pin": "A12",
+          "pinfunction": "GND_A12",
+          "pintype": "passive",
+          "ref": "J2"
+        },
+        {
+          "pin": "B1",
+          "pinfunction": "GND_B1",
+          "pintype": "passive",
+          "ref": "J2"
+        },
+        {
+          "pin": "B12",
+          "pinfunction": "GND_B12",
+          "pintype": "passive",
+          "ref": "J2"
+        },
+        {
+          "pin": "SH",
+          "pinfunction": "SHIELD_SH",
+          "pintype": "passive",
+          "ref": "J2"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "Pin_1_1",
+          "pintype": "passive",
+          "ref": "J3"
+        },
+        {
+          "pin": "6",
+          "pinfunction": "Pin_6_6",
+          "pintype": "passive",
+          "ref": "J4"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "G_1",
+          "pintype": "input",
+          "ref": "Q1"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "R1"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "R12"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "R13"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "R17"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "R19"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "R20"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "R6"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "R7"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1_1",
+          "pintype": "passive",
+          "ref": "SW1"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "C_3",
+          "pintype": "passive",
+          "ref": "SW2"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1_1",
+          "pintype": "passive",
+          "ref": "TP2"
+        },
+        {
+          "pin": "23",
+          "pinfunction": "VSS_23",
+          "pintype": "power_in",
+          "ref": "U1"
+        },
+        {
+          "pin": "35",
+          "pinfunction": "VSS_35",
+          "pintype": "passive",
+          "ref": "U1"
+        },
+        {
+          "pin": "47",
+          "pinfunction": "VSS_47",
+          "pintype": "passive",
+          "ref": "U1"
+        },
+        {
+          "pin": "8",
+          "pinfunction": "VSSA_8",
+          "pintype": "power_in",
+          "ref": "U1"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "GND_2",
+          "pintype": "passive",
+          "ref": "U2"
+        },
+        {
+          "pin": "4",
+          "pinfunction": "GND_4",
+          "pintype": "power_in",
+          "ref": "U3"
+        },
+        {
+          "pin": "9",
+          "pinfunction": "GND_9",
+          "pintype": "passive",
+          "ref": "U3"
+        },
+        {
+          "pin": "4",
+          "pinfunction": "GND_4",
+          "pintype": "power_in",
+          "ref": "U4"
+        },
+        {
+          "pin": "9",
+          "pinfunction": "GND_9",
+          "pintype": "passive",
+          "ref": "U4"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "GND_1",
+          "pintype": "power_in",
+          "ref": "U5"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "G_2",
+          "pintype": "passive",
+          "ref": "Y1"
+        },
+        {
+          "pin": "4",
+          "pinfunction": "G_4",
+          "pintype": "passive",
+          "ref": "Y1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 32,
+      "name": "Net-(D1-K)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "K_1",
+          "pintype": "passive",
+          "ref": "D1"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "R20"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 33,
+      "name": "Net-(D2-A)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "A_2",
+          "pintype": "passive",
+          "ref": "D2"
+        },
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "R21"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 34,
+      "name": "Net-(D2-K)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "K_1",
+          "pintype": "passive",
+          "ref": "D2"
+        },
+        {
+          "pin": "40",
+          "pinfunction": "PB4_40",
+          "pintype": "bidirectional",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 35,
+      "name": "Net-(J2-CC1)",
+      "nodes": [
+        {
+          "pin": "A5",
+          "pinfunction": "CC1_A5",
+          "pintype": "bidirectional",
+          "ref": "J2"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "R6"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 36,
+      "name": "Net-(J2-CC2)",
+      "nodes": [
+        {
+          "pin": "B5",
+          "pinfunction": "CC2_B5",
+          "pintype": "bidirectional",
+          "ref": "J2"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "R7"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 37,
+      "name": "Net-(Q2-G)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "G_1",
+          "pintype": "input",
+          "ref": "Q2"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "R22"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "R23"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 38,
+      "name": "Net-(SW2-B)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "R23"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "B_2",
+          "pintype": "passive",
+          "ref": "SW2"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 39,
+      "name": "Net-(U5-CB)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "C19"
+        },
+        {
+          "pin": "6",
+          "pinfunction": "CB_6",
+          "pintype": "passive",
+          "ref": "U5"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 40,
+      "name": "Net-(U5-FB)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pintype": "passive",
+          "ref": "R18"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "R19"
+        },
+        {
+          "pin": "4",
+          "pinfunction": "FB_4",
+          "pintype": "input",
+          "ref": "U5"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 41,
+      "name": "VBAT",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "+_1",
+          "pintype": "passive",
+          "ref": "BT1"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "F1"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1_1",
+          "pintype": "passive",
+          "ref": "TP3"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 42,
+      "name": "VBAT_SW",
+      "nodes": [
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "C10"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "C11"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "C13"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "C14"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "C16"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "C17"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "C18"
+        },
+        {
+          "pin": "4",
+          "pinfunction": "Pin_4_4",
+          "pintype": "passive",
+          "ref": "J3"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "Pin_3_3",
+          "pintype": "passive",
+          "ref": "J4"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "D_3",
+          "pintype": "passive",
+          "ref": "Q2"
+        },
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "R16"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1_1",
+          "pintype": "passive",
+          "ref": "TP4"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "VM_1",
+          "pintype": "power_in",
+          "ref": "U3"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "VM_1",
+          "pintype": "power_in",
+          "ref": "U4"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "VIN_3",
+          "pintype": "power_in",
+          "ref": "U5"
+        },
+        {
+          "pin": "5",
+          "pinfunction": "EN_5",
+          "pintype": "input",
+          "ref": "U5"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 43,
+      "name": "VBUS",
+      "nodes": [
+        {
+          "pin": "1",
+          "pintype": "passive",
+          "ref": "C9"
+        },
+        {
+          "pin": "A4",
+          "pinfunction": "VBUS_A4",
+          "pintype": "passive",
+          "ref": "J2"
+        },
+        {
+          "pin": "A9",
+          "pinfunction": "VBUS_A9",
+          "pintype": "passive",
+          "ref": "J2"
+        },
+        {
+          "pin": "B4",
+          "pinfunction": "VBUS_B4",
+          "pintype": "passive",
+          "ref": "J2"
+        },
+        {
+          "pin": "B9",
+          "pinfunction": "VBUS_B9",
+          "pintype": "passive",
+          "ref": "J2"
+        },
+        {
+          "pin": "5",
+          "pinfunction": "VBUS_5",
+          "pintype": "passive",
+          "ref": "U2"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 44,
+      "name": "unconnected-(J1-KEY-Pad7)",
+      "nodes": [
+        {
+          "pin": "7",
+          "pinfunction": "KEY_7",
+          "pintype": "no_connect",
+          "ref": "J1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 45,
+      "name": "unconnected-(J1-NC/TDI-Pad8)",
+      "nodes": [
+        {
+          "pin": "8",
+          "pinfunction": "NC/TDI_8",
+          "pintype": "output+no_connect",
+          "ref": "J1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 46,
+      "name": "unconnected-(J1-SWO/TDO-Pad6)",
+      "nodes": [
+        {
+          "pin": "6",
+          "pinfunction": "SWO/TDO_6",
+          "pintype": "input+no_connect",
+          "ref": "J1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 47,
+      "name": "unconnected-(J2-SBU1-PadA8)",
+      "nodes": [
+        {
+          "pin": "A8",
+          "pinfunction": "SBU1_A8",
+          "pintype": "bidirectional+no_connect",
+          "ref": "J2"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 48,
+      "name": "unconnected-(J2-SBU2-PadB8)",
+      "nodes": [
+        {
+          "pin": "B8",
+          "pinfunction": "SBU2_B8",
+          "pintype": "bidirectional+no_connect",
+          "ref": "J2"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 49,
+      "name": "unconnected-(U1-PA0-Pad10)",
+      "nodes": [
+        {
+          "pin": "10",
+          "pinfunction": "PA0_10",
+          "pintype": "bidirectional+no_connect",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 50,
+      "name": "unconnected-(U1-PA1-Pad11)",
+      "nodes": [
+        {
+          "pin": "11",
+          "pinfunction": "PA1_11",
+          "pintype": "bidirectional+no_connect",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 51,
+      "name": "unconnected-(U1-PA2-Pad12)",
+      "nodes": [
+        {
+          "pin": "12",
+          "pinfunction": "PA2_12",
+          "pintype": "bidirectional+no_connect",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 52,
+      "name": "unconnected-(U1-PA3-Pad13)",
+      "nodes": [
+        {
+          "pin": "13",
+          "pinfunction": "PA3_13",
+          "pintype": "bidirectional+no_connect",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 53,
+      "name": "unconnected-(U1-PA4-Pad14)",
+      "nodes": [
+        {
+          "pin": "14",
+          "pinfunction": "PA4_14",
+          "pintype": "bidirectional+no_connect",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 54,
+      "name": "unconnected-(U1-PA5-Pad15)",
+      "nodes": [
+        {
+          "pin": "15",
+          "pinfunction": "PA5_15",
+          "pintype": "bidirectional+no_connect",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 55,
+      "name": "unconnected-(U1-PA8-Pad29)",
+      "nodes": [
+        {
+          "pin": "29",
+          "pinfunction": "PA8_29",
+          "pintype": "bidirectional+no_connect",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 56,
+      "name": "unconnected-(U1-PA9-Pad30)",
+      "nodes": [
+        {
+          "pin": "30",
+          "pinfunction": "PA9_30",
+          "pintype": "bidirectional+no_connect",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 57,
+      "name": "unconnected-(U1-PA10-Pad31)",
+      "nodes": [
+        {
+          "pin": "31",
+          "pinfunction": "PA10_31",
+          "pintype": "bidirectional+no_connect",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 58,
+      "name": "unconnected-(U1-PB1-Pad19)",
+      "nodes": [
+        {
+          "pin": "19",
+          "pinfunction": "PB1_19",
+          "pintype": "bidirectional+no_connect",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 59,
+      "name": "unconnected-(U1-PB2-Pad20)",
+      "nodes": [
+        {
+          "pin": "20",
+          "pinfunction": "PB2_20",
+          "pintype": "bidirectional+no_connect",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 60,
+      "name": "unconnected-(U1-PB8-Pad45)",
+      "nodes": [
+        {
+          "pin": "45",
+          "pinfunction": "PB8_45",
+          "pintype": "bidirectional+no_connect",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 61,
+      "name": "unconnected-(U1-PB9-Pad46)",
+      "nodes": [
+        {
+          "pin": "46",
+          "pinfunction": "PB9_46",
+          "pintype": "bidirectional+no_connect",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 62,
+      "name": "unconnected-(U1-PB10-Pad21)",
+      "nodes": [
+        {
+          "pin": "21",
+          "pinfunction": "PB10_21",
+          "pintype": "bidirectional+no_connect",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 63,
+      "name": "unconnected-(U1-PB11-Pad22)",
+      "nodes": [
+        {
+          "pin": "22",
+          "pinfunction": "PB11_22",
+          "pintype": "bidirectional+no_connect",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 64,
+      "name": "unconnected-(U1-PB15-Pad28)",
+      "nodes": [
+        {
+          "pin": "28",
+          "pinfunction": "PB15_28",
+          "pintype": "bidirectional+no_connect",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 65,
+      "name": "unconnected-(U1-PC13-Pad2)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "PC13_2",
+          "pintype": "bidirectional+no_connect",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 66,
+      "name": "unconnected-(U1-PC14-Pad3)",
+      "nodes": [
+        {
+          "pin": "3",
+          "pinfunction": "PC14_3",
+          "pintype": "bidirectional+no_connect",
+          "ref": "U1"
+        }
+      ]
+    },
+    {
+      "class": "Default",
+      "code": 67,
+      "name": "unconnected-(U1-PC15-Pad4)",
+      "nodes": [
+        {
+          "pin": "4",
+          "pinfunction": "PC15_4",
+          "pintype": "bidirectional+no_connect",
+          "ref": "U1"
+        }
+      ]
+    }
+  ],
+  "statistics": {
+    "components": 69,
+    "connected_nets": 43,
+    "explicit_no_connect_nets": 24,
+    "nets": 67
+  }
+}

@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+
+pilot_root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+tool_python="$pilot_root/toolchain/.venv/bin/python"
+
+if [ "${1:-}" = "bootstrap" ]; then
+  export UV_CACHE_DIR="$pilot_root/.state/uv-cache"
+  export UV_PYTHON_INSTALL_DIR="$pilot_root/.state/python"
+  exec uv sync --frozen --project "$pilot_root/toolchain" --python 3.14
+fi
+
+if [ ! -x "$tool_python" ]; then
+  echo "pilot toolchain missing; run: $0 bootstrap" >&2
+  exit 2
+fi
+
+exec "$tool_python" "$pilot_root/scripts/pilot.py" "$@"

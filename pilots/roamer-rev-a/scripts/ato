@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+pilot_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+
+export ATO_NON_INTERACTIVE=1
+export CI=1
+export FBRK_LOG_DIR="$pilot_root/.state/logs"
+export UV_CACHE_DIR="$pilot_root/.state/uv-cache"
+export UV_PYTHON_INSTALL_DIR="$pilot_root/.state/python"
+export XDG_CONFIG_HOME="$pilot_root/.state/xdg-config"
+
+exec "$pilot_root/toolchain/.venv/bin/ato" "$@"
+

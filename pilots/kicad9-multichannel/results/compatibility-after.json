@@ -1,0 +1,761 @@
+{
+  "bytes": 2000150,
+  "categories": {
+    "embedded_fonts": {
+      "aggregate_sha256": "8ec819b87e2f2b093938962b36144d5aa88d3a41d3b0ec030a202e3748a28774",
+      "count": 1
+    },
+    "footprint": {
+      "aggregate_sha256": "a8784a5b4af3f7eac4437b2c346c7fa5672b99debfa6dbbd3a8e98068e900c32",
+      "count": 114
+    },
+    "general": {
+      "aggregate_sha256": "bd8689004b2696482ef3e5d91f5d46385dd07278ad1e7c1c438d195672e7a99d",
+      "count": 1
+    },
+    "generator": {
+      "aggregate_sha256": "3fb4aa75a764e791807cf86fdc1571268370f51e8311d652b0a55bedb96dd50e",
+      "count": 1
+    },
+    "generator_version": {
+      "aggregate_sha256": "c7a1998b67b0012797c100b2234891bb275a2e7e0794794a7b60acab29f9aabe",
+      "count": 1
+    },
+    "gr_line": {
+      "aggregate_sha256": "47c8baf799a69a3d1300a62f234da3ae28835afe96d1140fe82b134a43222277",
+      "count": 4
+    },
+    "gr_text": {
+      "aggregate_sha256": "9a1287774402cd6a8fdc35b98c5618cf286f857e7a7babcc59bded5a42802fad",
+      "count": 2
+    },
+    "group": {
+      "aggregate_sha256": "051676ff1383bd2786cd1283111e4fbd48018668a444fddd9bb81edf6b49e73e",
+      "count": 4
+    },
+    "layers": {
+      "aggregate_sha256": "e6f6b2ee20a022e48e2eeeb1d909cad4839cb17c6e93e2002cc917fdcc2bb513",
+      "count": 1
+    },
+    "net": {
+      "aggregate_sha256": "c918ded65bc3107fb0693654e63cd1acb2c01916bad700dc2ce38497e7f38f66",
+      "count": 81
+    },
+    "paper": {
+      "aggregate_sha256": "a9ac3ea224d72f3f5e340674031a56dfe25284dbd06b499d30a300c4eb356f9a",
+      "count": 1
+    },
+    "segment": {
+      "aggregate_sha256": "7136ce5f7a3916a41c3577d9554a566c7be4d92165f5fd1a7889513cef7769d6",
+      "count": 576
+    },
+    "setup": {
+      "aggregate_sha256": "84b640dc87f17358053aed9c8cca3b9d6654b298fa2808e0a27a85ed48228acc",
+      "count": 1
+    },
+    "version": {
+      "aggregate_sha256": "9fa84f745e92b80def170f757b0b8d1a36095a45528477ac90926f625f1b0e5c",
+      "count": 1
+    },
+    "via": {
+      "aggregate_sha256": "426c845fac7dd41baedf159f0230f9b554ec14bf884d14dcb71cbe22146b9e49",
+      "count": 29
+    },
+    "zone": {
+      "aggregate_sha256": "bd3025cb425dc30178cd1a82c3374eeaece402f4d66572e6b74d1d6c00db8a63",
+      "count": 6
+    }
+  },
+  "footprint_placements": [
+    {
+      "at": "181.73 110.06 180",
+      "layer": "F.Cu",
+      "reference": "C1",
+      "uuid": "268f47ec-f328-488d-92f8-10298dc00c1a"
+    },
+    {
+      "at": "145 129 90",
+      "layer": "B.Cu",
+      "reference": "C10",
+      "uuid": "eb1637a1-b503-4ac6-8dc6-42896ccf5fed"
+    },
+    {
+      "at": "150.4 115.8 -90",
+      "layer": "B.Cu",
+      "reference": "C11",
+      "uuid": "f8a20521-1aea-49a9-8c0f-07837604b964"
+    },
+    {
+      "at": "140 84.4",
+      "layer": "B.Cu",
+      "reference": "C12",
+      "uuid": "aed8d622-4e79-4a2a-aa55-3a1f84aa1ab9"
+    },
+    {
+      "at": "150.5 76.4 90",
+      "layer": "F.Cu",
+      "reference": "C13",
+      "uuid": "638c7ecf-bec1-41ee-9945-88559e1f990e"
+    },
+    {
+      "at": "118 79.9 180",
+      "layer": "F.Cu",
+      "reference": "C14",
+      "uuid": "a68aea77-4b34-4f23-b5d2-09d879718b5f"
+    },
+    {
+      "at": "123 78.9 180",
+      "layer": "B.Cu",
+      "reference": "C15",
+      "uuid": "8b3be304-674f-4346-9088-f2824a10b575"
+    },
+    {
+      "at": "124.5 117.9 180",
+      "layer": "B.Cu",
+      "reference": "C16",
+      "uuid": "b53efe89-5319-4d1d-ae79-0a838c5684ba"
+    },
+    {
+      "at": "120 102.8 180",
+      "layer": "B.Cu",
+      "reference": "C17",
+      "uuid": "cbcf2fa9-147f-432b-9e68-d36fe9192d5c"
+    },
+    {
+      "at": "123 123.7 -90",
+      "layer": "B.Cu",
+      "reference": "C18",
+      "uuid": "b22a69da-8e03-4c59-8458-318c54a251c6"
+    },
+    {
+      "at": "123 129 90",
+      "layer": "B.Cu",
+      "reference": "C19",
+      "uuid": "601131b5-abed-4c31-b81b-129a70b9609a"
+    },
+    {
+      "at": "186.46 101.73 180",
+      "layer": "F.Cu",
+      "reference": "C2",
+      "uuid": "446b5a82-e240-4857-a65b-429a472b0b1d"
+    },
+    {
+      "at": "128.4 115.8 -90",
+      "layer": "B.Cu",
+      "reference": "C20",
+      "uuid": "4e148dbd-8a41-4f56-98ac-558d5f41e56c"
+    },
+    {
+      "at": "118 84.4",
+      "layer": "B.Cu",
+      "reference": "C21",
+      "uuid": "5c9a6157-411f-4814-a840-f45db3bd67a1"
+    },
+    {
+      "at": "128.5 76.4 90",
+      "layer": "F.Cu",
+      "reference": "C22",
+      "uuid": "6adedbaa-c814-4fe6-abaa-f6d542921e2c"
+    },
+    {
+      "at": "162 79.9 180",
+      "layer": "F.Cu",
+      "reference": "C23",
+      "uuid": "5a7bb254-1f81-4794-82fb-437a1cb5e825"
+    },
+    {
+      "at": "167 78.9 180",
+      "layer": "B.Cu",
+      "reference": "C24",
+      "uuid": "f158b91e-6011-4932-8b6b-d38f8c0fc551"
+    },
+    {
+      "at": "168.5 117.9 180",
+      "layer": "B.Cu",
+      "reference": "C25",
+      "uuid": "9726dbb5-e10d-4266-af77-5a8834882080"
+    },
+    {
+      "at": "164 102.8 180",
+      "layer": "B.Cu",
+      "reference": "C26",
+      "uuid": "c6d9f255-50ea-4406-aebd-70af7d9ad596"
+    },
+    {
+      "at": "167 123.7 -90",
+      "layer": "B.Cu",
+      "reference": "C27",
+      "uuid": "c4cce067-aec1-4f2e-bc78-a28b95346b98"
+    },
+    {
+      "at": "167 129 90",
+      "layer": "B.Cu",
+      "reference": "C28",
+      "uuid": "cbbbcd7a-efd2-4a07-9733-697b8590dfdb"
+    },
+    {
+      "at": "172.4 115.8 -90",
+      "layer": "B.Cu",
+      "reference": "C29",
+      "uuid": "a89efda9-2b5b-4faa-bb6b-71e4bfde1edb"
+    },
+    {
+      "at": "182.46 103.66",
+      "layer": "B.Cu",
+      "reference": "C3",
+      "uuid": "f3688754-2453-4531-8697-d0a6bed0b864"
+    },
+    {
+      "at": "162 84.4",
+      "layer": "B.Cu",
+      "reference": "C30",
+      "uuid": "c298078b-eebd-4431-b51d-d2ff259a82ff"
+    },
+    {
+      "at": "172.5 76.4 90",
+      "layer": "F.Cu",
+      "reference": "C31",
+      "uuid": "ea589ae6-bd74-4220-8e3b-a7779d6f7b38"
+    },
+    {
+      "at": "96 79.9 180",
+      "layer": "F.Cu",
+      "reference": "C32",
+      "uuid": "fc85c7dd-8337-4981-b2a0-06e71a6f6f21"
+    },
+    {
+      "at": "101 78.9 180",
+      "layer": "B.Cu",
+      "reference": "C33",
+      "uuid": "86f0878d-e211-42c9-8f28-3f34e637d9f0"
+    },
+    {
+      "at": "102.5 117.9 180",
+      "layer": "B.Cu",
+      "reference": "C34",
+      "uuid": "7ba1f967-07c6-4ba1-b086-ea38f646e227"
+    },
+    {
+      "at": "98 102.8 180",
+      "layer": "B.Cu",
+      "reference": "C35",
+      "uuid": "9fbf0ea0-a68a-4477-875d-3f2cfebca404"
+    },
+    {
+      "at": "101 123.7 -90",
+      "layer": "B.Cu",
+      "reference": "C36",
+      "uuid": "ecd09680-5cf2-4350-8777-b9085bf57aef"
+    },
+    {
+      "at": "101 129 90",
+      "layer": "B.Cu",
+      "reference": "C37",
+      "uuid": "504a579e-12c6-44fb-9a6d-1bd3435da07a"
+    },
+    {
+      "at": "106.4 115.8 -90",
+      "layer": "B.Cu",
+      "reference": "C38",
+      "uuid": "45b0fdb3-54ad-4dbf-9fdd-67ac6feb56a4"
+    },
+    {
+      "at": "96 84.4",
+      "layer": "B.Cu",
+      "reference": "C39",
+      "uuid": "e919e84d-7781-4c35-9210-924c7ec4eb31"
+    },
+    {
+      "at": "193.87 101.91 90",
+      "layer": "F.Cu",
+      "reference": "C4",
+      "uuid": "7d83d536-ed93-44ac-917a-de67b485b0db"
+    },
+    {
+      "at": "106.5 76.4 90",
+      "layer": "F.Cu",
+      "reference": "C40",
+      "uuid": "613f7576-72b6-4faf-9dbb-beb7ddaf18df"
+    },
+    {
+      "at": "140 79.9 180",
+      "layer": "F.Cu",
+      "reference": "C5",
+      "uuid": "77c2c9ee-6481-423c-b3d0-3ee2f901750b"
+    },
+    {
+      "at": "145 78.9 180",
+      "layer": "B.Cu",
+      "reference": "C6",
+      "uuid": "91b2213f-b9ab-4ad2-a0fd-8fd5f88b473d"
+    },
+    {
+      "at": "146.5 117.9 180",
+      "layer": "B.Cu",
+      "reference": "C7",
+      "uuid": "407e97d0-28fd-4a9b-a8ae-14a9da7a54dd"
+    },
+    {
+      "at": "142 102.8 180",
+      "layer": "B.Cu",
+      "reference": "C8",
+      "uuid": "d62eeed1-79c0-475b-9db5-39b9d834045c"
+    },
+    {
+      "at": "145 123.7 -90",
+      "layer": "B.Cu",
+      "reference": "C9",
+      "uuid": "323df3d5-bae3-4268-91ba-132d89edcbb4"
+    },
+    {
+      "at": "190.335 108.24 180",
+      "layer": "B.Cu",
+      "reference": "IC1",
+      "uuid": "14dcd6b7-28de-486c-87e1-37a918938e53"
+    },
+    {
+      "at": "146.365 84.1 -90",
+      "layer": "B.Cu",
+      "reference": "IC2",
+      "uuid": "c2d7b7c0-b75c-42d7-8bae-8ad2a9730652"
+    },
+    {
+      "at": "124.365 84.1 -90",
+      "layer": "B.Cu",
+      "reference": "IC3",
+      "uuid": "e628fff6-80a6-47ed-ab0e-3925977b0887"
+    },
+    {
+      "at": "168.365 84.1 -90",
+      "layer": "B.Cu",
+      "reference": "IC4",
+      "uuid": "b76db4e3-0b5e-4bd5-97b2-ed27e324688d"
+    },
+    {
+      "at": "102.365 84.1 -90",
+      "layer": "B.Cu",
+      "reference": "IC5",
+      "uuid": "19c0567c-0a4a-44fa-b8ec-1ed930890b86"
+    },
+    {
+      "at": "136.785 65.635 90",
+      "layer": "F.Cu",
+      "reference": "J1",
+      "uuid": "adeeb496-2ef3-4042-96c7-ce7371d9685d"
+    },
+    {
+      "at": "191.285 87.385 90",
+      "layer": "F.Cu",
+      "reference": "J5",
+      "uuid": "2604d701-45e1-40f6-8515-62646733a8ee"
+    },
+    {
+      "at": "180.585 65.585 90",
+      "layer": "F.Cu",
+      "reference": "J6",
+      "uuid": "2d500594-2939-405a-9372-47ea3966a4da"
+    },
+    {
+      "at": "114.785 65.635 90",
+      "layer": "F.Cu",
+      "reference": "J7",
+      "uuid": "56b99062-3dad-4ab1-8e65-2ebe153a12fb"
+    },
+    {
+      "at": "158.785 65.635 90",
+      "layer": "F.Cu",
+      "reference": "J8",
+      "uuid": "a55422d7-3520-4236-a5eb-2f6a6912210e"
+    },
+    {
+      "at": "92.785 65.635 90",
+      "layer": "F.Cu",
+      "reference": "J9",
+      "uuid": "276d3e64-7117-4581-81f0-197871ad4d6d"
+    },
+    {
+      "at": "182.46 106.335",
+      "layer": "B.Cu",
+      "reference": "R1",
+      "uuid": "73ded116-ec17-44a3-8540-726f02056f23"
+    },
+    {
+      "at": "139.6 113.6 -90",
+      "layer": "B.Cu",
+      "reference": "R10",
+      "uuid": "1f2d6bd6-a730-422e-8cc9-f140d9f88335"
+    },
+    {
+      "at": "145 93 90",
+      "layer": "B.Cu",
+      "reference": "R11",
+      "uuid": "eaa30fac-44f8-48e1-9e0d-f03bf0f99174"
+    },
+    {
+      "at": "141 135.9",
+      "layer": "B.Cu",
+      "reference": "R12",
+      "uuid": "da18d72f-d1b5-4ba8-8e23-370d3a50dd48"
+    },
+    {
+      "at": "149 121 180",
+      "layer": "B.Cu",
+      "reference": "R13",
+      "uuid": "53c253d1-ba54-4756-96f0-3977856483b2"
+    },
+    {
+      "at": "144.95 147.4 90",
+      "layer": "B.Cu",
+      "reference": "R14",
+      "uuid": "06560235-829d-4551-8d65-a6fb4eccef39"
+    },
+    {
+      "at": "118 76.4",
+      "layer": "B.Cu",
+      "reference": "R15",
+      "uuid": "e86477a3-efba-49cb-b9fb-7a08d3eaa169"
+    },
+    {
+      "at": "123 76.4 180",
+      "layer": "B.Cu",
+      "reference": "R16",
+      "uuid": "14210547-155e-4bb1-b0ad-9e53eb8cae03"
+    },
+    {
+      "at": "126.4 102.8 180",
+      "layer": "B.Cu",
+      "reference": "R17",
+      "uuid": "60930032-b855-46a3-bbc6-e08bad17aaa8"
+    },
+    {
+      "at": "126.4 100.2 180",
+      "layer": "B.Cu",
+      "reference": "R18",
+      "uuid": "5f2f2e72-b4f0-48f8-9600-a26e5b1810e7"
+    },
+    {
+      "at": "127 135.9",
+      "layer": "B.Cu",
+      "reference": "R19",
+      "uuid": "fb5a45a9-c146-4e09-970a-1a3be949a1e8"
+    },
+    {
+      "at": "190.22 112.76 180",
+      "layer": "B.Cu",
+      "reference": "R2",
+      "uuid": "49ef3be0-4ece-4a5f-ab9a-708944544e48"
+    },
+    {
+      "at": "119 117.9 180",
+      "layer": "B.Cu",
+      "reference": "R20",
+      "uuid": "c77d10ae-eeba-4fb9-8018-538f333ccaaa"
+    },
+    {
+      "at": "117.6 113.6 -90",
+      "layer": "B.Cu",
+      "reference": "R21",
+      "uuid": "9c8c7ed3-8ed5-4b7c-ba47-a3864f8719c9"
+    },
+    {
+      "at": "123 93 90",
+      "layer": "B.Cu",
+      "reference": "R22",
+      "uuid": "500921ea-2bff-4724-9bc7-ca47fb4047b0"
+    },
+    {
+      "at": "119 135.9",
+      "layer": "B.Cu",
+      "reference": "R23",
+      "uuid": "2aafd3a4-f8da-4ff9-878d-9b4d8096f30e"
+    },
+    {
+      "at": "127 121 180",
+      "layer": "B.Cu",
+      "reference": "R24",
+      "uuid": "f58ffe04-f661-4e6f-b71b-c1365cb73e72"
+    },
+    {
+      "at": "122.95 147.4 90",
+      "layer": "B.Cu",
+      "reference": "R25",
+      "uuid": "a1e19e00-ec1e-4e62-a79a-d5d8bc7c51ef"
+    },
+    {
+      "at": "162 76.4",
+      "layer": "B.Cu",
+      "reference": "R26",
+      "uuid": "7e861515-7263-490e-80d3-09de0c031d69"
+    },
+    {
+      "at": "167 76.4 180",
+      "layer": "B.Cu",
+      "reference": "R27",
+      "uuid": "24169333-428e-49c7-b66f-35c4efa52831"
+    },
+    {
+      "at": "170.4 102.8 180",
+      "layer": "B.Cu",
+      "reference": "R28",
+      "uuid": "2c799000-eefd-4892-ab1f-19a5b5305211"
+    },
+    {
+      "at": "170.4 100.2 180",
+      "layer": "B.Cu",
+      "reference": "R29",
+      "uuid": "1c4af49e-f4b0-46ac-bd9b-d35dc19c5dcf"
+    },
+    {
+      "at": "195.5 107.79 90",
+      "layer": "B.Cu",
+      "reference": "R3",
+      "uuid": "3dbbb966-237a-4622-aa02-da08cfc81215"
+    },
+    {
+      "at": "171 135.9",
+      "layer": "B.Cu",
+      "reference": "R30",
+      "uuid": "d1a4e9b8-ed4c-46fa-812e-5cfbf1c4a965"
+    },
+    {
+      "at": "163 117.9 180",
+      "layer": "B.Cu",
+      "reference": "R31",
+      "uuid": "c5206f3a-84cd-461f-ba85-ad00cf3aa6b6"
+    },
+    {
+      "at": "161.6 113.6 -90",
+      "layer": "B.Cu",
+      "reference": "R32",
+      "uuid": "e8754587-612f-4049-adbd-9c5371fbbc63"
+    },
+    {
+      "at": "167 93 90",
+      "layer": "B.Cu",
+      "reference": "R33",
+      "uuid": "c87fd0b6-5316-4467-9ea3-3099c8685480"
+    },
+    {
+      "at": "163 135.9",
+      "layer": "B.Cu",
+      "reference": "R34",
+      "uuid": "052aaf5b-83a5-4049-a08f-c2580eef5f42"
+    },
+    {
+      "at": "171 121 180",
+      "layer": "B.Cu",
+      "reference": "R35",
+      "uuid": "16c6edfe-2bb5-4c5e-a1ca-6907c3836866"
+    },
+    {
+      "at": "166.95 147.4 90",
+      "layer": "B.Cu",
+      "reference": "R36",
+      "uuid": "1b59920a-24f6-41d9-a64a-3553f3bcda5f"
+    },
+    {
+      "at": "96 76.4",
+      "layer": "B.Cu",
+      "reference": "R37",
+      "uuid": "f12e5e8b-309a-4ae0-a86f-459de24ef66d"
+    },
+    {
+      "at": "101 76.4 180",
+      "layer": "B.Cu",
+      "reference": "R38",
+      "uuid": "32154c45-272a-4f1b-bb92-5e3e80b3ad79"
+    },
+    {
+      "at": "104.4 102.8 180",
+      "layer": "B.Cu",
+      "reference": "R39",
+      "uuid": "01af1621-bf1e-4866-9afb-fc0ad9d5bbc6"
+    },
+    {
+      "at": "140 76.4",
+      "layer": "B.Cu",
+      "reference": "R4",
+      "uuid": "373aed5c-d84d-4434-a21a-a1fd37990ce1"
+    },
+    {
+      "at": "104.4 100.2 180",
+      "layer": "B.Cu",
+      "reference": "R40",
+      "uuid": "831ecff1-007e-425c-ab59-74bb54693f8a"
+    },
+    {
+      "at": "105 135.9",
+      "layer": "B.Cu",
+      "reference": "R41",
+      "uuid": "14954005-cbed-4d75-bda3-5270d2adf816"
+    },
+    {
+      "at": "97 117.9 180",
+      "layer": "B.Cu",
+      "reference": "R42",
+      "uuid": "ed3bec5e-6e30-4fdf-8415-430e8581317d"
+    },
+    {
+      "at": "95.6 113.6 -90",
+      "layer": "B.Cu",
+      "reference": "R43",
+      "uuid": "d1f8f3cd-2232-4231-a37b-801cb6df863e"
+    },
+    {
+      "at": "101 93 90",
+      "layer": "B.Cu",
+      "reference": "R44",
+      "uuid": "184d662a-7a4c-47db-8ef1-95394cf32e2e"
+    },
+    {
+      "at": "97 135.9",
+      "layer": "B.Cu",
+      "reference": "R45",
+      "uuid": "df393e4b-9b26-4afd-a377-45f0094a7810"
+    },
+    {
+      "at": "105 121 180",
+      "layer": "B.Cu",
+      "reference": "R46",
+      "uuid": "34dfb910-53b0-4b9a-a13a-e54ff3969e90"
+    },
+    {
+      "at": "100.95 147.4 90",
+      "layer": "B.Cu",
+      "reference": "R47",
+      "uuid": "a98be734-604b-4016-ba6d-3ec80d0370b2"
+    },
+    {
+      "at": "145 76.4 180",
+      "layer": "B.Cu",
+      "reference": "R5",
+      "uuid": "eb7eb4e8-7776-407c-b60d-6a6ce43af179"
+    },
+    {
+      "at": "148.4 102.8 180",
+      "layer": "B.Cu",
+      "reference": "R6",
+      "uuid": "d2b6fd9e-e685-45fe-87eb-93a1f78a9e94"
+    },
+    {
+      "at": "148.4 100.2 180",
+      "layer": "B.Cu",
+      "reference": "R7",
+      "uuid": "a96f0531-d384-43e4-a10d-516be57cf599"
+    },
+    {
+      "at": "149 135.9",
+      "layer": "B.Cu",
+      "reference": "R8",
+      "uuid": "8bc7d5b0-5523-4d7b-a9b5-b4289cd3ac97"
+    },
+    {
+      "at": "141 117.9 180",
+      "layer": "B.Cu",
+      "reference": "R9",
+      "uuid": "f53a583a-1ca1-47d0-800b-57082d95913d"
+    },
+    {
+      "at": "142.5 115.4 90",
+      "layer": "F.Cu",
+      "reference": "RV1",
+      "uuid": "7994b2ed-5eac-4384-a632-6161ed5b2ce1"
+    },
+    {
+      "at": "164.5 97.4 90",
+      "layer": "F.Cu",
+      "reference": "RV10",
+      "uuid": "38fc87ae-45bf-4b9b-928e-5b55fbc2d137"
+    },
+    {
+      "at": "164.5 133.4 90",
+      "layer": "F.Cu",
+      "reference": "RV11",
+      "uuid": "b5a9cc03-df07-41d7-99ae-a32d4bb9f2e6"
+    },
+    {
+      "at": "164.5 151.45 90",
+      "layer": "F.Cu",
+      "reference": "RV12",
+      "uuid": "e9b5c9c8-57ea-4ae3-ba2f-12b93a679ea9"
+    },
+    {
+      "at": "98.5 115.4 90",
+      "layer": "F.Cu",
+      "reference": "RV13",
+      "uuid": "2ef7f323-c4e3-4aaa-991c-dab856fd6fd2"
+    },
+    {
+      "at": "98.5 97.4 90",
+      "layer": "F.Cu",
+      "reference": "RV14",
+      "uuid": "2f692e5b-b5a8-45a4-aee4-323d133a0791"
+    },
+    {
+      "at": "98.5 133.4 90",
+      "layer": "F.Cu",
+      "reference": "RV15",
+      "uuid": "991fa92b-0413-4fbe-9fa3-54b8bf71a784"
+    },
+    {
+      "at": "98.5 151.45 90",
+      "layer": "F.Cu",
+      "reference": "RV16",
+      "uuid": "577c4297-5c04-41f4-b4c8-8ea993d77cc1"
+    },
+    {
+      "at": "142.5 97.4 90",
+      "layer": "F.Cu",
+      "reference": "RV2",
+      "uuid": "8d1700e7-4bbf-4cd2-a111-87da1b5ceb20"
+    },
+    {
+      "at": "142.5 133.4 90",
+      "layer": "F.Cu",
+      "reference": "RV3",
+      "uuid": "7abcbc4c-fbb7-489d-8918-df18b17009f8"
+    },
+    {
+      "at": "142.5 151.45 90",
+      "layer": "F.Cu",
+      "reference": "RV4",
+      "uuid": "affb903f-24b8-435c-a361-df9d7bfb9623"
+    },
+    {
+      "at": "120.5 115.4 90",
+      "layer": "F.Cu",
+      "reference": "RV5",
+      "uuid": "2605270b-f919-4a39-82dc-fd6a4b8689ed"
+    },
+    {
+      "at": "120.5 97.4 90",
+      "layer": "F.Cu",
+      "reference": "RV6",
+      "uuid": "93692c49-0185-4e47-bfb4-b874f6be6089"
+    },
+    {
+      "at": "120.5 133.4 90",
+      "layer": "F.Cu",
+      "reference": "RV7",
+      "uuid": "d30a26fc-21bd-4dd5-ae6c-6b73c5d46caa"
+    },
+    {
+      "at": "120.5 151.45 90",
+      "layer": "F.Cu",
+      "reference": "RV8",
+      "uuid": "bcd1e172-dde6-495c-809b-ca18f4bda6b8"
+    },
+    {
+      "at": "164.5 115.4 90",
+      "layer": "F.Cu",
+      "reference": "RV9",
+      "uuid": "aed38abc-e172-470d-b59b-e31e99da4698"
+    }
+  ],
+  "path": "results/generated/multichannel.atopile-roundtrip.kicad_pcb",
+  "sha256": "7cf86ec327d38a2fbf7bde9959f99e478543f8e729a971b69c1f01be0a790c03",
+  "user_art": {
+    "aggregate_sha256": "a12db3530bbd44d740af32588d76f1806fdf74357e2f6d94f711bc1126f5299d",
+    "count": 621
+  }
+}

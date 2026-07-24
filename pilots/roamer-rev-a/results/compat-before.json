@@ -1,0 +1,71 @@
+{
+  "bytes": 6989,
+  "categories": {
+    "footprint": {
+      "aggregate_sha256": "3cc16c21a1649d2be102594357f2ee45bc1d13e139945b2fcdf5673a2971d780",
+      "count": 1
+    },
+    "general": {
+      "aggregate_sha256": "bd8689004b2696482ef3e5d91f5d46385dd07278ad1e7c1c438d195672e7a99d",
+      "count": 1
+    },
+    "generator": {
+      "aggregate_sha256": "3fb4aa75a764e791807cf86fdc1571268370f51e8311d652b0a55bedb96dd50e",
+      "count": 1
+    },
+    "generator_version": {
+      "aggregate_sha256": "6b35df79a5226f1ca851ba52a1bd1ae78f3d21e84087d2839d09d4e8b5544713",
+      "count": 1
+    },
+    "gr_line": {
+      "aggregate_sha256": "2025170cf93aa6c1706d794628c44bf7724aabf891ff47932b54aff99318851d",
+      "count": 4
+    },
+    "gr_text": {
+      "aggregate_sha256": "bbe4e659fea45de0e2d5390e1bf3fe9fbd05619c48c523a16b0eb6288cf088c2",
+      "count": 1
+    },
+    "layers": {
+      "aggregate_sha256": "e6f6b2ee20a022e48e2eeeb1d909cad4839cb17c6e93e2002cc917fdcc2bb513",
+      "count": 1
+    },
+    "paper": {
+      "aggregate_sha256": "a9ac3ea224d72f3f5e340674031a56dfe25284dbd06b499d30a300c4eb356f9a",
+      "count": 1
+    },
+    "segment": {
+      "aggregate_sha256": "4e5780d59a92148812d9f1e693c05d837ff9da492ec9437e63a82cf7cb7412c4",
+      "count": 2
+    },
+    "setup": {
+      "aggregate_sha256": "9c264c4c311990dbde0be927fedf083a990be2d0066aba5d353408813ffca6be",
+      "count": 1
+    },
+    "version": {
+      "aggregate_sha256": "fe7de320a5df2a081b718616fb3e8389a6b3ec24294ece506cad450b2a8dd2cf",
+      "count": 1
+    },
+    "via": {
+      "aggregate_sha256": "845c37fe268d553d0ff25e7078b81ecedc51a229e70616564ca484335d4b2f93",
+      "count": 1
+    },
+    "zone": {
+      "aggregate_sha256": "c08bb98e8baab83769ad37c7e1fcf8ab784902dfca5795480c58a483cf5c5a65",
+      "count": 1
+    }
+  },
+  "footprint_placements": [
+    {
+      "at": "50 50 15",
+      "layer": "F.Cu",
+      "reference": "R1",
+      "uuid": "7c574ae8-3914-404f-8df4-c4d14642524b"
+    }
+  ],
+  "path": "compat/project/layouts/default/default.kicad_pcb",
+  "sha256": "65e2dc06fd15dfd8d350b1ddd544bb14691f59971350c4f2304960ffe7e4565a",
+  "user_art": {
+    "aggregate_sha256": "2ece438d395eff823191c2be8348889fba6049ba0398df1908d8427034aedf71",
+    "count": 9
+  }
+}

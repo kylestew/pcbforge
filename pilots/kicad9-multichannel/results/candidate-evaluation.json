@@ -1,0 +1,299 @@
+[
+  {
+    "byte_identical": false,
+    "bytes": 883812,
+    "changed_categories": [
+      "footprint",
+      "setup"
+    ],
+    "footprints": 68,
+    "lost_feature_counts": {
+      "aux_axis_origin": 1,
+      "teardrops": 165
+    },
+    "nets": 53,
+    "path": "complex_hierarchy/complex_hierarchy.kicad_pcb",
+    "placements_identical": true,
+    "segments": 364,
+    "vias": 0,
+    "zones": 166
+  },
+  {
+    "byte_identical": false,
+    "bytes": 124831,
+    "changed_categories": [
+      "footprint",
+      "setup"
+    ],
+    "footprints": 5,
+    "lost_feature_counts": {
+      "teardrops": 11
+    },
+    "nets": 4,
+    "path": "custom_pads_test/custom_pads_test.kicad_pcb",
+    "placements_identical": true,
+    "segments": 19,
+    "vias": 0,
+    "zones": 7
+  },
+  {
+    "byte_identical": false,
+    "bytes": 158878,
+    "changed_categories": [
+      "footprint",
+      "setup"
+    ],
+    "footprints": 15,
+    "lost_feature_counts": {},
+    "nets": 14,
+    "path": "ecc83/ecc83-pp.kicad_pcb",
+    "placements_identical": true,
+    "segments": 59,
+    "vias": 0,
+    "zones": 1
+  },
+  {
+    "byte_identical": false,
+    "bytes": 173660,
+    "changed_categories": [
+      "footprint",
+      "setup"
+    ],
+    "footprints": 15,
+    "lost_feature_counts": {},
+    "nets": 14,
+    "path": "ecc83/ecc83-pp_v2.kicad_pcb",
+    "placements_identical": true,
+    "segments": 53,
+    "vias": 0,
+    "zones": 1
+  },
+  {
+    "byte_identical": false,
+    "bytes": 1015246,
+    "changed_categories": [
+      "footprint",
+      "setup",
+      "via"
+    ],
+    "footprints": 64,
+    "lost_feature_counts": {
+      "aux_axis_origin": 1,
+      "teardrops": 241
+    },
+    "nets": 112,
+    "path": "flat_hierarchy/flat_hierarchy.kicad_pcb",
+    "placements_identical": true,
+    "segments": 371,
+    "vias": 7,
+    "zones": 177
+  },
+  {
+    "byte_identical": false,
+    "bytes": 622284,
+    "changed_categories": [
+      "dimension",
+      "footprint",
+      "setup",
+      "title_block"
+    ],
+    "footprints": 25,
+    "lost_feature_counts": {
+      "aux_axis_origin": 1
+    },
+    "nets": 174,
+    "path": "interf_u/interf_u.kicad_pcb",
+    "placements_identical": true,
+    "segments": 731,
+    "vias": 84,
+    "zones": 1
+  },
+  {
+    "byte_identical": false,
+    "bytes": 2770404,
+    "changed_categories": [
+      "footprint",
+      "setup",
+      "title_block"
+    ],
+    "footprints": 160,
+    "lost_feature_counts": {
+      "aux_axis_origin": 1
+    },
+    "nets": 279,
+    "path": "kit-dev-coldfire-xilinx_5213/kit-dev-coldfire-xilinx_5213.kicad_pcb",
+    "placements_identical": true,
+    "segments": 2935,
+    "vias": 253,
+    "zones": 3
+  },
+  {
+    "byte_identical": false,
+    "bytes": 85718,
+    "changed_categories": [
+      "setup"
+    ],
+    "footprints": 4,
+    "lost_feature_counts": {},
+    "nets": 1,
+    "path": "microwave/microwave.kicad_pcb",
+    "placements_identical": true,
+    "segments": 0,
+    "vias": 0,
+    "zones": 0
+  },
+  {
+    "byte_identical": false,
+    "bytes": 2000139,
+    "changed_categories": [
+      "footprint",
+      "setup"
+    ],
+    "footprints": 114,
+    "lost_feature_counts": {},
+    "nets": 81,
+    "path": "multichannel/multichannel_mixer.kicad_pcb",
+    "placements_identical": true,
+    "segments": 576,
+    "vias": 29,
+    "zones": 6
+  },
+  {
+    "byte_identical": false,
+    "bytes": 698533,
+    "changed_categories": [
+      "footprint",
+      "setup"
+    ],
+    "footprints": 63,
+    "lost_feature_counts": {
+      "aux_axis_origin": 1,
+      "clearance": 1
+    },
+    "nets": 112,
+    "path": "pic_programmer/pic_programmer.kicad_pcb",
+    "placements_identical": true,
+    "segments": 370,
+    "vias": 6,
+    "zones": 1
+  },
+  {
+    "error": "ValueError: UnexpectedRightParen in kicad.pcb.Font field 'embedded_fonts': ",
+    "path": "royalblue54L_feather/RoyalBlue54L-Feather.kicad_pcb"
+  },
+  {
+    "byte_identical": false,
+    "bytes": 147777,
+    "changed_categories": [
+      "footprint",
+      "gr_poly",
+      "setup",
+      "via"
+    ],
+    "footprints": 2,
+    "lost_feature_counts": {},
+    "nets": 2,
+    "path": "royalblue54L_feather/nfc_antenna/RoyalBlue54L-NFC-Antenna/RoyalBlue54L-NFC-Antenna.kicad_pcb",
+    "placements_identical": true,
+    "segments": 112,
+    "vias": 2,
+    "zones": 0
+  },
+  {
+    "byte_identical": false,
+    "bytes": 336473,
+    "changed_categories": [
+      "dimension",
+      "footprint",
+      "setup",
+      "title_block"
+    ],
+    "footprints": 25,
+    "lost_feature_counts": {},
+    "nets": 43,
+    "path": "sonde xilinx/sonde xilinx.kicad_pcb",
+    "placements_identical": true,
+    "segments": 208,
+    "vias": 3,
+    "zones": 1
+  },
+  {
+    "byte_identical": false,
+    "bytes": 1030708,
+    "changed_categories": [
+      "footprint",
+      "setup"
+    ],
+    "footprints": 94,
+    "lost_feature_counts": {
+      "solder_mask_margin": 39
+    },
+    "nets": 48,
+    "path": "stickhub/StickHub.kicad_pcb",
+    "placements_identical": true,
+    "segments": 1113,
+    "vias": 87,
+    "zones": 5
+  },
+  {
+    "byte_identical": false,
+    "bytes": 13155,
+    "changed_categories": [
+      "footprint",
+      "setup"
+    ],
+    "footprints": 4,
+    "lost_feature_counts": {},
+    "nets": 3,
+    "path": "test_pads_inside_pads/test_pads_inside_pads.kicad_pcb",
+    "placements_identical": true,
+    "segments": 4,
+    "vias": 0,
+    "zones": 0
+  },
+  {
+    "byte_identical": false,
+    "bytes": 701695,
+    "changed_categories": [
+      "footprint",
+      "setup",
+      "title_block"
+    ],
+    "footprints": 42,
+    "lost_feature_counts": {},
+    "nets": 101,
+    "path": "test_xil_95108/carte_test.kicad_pcb",
+    "placements_identical": true,
+    "segments": 647,
+    "vias": 12,
+    "zones": 1
+  },
+  {
+    "error": "ValueError: UnexpectedType in kicad.pcb.KicadPcb field 'paper': expected symbol, string, or number for enum",
+    "path": "tiny_tapeout/tinytapeout-demo.kicad_pcb"
+  },
+  {
+    "byte_identical": false,
+    "bytes": 5787523,
+    "changed_categories": [
+      "dimension",
+      "footprint",
+      "setup",
+      "title_block"
+    ],
+    "footprints": 189,
+    "lost_feature_counts": {
+      "aux_axis_origin": 1
+    },
+    "nets": 589,
+    "path": "video/video.kicad_pcb",
+    "placements_identical": true,
+    "segments": 7932,
+    "vias": 808,
+    "zones": 2
+  },
+  {
+    "error": "ValueError: UnexpectedType in kicad.pcb.KicadPcb field 'paper': expected symbol, string, or number for enum",
+    "path": "vme-wren/vme-wren.kicad_pcb"
+  }
+]

@@ -1,0 +1,109 @@
+{
+  "drc": {
+    "canonical_sha256": "20753dafbc3d42ae443b0cd9ebfd4ce5a38952821cc371bdd63ff40a5bbaffa8",
+    "exists": true,
+    "ignored_checks": 0,
+    "returncode": 0,
+    "stderr": "",
+    "stdout": "Found 103 violations\nFound 0 unconnected items\nSaved DRC Report to /Users/kylestewart/Projects/pcbforge/pilots/kicad9-multichannel/results/generated/multichannel.drc.json",
+    "unconnected_items": 0,
+    "violations": 103
+  },
+  "erc": {
+    "canonical_sha256": "341cd00245403f1b2c5feb2b97db6b02387d0eda8cf60e0d9716e62fe4a291fc",
+    "exists": true,
+    "ignored_checks": 0,
+    "returncode": 0,
+    "stderr": "",
+    "stdout": "Found 45 violations\nSaved ERC Report to /Users/kylestewart/Projects/pcbforge/pilots/kicad9-multichannel/results/generated/multichannel.erc.json",
+    "unconnected_items": 0,
+    "violations": 45
+  },
+  "files": {
+    "channel_strip.kicad_sch": {
+      "bytes": 270893,
+      "sha256": "2c98b5d37f5b60c9187474017d7b754e8b4a1d45f4115dcbecf1a745ab175e0e"
+    },
+    "fp-lib-table": {
+      "bytes": 147,
+      "sha256": "8a1e7e5ab227455c8865598b3c4c36db1e75c8abced3b2c0aee4fde54176a328"
+    },
+    "multichannel_mixer-unrouted.kicad_pcb": {
+      "bytes": 1942567,
+      "sha256": "149b2dce16e0f59adb78f87068f4137b7dafca0e991a0b21fdd967c873fd5ee9"
+    },
+    "multichannel_mixer.kicad_pcb": {
+      "bytes": 2000139,
+      "sha256": "44b7c119a0d05c98e9f294659879184038a5f6c30073c04d9536990429ca413e"
+    },
+    "multichannel_mixer.kicad_pro": {
+      "bytes": 15273,
+      "sha256": "ea1bc47355f707e1c4743af3e1c29e939bb5eaf4621c071bdac3841c43545538"
+    },
+    "multichannel_mixer.kicad_sch": {
+      "bytes": 170457,
+      "sha256": "e47aecee9416d51fb5aed36d008a0442d3d6d68abfc5224bcdb5c5bb4a690fcf"
+    },
+    "multichannel_mixer.kicad_sym": {
+      "bytes": 62033,
+      "sha256": "7e0793cc48f3a20ea84f3c4c8643ffeb1be79dd05faba8ae1278dc39dbf7cf8b"
+    },
+    "multichannel_mixer.pretty/CAPC3216X140N.kicad_mod": {
+      "bytes": 11438,
+      "sha256": "3e6145d55866da5a696cefe075a68d26cf30fde90403ff2e006d2e4ae1461474"
+    },
+    "multichannel_mixer.pretty/CAPPRB254-500X840.kicad_mod": {
+      "bytes": 10819,
+      "sha256": "6e1ac6aeba9d1c87ba73b30104162d35ae05625364c80ed204127c90e0542775"
+    },
+    "multichannel_mixer.pretty/CLIFF_FC68148(DC-10A).kicad_mod": {
+      "bytes": 21026,
+      "sha256": "96f4e07509d06c0157dfca2b336f761541ed5d2daead790baafe6b90d23e658e"
+    },
+    "multichannel_mixer.pretty/Jack_6.35mm_Neutrik_NMJ6HCD2_Horizontal.kicad_mod": {
+      "bytes": 8008,
+      "sha256": "b8a282923219bb3b01bf82278a7ded099fac556385eaf8707d777fc92cc32fc3"
+    },
+    "multichannel_mixer.pretty/Potentiometer_Alps_RK09K_Single_Vertical.kicad_mod": {
+      "bytes": 5594,
+      "sha256": "ce94093ebd8cd8cd35a75442db46854414f78ca9be4f3b4234a7819650b938aa"
+    },
+    "multichannel_mixer.pretty/RESC3216X65N.kicad_mod": {
+      "bytes": 11835,
+      "sha256": "a12fbb5040e28dd960364f0319773d1450c0610c18ab9844d0671b6bf6c9f6d7"
+    },
+    "multichannel_mixer.pretty/SOIC127P600X175-8N.kicad_mod": {
+      "bytes": 13465,
+      "sha256": "0b5f066de991d39015aab71847ce9a17e3a60394391350e46650fa8e7d274f80"
+    },
+    "sym-lib-table": {
+      "bytes": 151,
+      "sha256": "68b0633966d91fd9e81c05b7706abcddc892d1c71c9994c8cb757e38216787f7"
+    }
+  },
+  "render": {
+    "exists": true,
+    "returncode": 0,
+    "stderr": "",
+    "stdout": "Loading\u2026\nBuild board outline\n\nCreate layers\nCreate tracks and vias\nCreate zones\nBuild Tech layers\nBuild Tech layer 11\nBuild Tech layer 9\nBuild Tech layer 15\nBuild Tech layer 13\nBuild Tech layer 7\nBuild Tech layer 5\nBuild Tech layer 3\nBuild Tech layer 1\nBuild Tech layer 17\nBuild Tech layer 19\nBuild Tech layer 21\nBuild Tech layer 23\nBuild Tech layer 39\nBuild Tech layer 41\nBuild Tech layer 43\nBuild Tech layer 45\nBuild Tech layer 47\nBuild Tech layer 49\nBuild Tech layer 51\nBuild Tech layer 53\nBuild Tech layer 55\nBuild Tech layer 57\nBuild Tech layer 59\nBuild Tech layer 61\nBuild Tech layer 63\nBuild Tech layer 65\nBuild Tech layer 67\nBuild Tech layer 69\nBuild Tech layer 71\nBuild Tech layer 73\nBuild Tech layer 75\nBuild Tech layer 77\nBuild Tech layer 79\nBuild Tech layer 81\nBuild Tech layer 83\nBuild Tech layer 85\nBuild Tech layer 87\nBuild Tech layer 89\nBuild Tech layer 91\nBuild Tech layer 93\nBuild Tech layer 95\nBuild Tech layer 97\nBuild Tech layer 99\nBuild Tech layer 101\nBuild Tech layer 103\nBuild Tech layer 105\nBuild Tech layer 107\nBuild Tech layer 109\nBuild Tech layer 111\nBuild Tech layer 113\nBuild Tech layer 115\nBuild Tech layer 117\nBuild Tech layer 119\nBuild Tech layer 121\nBuild Tech layer 123\nBuild Tech layer 125\nBuild Tech layer 127\nSimplifying copper layer polygons\nCalculating plated copper\nSimplify holes contours\nBuild BVH for holes and vias\nLoad Raytracing: board\nLoad Raytracing: layers\nLoading 3D models...\nReload time 0.057 s\nRendering: 100 %\nRendering time 0.106 s\nSuccessfully created 3D render image"
+  },
+  "source": {
+    "distribution": "KiCad 9.0.9 universal macOS image, multichannel demo",
+    "project": "multichannel_mixer",
+    "url": "https://downloads.kicad.org/kicad/macos/explore/stable/download/kicad-unified-universal-9.0.9.dmg"
+  },
+  "statistics": {
+    "board_footprints": 114,
+    "board_nets": 81,
+    "components": 114,
+    "connected_pins": 280,
+    "nets": 80,
+    "segments": 576,
+    "vias": 29,
+    "zones": 6
+  },
+  "toolchain": {
+    "board_format": "20241229",
+    "kicad": "9.0.9"
+  }
+}

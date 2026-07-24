@@ -1,0 +1,84 @@
+{
+  "parser": {
+    "footprints": 114,
+    "nets": 81,
+    "segments": 576,
+    "vias": 29,
+    "zones": 6
+  },
+  "projection": {
+    "high_level_collections": 114,
+    "reconstructed_nets": 64
+  },
+  "roundtrip": {
+    "preservation": {
+      "category_content_identical": {
+        "embedded_fonts": true,
+        "footprint": false,
+        "general": true,
+        "generator": true,
+        "generator_version": true,
+        "gr_line": true,
+        "gr_text": true,
+        "group": true,
+        "layers": true,
+        "net": true,
+        "paper": true,
+        "segment": true,
+        "setup": false,
+        "version": true,
+        "via": true,
+        "zone": true
+      },
+      "category_counts_identical": {
+        "embedded_fonts": true,
+        "footprint": true,
+        "general": true,
+        "generator": true,
+        "generator_version": true,
+        "gr_line": true,
+        "gr_text": true,
+        "group": true,
+        "layers": true,
+        "net": true,
+        "paper": true,
+        "segment": true,
+        "setup": true,
+        "version": true,
+        "via": true,
+        "zone": true
+      },
+      "footprint_placements_identical": true,
+      "normalized_token_multiset_identical": true,
+      "serializer_canonical_form_byte_stable": true,
+      "user_art_identical": true,
+      "whole_file_byte_identical": false
+    },
+    "render_exists": true,
+    "render_returncode": 0,
+    "serialized_sha256": "7cf86ec327d38a2fbf7bde9959f99e478543f8e729a971b69c1f01be0a790c03",
+    "serialized_token_signature": {
+      "distinct_tokens": 18799,
+      "sha256": "0f70402b5d50bab9b85d7595e1ce56bd92833a6aba50a3dc8e9b678c3e632728",
+      "tokens": 358144
+    },
+    "source_sha256": "44b7c119a0d05c98e9f294659879184038a5f6c30073c04d9536990429ca413e",
+    "source_token_signature": {
+      "distinct_tokens": 18799,
+      "sha256": "0f70402b5d50bab9b85d7595e1ce56bd92833a6aba50a3dc8e9b678c3e632728",
+      "tokens": 358144
+    },
+    "stable_reserialization_sha256": "7cf86ec327d38a2fbf7bde9959f99e478543f8e729a971b69c1f01be0a790c03"
+  },
+  "scope": {
+    "atopile_managed_sync": false,
+    "reader_writer_gate": true,
+    "reason": "The legacy board has no atopile ownership metadata; managed no-op sync requires the circuit port."
+  },
+  "status": "passed",
+  "toolchain": {
+    "atopile": "0.15.7",
+    "board_format": "20241229",
+    "kicad": "9.0.9"
+  }
+}

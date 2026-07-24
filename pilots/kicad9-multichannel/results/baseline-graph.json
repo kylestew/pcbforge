@@ -1,0 +1,2726 @@
+{
+  "components": [
+    {
+      "footprint": "Capacitors THD:CAPPRB254-500X840",
+      "reference": "C1",
+      "value": "CTEB_2.2UF_35V_10%_254-500X840"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C10",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C11",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C12",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors THD:CAPPRB254-500X840",
+      "reference": "C13",
+      "value": "CTEB_2.2UF_35V_10%_254-500X840"
+    },
+    {
+      "footprint": "Capacitors THD:CAPPRB254-500X840",
+      "reference": "C14",
+      "value": "CTEB_2.2UF_35V_10%_254-500X840"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C15",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C16",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C17",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C18",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C19",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors THD:CAPPRB254-500X840",
+      "reference": "C2",
+      "value": "CTEB_2.2UF_35V_10%_254-500X840"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C20",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C21",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors THD:CAPPRB254-500X840",
+      "reference": "C22",
+      "value": "CTEB_2.2UF_35V_10%_254-500X840"
+    },
+    {
+      "footprint": "Capacitors THD:CAPPRB254-500X840",
+      "reference": "C23",
+      "value": "CTEB_2.2UF_35V_10%_254-500X840"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C24",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C25",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C26",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C27",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C28",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C29",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C3",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C30",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors THD:CAPPRB254-500X840",
+      "reference": "C31",
+      "value": "CTEB_2.2UF_35V_10%_254-500X840"
+    },
+    {
+      "footprint": "Capacitors THD:CAPPRB254-500X840",
+      "reference": "C32",
+      "value": "CTEB_2.2UF_35V_10%_254-500X840"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C33",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C34",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C35",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C36",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C37",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C38",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C39",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors THD:CAPPRB254-500X840",
+      "reference": "C4",
+      "value": "CTEB_2.2UF_35V_10%_254-500X840"
+    },
+    {
+      "footprint": "Capacitors THD:CAPPRB254-500X840",
+      "reference": "C40",
+      "value": "CTEB_2.2UF_35V_10%_254-500X840"
+    },
+    {
+      "footprint": "Capacitors THD:CAPPRB254-500X840",
+      "reference": "C5",
+      "value": "CTEB_2.2UF_35V_10%_254-500X840"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C6",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C7",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C8",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "Capacitors SMD:CAPC3216X140N",
+      "reference": "C9",
+      "value": "CC1206_100NF_50V_10%_X7R"
+    },
+    {
+      "footprint": "ICs And Semiconductors SMD:SOIC127P600X175-8N",
+      "reference": "IC1",
+      "value": "TL072CD"
+    },
+    {
+      "footprint": "ICs And Semiconductors SMD:SOIC127P600X175-8N",
+      "reference": "IC2",
+      "value": "TL072CD"
+    },
+    {
+      "footprint": "ICs And Semiconductors SMD:SOIC127P600X175-8N",
+      "reference": "IC3",
+      "value": "TL072CD"
+    },
+    {
+      "footprint": "ICs And Semiconductors SMD:SOIC127P600X175-8N",
+      "reference": "IC4",
+      "value": "TL072CD"
+    },
+    {
+      "footprint": "ICs And Semiconductors SMD:SOIC127P600X175-8N",
+      "reference": "IC5",
+      "value": "TL072CD"
+    },
+    {
+      "footprint": "Connector_Audio:Jack_6.35mm_Neutrik_NMJ6HCD2_Horizontal",
+      "reference": "J1",
+      "value": "CH1"
+    },
+    {
+      "footprint": "Miscellaneous THD:CLIFF_FC68148(DC-10A)",
+      "reference": "J5",
+      "value": "Power"
+    },
+    {
+      "footprint": "Connector_Audio:Jack_6.35mm_Neutrik_NMJ6HCD2_Horizontal",
+      "reference": "J6",
+      "value": "Out"
+    },
+    {
+      "footprint": "Connector_Audio:Jack_6.35mm_Neutrik_NMJ6HCD2_Horizontal",
+      "reference": "J7",
+      "value": "CH1"
+    },
+    {
+      "footprint": "Connector_Audio:Jack_6.35mm_Neutrik_NMJ6HCD2_Horizontal",
+      "reference": "J8",
+      "value": "CH1"
+    },
+    {
+      "footprint": "Connector_Audio:Jack_6.35mm_Neutrik_NMJ6HCD2_Horizontal",
+      "reference": "J9",
+      "value": "CH1"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R1",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R10",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R11",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R12",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R13",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R14",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R15",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R16",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R17",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R18",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R19",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R2",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R20",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R21",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R22",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R23",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R24",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R25",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R26",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R27",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R28",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R29",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R3",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R30",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R31",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R32",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R33",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R34",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R35",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R36",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R37",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R38",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R39",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R4",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R40",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R41",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R42",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R43",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R44",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R45",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R46",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R47",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R5",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R6",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R7",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R8",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Resistors SMD:RESC3216X65N",
+      "reference": "R9",
+      "value": "R1206_10K_1%_0.25W_100PPM"
+    },
+    {
+      "footprint": "Potentiometer_THT:Potentiometer_Alps_RK09K_Single_Vertical",
+      "reference": "RV1",
+      "value": "Mid"
+    },
+    {
+      "footprint": "Potentiometer_THT:Potentiometer_Alps_RK09K_Single_Vertical",
+      "reference": "RV10",
+      "value": "Bass"
+    },
+    {
+      "footprint": "Potentiometer_THT:Potentiometer_Alps_RK09K_Single_Vertical",
+      "reference": "RV11",
+      "value": "Treble"
+    },
+    {
+      "footprint": "Potentiometer_THT:Potentiometer_Alps_RK09K_Single_Vertical",
+      "reference": "RV12",
+      "value": "Volume"
+    },
+    {
+      "footprint": "Potentiometer_THT:Potentiometer_Alps_RK09K_Single_Vertical",
+      "reference": "RV13",
+      "value": "Mid"
+    },
+    {
+      "footprint": "Potentiometer_THT:Potentiometer_Alps_RK09K_Single_Vertical",
+      "reference": "RV14",
+      "value": "Bass"
+    },
+    {
+      "footprint": "Potentiometer_THT:Potentiometer_Alps_RK09K_Single_Vertical",
+      "reference": "RV15",
+      "value": "Treble"
+    },
+    {
+      "footprint": "Potentiometer_THT:Potentiometer_Alps_RK09K_Single_Vertical",
+      "reference": "RV16",
+      "value": "Volume"
+    },
+    {
+      "footprint": "Potentiometer_THT:Potentiometer_Alps_RK09K_Single_Vertical",
+      "reference": "RV2",
+      "value": "Bass"
+    },
+    {
+      "footprint": "Potentiometer_THT:Potentiometer_Alps_RK09K_Single_Vertical",
+      "reference": "RV3",
+      "value": "Treble"
+    },
+    {
+      "footprint": "Potentiometer_THT:Potentiometer_Alps_RK09K_Single_Vertical",
+      "reference": "RV4",
+      "value": "Volume"
+    },
+    {
+      "footprint": "Potentiometer_THT:Potentiometer_Alps_RK09K_Single_Vertical",
+      "reference": "RV5",
+      "value": "Mid"
+    },
+    {
+      "footprint": "Potentiometer_THT:Potentiometer_Alps_RK09K_Single_Vertical",
+      "reference": "RV6",
+      "value": "Bass"
+    },
+    {
+      "footprint": "Potentiometer_THT:Potentiometer_Alps_RK09K_Single_Vertical",
+      "reference": "RV7",
+      "value": "Treble"
+    },
+    {
+      "footprint": "Potentiometer_THT:Potentiometer_Alps_RK09K_Single_Vertical",
+      "reference": "RV8",
+      "value": "Volume"
+    },
+    {
+      "footprint": "Potentiometer_THT:Potentiometer_Alps_RK09K_Single_Vertical",
+      "reference": "RV9",
+      "value": "Mid"
+    }
+  ],
+  "nets": [
+    {
+      "code": 1,
+      "name": "+12V",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C12"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C21"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C3"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C30"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C39"
+        },
+        {
+          "pin": "8",
+          "pinfunction": "V+",
+          "pintype": "power_in",
+          "ref": "IC1"
+        },
+        {
+          "pin": "8",
+          "pinfunction": "V+",
+          "pintype": "power_in",
+          "ref": "IC2"
+        },
+        {
+          "pin": "8",
+          "pinfunction": "V+",
+          "pintype": "power_in",
+          "ref": "IC3"
+        },
+        {
+          "pin": "8",
+          "pinfunction": "V+",
+          "pintype": "power_in",
+          "ref": "IC4"
+        },
+        {
+          "pin": "8",
+          "pinfunction": "V+",
+          "pintype": "power_in",
+          "ref": "IC5"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "bidirectional",
+          "ref": "J5"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R1"
+        }
+      ]
+    },
+    {
+      "code": 2,
+      "name": "/CH1/OUT",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C13"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C22"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C31"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C40"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "IN-",
+          "pintype": "input",
+          "ref": "IC1"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R3"
+        }
+      ]
+    },
+    {
+      "code": 3,
+      "name": "GND",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C1"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C11"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C12"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C2"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C20"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C21"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C29"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C3"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C30"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C38"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C39"
+        },
+        {
+          "pin": "4",
+          "pinfunction": "V-",
+          "pintype": "power_in",
+          "ref": "IC1"
+        },
+        {
+          "pin": "4",
+          "pinfunction": "V-",
+          "pintype": "power_in",
+          "ref": "IC2"
+        },
+        {
+          "pin": "4",
+          "pinfunction": "V-",
+          "pintype": "power_in",
+          "ref": "IC3"
+        },
+        {
+          "pin": "4",
+          "pinfunction": "V-",
+          "pintype": "power_in",
+          "ref": "IC4"
+        },
+        {
+          "pin": "4",
+          "pinfunction": "V-",
+          "pintype": "power_in",
+          "ref": "IC5"
+        },
+        {
+          "pin": "R",
+          "pintype": "passive",
+          "ref": "J1"
+        },
+        {
+          "pin": "S",
+          "pintype": "passive",
+          "ref": "J1"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "bidirectional",
+          "ref": "J5"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "3",
+          "pintype": "bidirectional",
+          "ref": "J5"
+        },
+        {
+          "pin": "S",
+          "pintype": "passive",
+          "ref": "J6"
+        },
+        {
+          "pin": "R",
+          "pintype": "passive",
+          "ref": "J7"
+        },
+        {
+          "pin": "S",
+          "pintype": "passive",
+          "ref": "J7"
+        },
+        {
+          "pin": "R",
+          "pintype": "passive",
+          "ref": "J8"
+        },
+        {
+          "pin": "S",
+          "pintype": "passive",
+          "ref": "J8"
+        },
+        {
+          "pin": "R",
+          "pintype": "passive",
+          "ref": "J9"
+        },
+        {
+          "pin": "S",
+          "pintype": "passive",
+          "ref": "J9"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R2"
+        }
+      ]
+    },
+    {
+      "code": 4,
+      "name": "Net-(C4-Pad2)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C4"
+        },
+        {
+          "pin": "T",
+          "pintype": "passive",
+          "ref": "J6"
+        }
+      ]
+    },
+    {
+      "code": 5,
+      "name": "Net-(C5-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C5"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R4"
+        }
+      ]
+    },
+    {
+      "code": 6,
+      "name": "Net-(C5-Pad2)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C5"
+        },
+        {
+          "pin": "T",
+          "pintype": "passive",
+          "ref": "J1"
+        }
+      ]
+    },
+    {
+      "code": 7,
+      "name": "Net-(C7-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C7"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R6"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "3",
+          "pintype": "passive",
+          "ref": "RV1"
+        }
+      ]
+    },
+    {
+      "code": 8,
+      "name": "Net-(C7-Pad2)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C7"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R9"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "RV1"
+        }
+      ]
+    },
+    {
+      "code": 9,
+      "name": "Net-(C8-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C8"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R7"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "3",
+          "pintype": "passive",
+          "ref": "RV2"
+        }
+      ]
+    },
+    {
+      "code": 10,
+      "name": "Net-(C8-Pad2)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C8"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R10"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "RV2"
+        }
+      ]
+    },
+    {
+      "code": 11,
+      "name": "Net-(C9-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C9"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "RV1"
+        }
+      ]
+    },
+    {
+      "code": 12,
+      "name": "Net-(C10-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C10"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "RV3"
+        }
+      ]
+    },
+    {
+      "code": 13,
+      "name": "Net-(C11-Pad2)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C11"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R13"
+        }
+      ]
+    },
+    {
+      "code": 14,
+      "name": "Net-(C13-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C13"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R14"
+        }
+      ]
+    },
+    {
+      "code": 15,
+      "name": "Net-(C14-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C14"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R15"
+        }
+      ]
+    },
+    {
+      "code": 16,
+      "name": "Net-(C14-Pad2)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C14"
+        },
+        {
+          "pin": "T",
+          "pintype": "passive",
+          "ref": "J7"
+        }
+      ]
+    },
+    {
+      "code": 17,
+      "name": "Net-(C16-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C16"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R17"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "3",
+          "pintype": "passive",
+          "ref": "RV5"
+        }
+      ]
+    },
+    {
+      "code": 18,
+      "name": "Net-(C16-Pad2)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C16"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R20"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "RV5"
+        }
+      ]
+    },
+    {
+      "code": 19,
+      "name": "Net-(C17-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C17"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R18"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "3",
+          "pintype": "passive",
+          "ref": "RV6"
+        }
+      ]
+    },
+    {
+      "code": 20,
+      "name": "Net-(C17-Pad2)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C17"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R21"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "RV6"
+        }
+      ]
+    },
+    {
+      "code": 21,
+      "name": "Net-(C18-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C18"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "RV5"
+        }
+      ]
+    },
+    {
+      "code": 22,
+      "name": "Net-(C19-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C19"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "RV7"
+        }
+      ]
+    },
+    {
+      "code": 23,
+      "name": "Net-(C20-Pad2)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C20"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R24"
+        }
+      ]
+    },
+    {
+      "code": 24,
+      "name": "Net-(C22-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C22"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R25"
+        }
+      ]
+    },
+    {
+      "code": 25,
+      "name": "Net-(C23-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C23"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R26"
+        }
+      ]
+    },
+    {
+      "code": 26,
+      "name": "Net-(C23-Pad2)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C23"
+        },
+        {
+          "pin": "T",
+          "pintype": "passive",
+          "ref": "J8"
+        }
+      ]
+    },
+    {
+      "code": 27,
+      "name": "Net-(C25-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C25"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R28"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "3",
+          "pintype": "passive",
+          "ref": "RV9"
+        }
+      ]
+    },
+    {
+      "code": 28,
+      "name": "Net-(C25-Pad2)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C25"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R31"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "RV9"
+        }
+      ]
+    },
+    {
+      "code": 29,
+      "name": "Net-(C26-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C26"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R29"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "3",
+          "pintype": "passive",
+          "ref": "RV10"
+        }
+      ]
+    },
+    {
+      "code": 30,
+      "name": "Net-(C26-Pad2)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C26"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R32"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "RV10"
+        }
+      ]
+    },
+    {
+      "code": 31,
+      "name": "Net-(C27-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C27"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "RV9"
+        }
+      ]
+    },
+    {
+      "code": 32,
+      "name": "Net-(C28-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C28"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "RV11"
+        }
+      ]
+    },
+    {
+      "code": 33,
+      "name": "Net-(C29-Pad2)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C29"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R35"
+        }
+      ]
+    },
+    {
+      "code": 34,
+      "name": "Net-(C31-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C31"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R36"
+        }
+      ]
+    },
+    {
+      "code": 35,
+      "name": "Net-(C32-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C32"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R37"
+        }
+      ]
+    },
+    {
+      "code": 36,
+      "name": "Net-(C32-Pad2)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C32"
+        },
+        {
+          "pin": "T",
+          "pintype": "passive",
+          "ref": "J9"
+        }
+      ]
+    },
+    {
+      "code": 37,
+      "name": "Net-(C34-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C34"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R39"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "3",
+          "pintype": "passive",
+          "ref": "RV13"
+        }
+      ]
+    },
+    {
+      "code": 38,
+      "name": "Net-(C34-Pad2)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C34"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R42"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "RV13"
+        }
+      ]
+    },
+    {
+      "code": 39,
+      "name": "Net-(C35-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C35"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R40"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "3",
+          "pintype": "passive",
+          "ref": "RV14"
+        }
+      ]
+    },
+    {
+      "code": 40,
+      "name": "Net-(C35-Pad2)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C35"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R43"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "RV14"
+        }
+      ]
+    },
+    {
+      "code": 41,
+      "name": "Net-(C36-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C36"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "RV13"
+        }
+      ]
+    },
+    {
+      "code": 42,
+      "name": "Net-(C37-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C37"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "RV15"
+        }
+      ]
+    },
+    {
+      "code": 43,
+      "name": "Net-(C38-Pad2)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C38"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R46"
+        }
+      ]
+    },
+    {
+      "code": 44,
+      "name": "Net-(C40-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C40"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R47"
+        }
+      ]
+    },
+    {
+      "code": 45,
+      "name": "Net-(IC1A-OUT)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C4"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "OUT",
+          "pintype": "output",
+          "ref": "IC1"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R3"
+        }
+      ]
+    },
+    {
+      "code": 46,
+      "name": "Net-(IC1B-IN+)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C1"
+        },
+        {
+          "pin": "5",
+          "pinfunction": "IN+",
+          "pintype": "input",
+          "ref": "IC1"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R1"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R2"
+        }
+      ]
+    },
+    {
+      "code": 47,
+      "name": "Net-(IC2A-IN-)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C6"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "IN-",
+          "pintype": "input",
+          "ref": "IC2"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R4"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R5"
+        }
+      ]
+    },
+    {
+      "code": 48,
+      "name": "Net-(IC2A-OUT)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C6"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "OUT",
+          "pintype": "output",
+          "ref": "IC2"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R5"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R6"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R7"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R8"
+        }
+      ]
+    },
+    {
+      "code": 49,
+      "name": "Net-(IC2B-IN-)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C10"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C9"
+        },
+        {
+          "pin": "6",
+          "pinfunction": "IN-",
+          "pintype": "input",
+          "ref": "IC2"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R11"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R13"
+        }
+      ]
+    },
+    {
+      "code": 50,
+      "name": "Net-(IC2B-OUT)",
+      "nodes": [
+        {
+          "pin": "7",
+          "pinfunction": "OUT",
+          "pintype": "output",
+          "ref": "IC2"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R10"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R12"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R9"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "3",
+          "pintype": "passive",
+          "ref": "RV4"
+        }
+      ]
+    },
+    {
+      "code": 51,
+      "name": "Net-(IC3A-IN-)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C15"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "IN-",
+          "pintype": "input",
+          "ref": "IC3"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R15"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R16"
+        }
+      ]
+    },
+    {
+      "code": 52,
+      "name": "Net-(IC3A-OUT)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C15"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "OUT",
+          "pintype": "output",
+          "ref": "IC3"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R16"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R17"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R18"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R19"
+        }
+      ]
+    },
+    {
+      "code": 53,
+      "name": "Net-(IC3B-IN-)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C18"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C19"
+        },
+        {
+          "pin": "6",
+          "pinfunction": "IN-",
+          "pintype": "input",
+          "ref": "IC3"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R22"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R24"
+        }
+      ]
+    },
+    {
+      "code": 54,
+      "name": "Net-(IC3B-OUT)",
+      "nodes": [
+        {
+          "pin": "7",
+          "pinfunction": "OUT",
+          "pintype": "output",
+          "ref": "IC3"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R20"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R21"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R23"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "3",
+          "pintype": "passive",
+          "ref": "RV8"
+        }
+      ]
+    },
+    {
+      "code": 55,
+      "name": "Net-(IC4A-IN-)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C24"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "IN-",
+          "pintype": "input",
+          "ref": "IC4"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R26"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R27"
+        }
+      ]
+    },
+    {
+      "code": 56,
+      "name": "Net-(IC4A-OUT)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C24"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "OUT",
+          "pintype": "output",
+          "ref": "IC4"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R27"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R28"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R29"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R30"
+        }
+      ]
+    },
+    {
+      "code": 57,
+      "name": "Net-(IC4B-IN-)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C27"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C28"
+        },
+        {
+          "pin": "6",
+          "pinfunction": "IN-",
+          "pintype": "input",
+          "ref": "IC4"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R33"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R35"
+        }
+      ]
+    },
+    {
+      "code": 58,
+      "name": "Net-(IC4B-OUT)",
+      "nodes": [
+        {
+          "pin": "7",
+          "pinfunction": "OUT",
+          "pintype": "output",
+          "ref": "IC4"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R31"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R32"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R34"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "3",
+          "pintype": "passive",
+          "ref": "RV12"
+        }
+      ]
+    },
+    {
+      "code": 59,
+      "name": "Net-(IC5A-IN-)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C33"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "IN-",
+          "pintype": "input",
+          "ref": "IC5"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R37"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R38"
+        }
+      ]
+    },
+    {
+      "code": 60,
+      "name": "Net-(IC5A-OUT)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C33"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "OUT",
+          "pintype": "output",
+          "ref": "IC5"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R38"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R39"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R40"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R41"
+        }
+      ]
+    },
+    {
+      "code": 61,
+      "name": "Net-(IC5B-IN-)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C36"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "C37"
+        },
+        {
+          "pin": "6",
+          "pinfunction": "IN-",
+          "pintype": "input",
+          "ref": "IC5"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R44"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R46"
+        }
+      ]
+    },
+    {
+      "code": 62,
+      "name": "Net-(IC5B-OUT)",
+      "nodes": [
+        {
+          "pin": "7",
+          "pinfunction": "OUT",
+          "pintype": "output",
+          "ref": "IC5"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R42"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R43"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R45"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "3",
+          "pintype": "passive",
+          "ref": "RV16"
+        }
+      ]
+    },
+    {
+      "code": 63,
+      "name": "Net-(R8-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R8"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "RV3"
+        }
+      ]
+    },
+    {
+      "code": 64,
+      "name": "Net-(R11-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R11"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "RV2"
+        }
+      ]
+    },
+    {
+      "code": 65,
+      "name": "Net-(R12-Pad2)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R12"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "3",
+          "pintype": "passive",
+          "ref": "RV3"
+        }
+      ]
+    },
+    {
+      "code": 66,
+      "name": "Net-(R14-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R14"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "RV4"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "RV4"
+        }
+      ]
+    },
+    {
+      "code": 67,
+      "name": "Net-(R19-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R19"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "RV7"
+        }
+      ]
+    },
+    {
+      "code": 68,
+      "name": "Net-(R22-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R22"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "RV6"
+        }
+      ]
+    },
+    {
+      "code": 69,
+      "name": "Net-(R23-Pad2)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R23"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "3",
+          "pintype": "passive",
+          "ref": "RV7"
+        }
+      ]
+    },
+    {
+      "code": 70,
+      "name": "Net-(R25-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R25"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "RV8"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "RV8"
+        }
+      ]
+    },
+    {
+      "code": 71,
+      "name": "Net-(R30-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R30"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "RV11"
+        }
+      ]
+    },
+    {
+      "code": 72,
+      "name": "Net-(R33-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R33"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "RV10"
+        }
+      ]
+    },
+    {
+      "code": 73,
+      "name": "Net-(R34-Pad2)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R34"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "3",
+          "pintype": "passive",
+          "ref": "RV11"
+        }
+      ]
+    },
+    {
+      "code": 74,
+      "name": "Net-(R36-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R36"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "RV12"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "RV12"
+        }
+      ]
+    },
+    {
+      "code": 75,
+      "name": "Net-(R41-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R41"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "RV15"
+        }
+      ]
+    },
+    {
+      "code": 76,
+      "name": "Net-(R44-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R44"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "RV14"
+        }
+      ]
+    },
+    {
+      "code": 77,
+      "name": "Net-(R45-Pad2)",
+      "nodes": [
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "R45"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "3",
+          "pintype": "passive",
+          "ref": "RV15"
+        }
+      ]
+    },
+    {
+      "code": 78,
+      "name": "Net-(R47-Pad1)",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "R47"
+        },
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "RV16"
+        },
+        {
+          "pin": "2",
+          "pinfunction": "2",
+          "pintype": "passive",
+          "ref": "RV16"
+        }
+      ]
+    },
+    {
+      "code": 79,
+      "name": "unconnected-(J6-PadR)",
+      "nodes": [
+        {
+          "pin": "R",
+          "pintype": "passive",
+          "ref": "J6"
+        }
+      ]
+    },
+    {
+      "code": 80,
+      "name": "vbias",
+      "nodes": [
+        {
+          "pin": "1",
+          "pinfunction": "1",
+          "pintype": "passive",
+          "ref": "C2"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "IN+",
+          "pintype": "input",
+          "ref": "IC1"
+        },
+        {
+          "pin": "6",
+          "pinfunction": "IN-",
+          "pintype": "input",
+          "ref": "IC1"
+        },
+        {
+          "pin": "7",
+          "pinfunction": "OUT",
+          "pintype": "output",
+          "ref": "IC1"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "IN+",
+          "pintype": "input",
+          "ref": "IC2"
+        },
+        {
+          "pin": "5",
+          "pinfunction": "IN+",
+          "pintype": "input",
+          "ref": "IC2"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "IN+",
+          "pintype": "input",
+          "ref": "IC3"
+        },
+        {
+          "pin": "5",
+          "pinfunction": "IN+",
+          "pintype": "input",
+          "ref": "IC3"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "IN+",
+          "pintype": "input",
+          "ref": "IC4"
+        },
+        {
+          "pin": "5",
+          "pinfunction": "IN+",
+          "pintype": "input",
+          "ref": "IC4"
+        },
+        {
+          "pin": "3",
+          "pinfunction": "IN+",
+          "pintype": "input",
+          "ref": "IC5"
+        },
+        {
+          "pin": "5",
+          "pinfunction": "IN+",
+          "pintype": "input",
+          "ref": "IC5"
+        }
+      ]
+    }
+  ],
+  "statistics": {
+    "components": 114,
+    "connected_pins": 280,
+    "nets": 80
+  }
+}

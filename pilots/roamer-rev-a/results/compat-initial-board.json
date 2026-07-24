@@ -1,0 +1,55 @@
+{
+  "bytes": 5429,
+  "categories": {
+    "footprint": {
+      "aggregate_sha256": "b2fc64631db98da5f5f301f8807740030c8eb4d3a5d4707257580169a3225883",
+      "count": 1
+    },
+    "general": {
+      "aggregate_sha256": "bd8689004b2696482ef3e5d91f5d46385dd07278ad1e7c1c438d195672e7a99d",
+      "count": 1
+    },
+    "generator": {
+      "aggregate_sha256": "1c9af8e2ed4ab5d3a3b2bd556e2fe69b8d811eb8102981a083bcc3001936e802",
+      "count": 1
+    },
+    "generator_version": {
+      "aggregate_sha256": "5cb42617fafffc17ac495b00b59a8f130e39fde94fbabf754f76387ecd2ccca5",
+      "count": 1
+    },
+    "layers": {
+      "aggregate_sha256": "54b0389107f9146520a2aa6e075c80eccb7bcad386ea6d6cdd2f524447c4ca49",
+      "count": 1
+    },
+    "net": {
+      "aggregate_sha256": "a5bd081ebb4955743f589154fb209ccb09da91bd5354878f572344c380ca5989",
+      "count": 2
+    },
+    "paper": {
+      "aggregate_sha256": "a9ac3ea224d72f3f5e340674031a56dfe25284dbd06b499d30a300c4eb356f9a",
+      "count": 1
+    },
+    "setup": {
+      "aggregate_sha256": "9c264c4c311990dbde0be927fedf083a990be2d0066aba5d353408813ffca6be",
+      "count": 1
+    },
+    "version": {
+      "aggregate_sha256": "9fa84f745e92b80def170f757b0b8d1a36095a45528477ac90926f625f1b0e5c",
+      "count": 1
+    }
+  },
+  "footprint_placements": [
+    {
+      "at": "0 0 0",
+      "layer": "F.Cu",
+      "reference": "R1",
+      "uuid": "7c574ae8-3914-404f-8df4-c4d14642524b"
+    }
+  ],
+  "path": "pilots/roamer-rev-a/compat/project/layouts/default/default.kicad_pcb",
+  "sha256": "235f49d6791204b4b0306b6353d4bf55634c32f96de40dc6baf66692a8d626d0",
+  "user_art": {
+    "aggregate_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "count": 0
+  }
+}

@@ -1,0 +1,7 @@
+.state/
+toolchain/.venv/
+toolchain/.uv-cache/
+build/
+results/generated/
+scripts/__pycache__/
+*.log

@@ -1,0 +1,136 @@
+(footprint "Romi_Chassis_BatteryContactPair_2Slot_14_50mm"
+	(version 20260206)
+	(generator "pcbnew")
+	(generator_version "10.0")
+	(layer "F.Cu")
+	(descr "Romi chassis battery contact solder-slot pair, 1.02mm x 4.06mm plated slots on 14.50086mm pitch, derived from Pololu rom04a drill guide 0J1260")
+	(tags "Romi Pololu battery contact plated slot 14.50mm")
+	(property "Reference" "REF**"
+		(at 0 -11.6 0)
+		(layer "F.SilkS")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "Romi_Chassis_BatteryContactPair_2Slot_14_50mm"
+		(at 0 11.6 0)
+		(layer "F.Fab")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr through_hole)
+	(fp_line
+		(start -2 -10.2)
+		(end 2 -10.2)
+		(stroke
+			(width 0.12)
+			(type solid)
+		)
+		(layer "F.SilkS")
+	)
+	(fp_line
+		(start 2 -10.2)
+		(end 2 10.2)
+		(stroke
+			(width 0.12)
+			(type solid)
+		)
+		(layer "F.SilkS")
+	)
+	(fp_line
+		(start 2 10.2)
+		(end -2 10.2)
+		(stroke
+			(width 0.12)
+			(type solid)
+		)
+		(layer "F.SilkS")
+	)
+	(fp_line
+		(start -2 10.2)
+		(end -2 -10.2)
+		(stroke
+			(width 0.12)
+			(type solid)
+		)
+		(layer "F.SilkS")
+	)
+	(fp_text user "+"
+		(at 3.3 7.25043 0)
+		(layer "F.SilkS")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(fp_text user "-"
+		(at 3.3 -7.25043 0)
+		(layer "F.SilkS")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(fp_line
+		(start -2.25 -10.4)
+		(end 2.25 -10.4)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+	)
+	(fp_line
+		(start 2.25 -10.4)
+		(end 2.25 10.4)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+	)
+	(fp_line
+		(start 2.25 10.4)
+		(end -2.25 10.4)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+	)
+	(fp_line
+		(start -2.25 10.4)
+		(end -2.25 -10.4)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(layer "F.CrtYd")
+	)
+	(pad "1" thru_hole oval
+		(at 0 7.25043)
+		(size 2.7 5.7)
+		(drill oval 1.02 4.06)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+	)
+	(pad "2" thru_hole oval
+		(at 0 -7.25043)
+		(size 2.7 5.7)
+		(drill oval 1.02 4.06)
+		(layers "*.Cu" "*.Mask")
+		(remove_unused_layers no)
+	)
+	(embedded_fonts no)
+)

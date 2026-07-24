@@ -1,0 +1,26 @@
+{
+  "decision": "stop-before-full-port",
+  "fixture": {
+    "footprints": 1,
+    "kicad_10_rendered_after_sync": null,
+    "kicad_10_rendered_before_sync": true,
+    "sha256_after": "65e2dc06fd15dfd8d350b1ddd544bb14691f59971350c4f2304960ffe7e4565a",
+    "sha256_before": "65e2dc06fd15dfd8d350b1ddd544bb14691f59971350c4f2304960ffe7e4565a",
+    "user_art_items": 9
+  },
+  "status": "blocked",
+  "sync": {
+    "expected_parser_failure_matched": true,
+    "input_unchanged_after_failure": {
+      "footprint_placements": true,
+      "user_art": true,
+      "whole_file": true
+    },
+    "returncode": 1
+  },
+  "toolchain": {
+    "atopile": "0.15.7",
+    "fixture_board_format": "20260206",
+    "kicad": "10.0.3"
+  }
+}

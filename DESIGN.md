@@ -38,6 +38,13 @@ own everything mechanical around KiCad board design for JLCPCB fab.
 
 ## Decision record
 
+- **2026-07-24 — atopile pilot blocked on KiCad 10 PCB parsing.** Pinned
+  atopile `0.15.7` successfully builds a KiCad 9 fixture but rejects the same
+  KiCad `10.0.3` fixture at the first named-net pad (`(net "2")`), before
+  synchronization. The input remains byte-identical after failure. Full Roamer
+  translation stops at the compatibility gate; resume only with demonstrated
+  KiCad 10 reader/writer support or an explicit compiler-fallback decision.
+  Reproduction and evidence: `pilots/roamer-rev-a/REPORT.md`.
 - **2026-07-24 — capture ruled toil, layout ruled art.** Consequences:
   - **Option B** (pipeline automator: human hand-draws schematics in KiCad, tool
     automates around them) — **rejected**. Its wall around capture was forced by
@@ -329,7 +336,7 @@ capture is code).
 
 | Cost | Mitigation |
 |---|---|
-| Bench/bringup schematic is generated, not drawn | prettified block renders + board render + interactive BOM; judge in pilot |
+| Schematic is generated, not drawn — and user reviews it visually **in-loop**, not just at bench | hierarchy makes it tractable: block-diagram top + small per-module sheets (flat full-board render is a non-goal); atopile viewer first, own `.kicad_sch`-emit render path as fallback; pilot criterion 3 |
 | Compiler dependency (atopile young) | SKiDL fallback, then option D; ejection: netlist + `.kicad_pcb` are plain KiCad — boards outlive tool |
 | Board-1 cost (DSL + ioc2code + rules port) | crossover ~board 3–5 — hypothesis; pilot + early boards test it |
 | Pin swap during routing re-coded by hand | KiCad is forward-annotation-dominant anyway |
@@ -343,12 +350,19 @@ Port one small already-fabbed board to atopile. Pass/fail:
 1. ioc2code feasibility (parse `.ioc` → MCU module).
 2. Typed-interface + assertion expressiveness covers the JLC rule set;
    compiler-native electrical checks adequate (no KiCad ERC in flow).
-3. Schematic render quality — bench + block presentation acceptable?
+3. **In-loop visual schematic review** (elevated to make-or-break
+   2026-07-24): viewer/renders good enough to eyeball every build — top
+   block diagram + per-module sheets; bench + block presentation included.
+   Miss → build own render path: emit per-module `.kicad_sch` (kiutils +
+   autolayout) → `kicad-cli sch export svg`; side effect: real KiCad ERC
+   returns to the flow.
 4. **Sync contract holds** (see Handoff): no-op idempotence, intended deltas
    only, atomic failure, component/pad/net identity stability.
 5. Registry/versioning health, breaking-change cadence tolerable.
 
-Fail → SKiDL retry; fail again → option D.
+Failure stops the pilot and produces a decision report. A SKiDL retry or option
+D requires an explicit follow-up choice; the pilot does not silently change
+capture medium.
 
 ## Build order
 
@@ -363,7 +377,8 @@ Fail → SKiDL retry; fail again → option D.
 
 ## Open questions
 
-- Pilot board — which past board? (user picks)
+- Compiler path after the Roamer atopile block — wait for KiCad 10 support,
+  maintain a pinned parser patch, or authorize the SKiDL fallback.
 - Module layout-constraint schema — field list (`decap_max_mm`, keepout,
   `pair_with`…): define during pilot.
 - Layout copilot: file audits + `kicad-cli` renders are the headless default;
