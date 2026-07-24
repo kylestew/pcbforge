@@ -6,7 +6,9 @@ own everything mechanical around KiCad board design for JLCPCB fab.
 
 ## Constraints (fixed for v1)
 
-- **EDA:** KiCad (layout/routing + fab outputs; capture happens upstream in code)
+- **EDA:** KiCad **9.x, pinned** (layout/routing + fab outputs; capture happens
+  upstream in code). KiCad 10 excluded until atopile reads its boards
+  (atopile#1822) — see decision record for trigger.
 - **Capture:** circuit-as-code, atopile-class compiler (pilot decides; see Pilot)
 - **Fab:** JLCPCB only (assembly via LCSC parts)
 - **Boards:** hobby, 2 / 4 layer, medium density
@@ -59,6 +61,27 @@ own everything mechanical around KiCad board design for JLCPCB fab.
 - Kept from B (capture-agnostic, still right): spec-is-chat, spec.md two-zone
   format, session-resume doctrine, JLC rules profiles, fab-out, vendor-neutral
   CLI-as-interface, agent manuals shape.
+- **2026-07-24 — KiCad pinned to 9.x** (user call, post-pilot). atopile 0.15.7
+  (latest release) cannot read any KiCad-10-saved board (upstream
+  atopile#1822, open); KiCad 9 round-trip verified clean on a substantial
+  fixture. Consequences:
+  - New boards start in KiCad 9 format; per-project version pins already
+    doctrine.
+  - Existing KiCad 10 boards (Roamer rev-a) = reference oracles via
+    kicad-cli 10 exports only — never live projects on this track; no
+    downgrade (9 can't read 10; conversion risks human artwork).
+  - "Support" caveat stays open until phase 2: serializer known lossy on
+    corner data (teardrops, board setup, embedded fonts) on non-chosen
+    fixtures; managed no-op sync untested.
+  - **Migration trigger:** atopile ships KiCad 10 board support → rerun
+    roamer fixture acceptance (pilots/roamer-rev-a/REPORT.md) → migrate.
+    Netlist-route probe (compiler emits netlist, never touches board file)
+    stays the hedge if the trigger never fires.
+- **2026-07-24 — future boards only.** Legacy-board adoption (Roamer or any
+  pre-pcbforge board) is a non-goal; every board is born inside the flow
+  with compiler ownership metadata from day one. Consequence: the
+  114-component mixer port is descoped; pilot phase 2 folds into the first
+  fresh board (see Pilot).
 
 ## Capture medium: code
 
@@ -330,7 +353,8 @@ gen.
 
 **IS NOT (v1):** placement/routing by tool or AI, pinmux judgment (CubeMX
 owns), simulation, ordering/payments, hand-drawn schematic capture (moot —
-capture is code).
+capture is code), legacy-board adoption (future boards only — decision
+record).
 
 ## Known costs (accepted 2026-07-24)
 
@@ -342,10 +366,22 @@ capture is code).
 | Pin swap during routing re-coded by hand | KiCad is forward-annotation-dominant anyway |
 | Weird analog corner easier drawn | raw-netlist island module; ugly but contained |
 | Refdes churn breaks placement mapping | designator lock file (pilot criterion) |
+| KiCad pinned to previous major (9.x) while 10 is current | time-boxed: migration trigger + acceptance rerun defined in decision record; v1 hobby scope needs nothing 10-exclusive |
 
 ## Pilot (gate before full build)
 
-Port one small already-fabbed board to atopile. Pass/fail:
+**Status 2026-07-24 — phase 1 run, independently verified.** atopile 0.15.7 +
+KiCad 10.0.3: **blocked** (can't read KiCad-10 boards, atopile#1822;
+atomic-failure slice passed — input byte-identical after failed sync).
+atopile 0.15.7 + KiCad 9.0.9: reader/writer round-trip **clean** on official
+multichannel-mixer fixture (114 footprints / 576 segments / 29 vias / 6
+zones; canonicalization only — token-multiset identical, re-serialization
+byte-stable, KiCad renders result) → **KiCad pinned 9.x** (decision record).
+Evidence: `pilots/*/REPORT.md` + `results/`.
+
+Phase 2 — **the first fresh board is the pilot vehicle** (mixer port
+descoped; legacy adoption a non-goal). Remaining pass/fail, tested in board
+order:
 
 1. ioc2code feasibility (parse `.ioc` → MCU module).
 2. Typed-interface + assertion expressiveness covers the JLC rule set;
@@ -360,13 +396,24 @@ Port one small already-fabbed board to atopile. Pass/fail:
    only, atomic failure, component/pad/net identity stability.
 5. Registry/versioning health, breaking-change cadence tolerable.
 
-Failure stops the pilot and produces a decision report. A SKiDL retry or option
-D requires an explicit follow-up choice; the pilot does not silently change
-capture medium.
+Gates while building board 1:
+
+- **Week-1 kill switch (criterion 3):** judge viewer/in-loop review before
+  any layout investment. Inadequate + fallback render path unattractive →
+  stop, decision report; SKiDL or option D is an explicit follow-up choice,
+  never a silent medium change.
+- **Sync drill (criterion 4):** immediately after the first placement
+  session, scripted on the live board with the pilots' fingerprint tooling:
+  no-op rebuild fingerprint check, controlled add / rename / footprint-swap /
+  remove, induced build failure — placement and routing must survive all.
+- Board 1 carries scaffolding debt by design: `init`/`brief`/`fab-out` may be
+  manual or rough; MCU module may be AI-transcribed from `.ioc` with
+  STM32_open_pin_data cross-check while ioc2code matures.
 
 ## Build order
 
-1. **Pilot** (above) — decides compiler; everything else waits on it.
+1. **Pilot phase 2 = first fresh board** (above) — starts on the minimal
+   slice below; its gates decide compiler continuation.
 2. `agent/spec-interview.md` (reuse B's design — unchanged).
 3. `README.md` + `agent/operating-manual.md`.
 4. `init` + `ioc2code`.
@@ -377,12 +424,11 @@ capture medium.
 
 ## Open questions
 
-- Compiler path after the Roamer atopile block — wait for KiCad 10 support,
-  maintain a pinned parser patch, or authorize the SKiDL fallback.
 - Module layout-constraint schema — field list (`decap_max_mm`, keepout,
   `pair_with`…): define during pilot.
 - Layout copilot: file audits + `kicad-cli` renders are the headless default;
   supported KiCad IPC API for live in-editor checkpoints later (optional).
 - Review-depth default: which diffs demand user eyes?
-- Module distribution: atopile registry vs tool-repo local imports.
+- Module distribution: atopile registry vs tool-repo local imports (registry
+  component API was DNS-dead during pilot — local-first leaning).
 - LCSC/JLC stock API access (carried over from B — research).
