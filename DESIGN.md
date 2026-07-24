@@ -292,8 +292,9 @@ pcbforge/                    ← THE TOOL
   rules/jlc-2layer.json  jlc-4layer.json
   modules/                   versioned circuit modules + renders + index.md
   asserts/                   shared rule/assertion library
+  toolchain/                 pinned compiler env (uv.lock — atopile 0.15.7)
   scripts/                   init, ioc2code, brief, verify, verify_stock,
-                             fab_out, publish (+ compiler wrappers build/test)
+                             fab_out, publish; pinned wrappers: ato, kicad-cli (9)
   agent/
     operating-manual.md      what pcbforge is, phases, actor split, verbs
     spec-interview.md        step-one playbook + spec.md schema

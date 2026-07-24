@@ -1,0 +1,21 @@
+#!/bin/sh
+# Pinned atopile entry point. All pcbforge builds go through this wrapper:
+# non-interactive, with atopile/uv state contained under the tool repo.
+set -eu
+
+tool_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+
+export ATO_NON_INTERACTIVE=1
+export CI=1
+export FBRK_LOG_DIR="$tool_root/.state/logs"
+export UV_CACHE_DIR="$tool_root/.state/uv-cache"
+export UV_PYTHON_INSTALL_DIR="$tool_root/.state/python"
+export XDG_CONFIG_HOME="$tool_root/.state/xdg-config"
+
+venv_ato="$tool_root/toolchain/.venv/bin/ato"
+if [ ! -x "$venv_ato" ]; then
+  echo "pcbforge: toolchain venv missing — run: uv sync --project '$tool_root/toolchain'" >&2
+  exit 2
+fi
+
+exec "$venv_ato" "$@"

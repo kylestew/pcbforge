@@ -1,0 +1,13 @@
+#!/bin/sh
+# Pinned KiCad 9 CLI (decision record 2026-07-24: KiCad 9.x, not 10).
+# KiCad 10 is also installed on this machine — never resolve from PATH.
+set -eu
+
+KICAD9_CLI="/Applications/KiCad 9/KiCad.app/Contents/MacOS/kicad-cli"
+
+if [ ! -x "$KICAD9_CLI" ]; then
+  echo "pcbforge: KiCad 9 CLI not found at: $KICAD9_CLI" >&2
+  exit 2
+fi
+
+exec "$KICAD9_CLI" "$@"
