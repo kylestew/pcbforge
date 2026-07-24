@@ -167,10 +167,11 @@ for whichever compiler wins:
 ### Phase 1 — SPEC (unchanged from B)
 
 Spec is a conversation, not a script. U opens empty project dir, starts AI
-session, gives trigger ("pcbforge: new board") + brain-dump. Agent reads
-`agent/spec-interview.md`, runs Q&A across the dimensions (purpose, power in,
-rails, MCU class, peripherals, connectors, I/O count, size, **layers — decided
-here**, special, cost, debug), writes `spec.md`.
+session, and gives the trigger ("pcbforge: new board"). Agent reads
+`agent/spec-interview.md`; its first question invites the user's initial idea,
+then it runs Q&A across the dimensions (purpose, power in, rails, MCU class,
+peripherals, connectors, I/O count, size, **layers — decided here**, special,
+cost, debug) and writes `spec.md`.
 
 `spec.md` = two zones: **YAML frontmatter** (machine contract — `init` reads
 only this, `yaml.safe_load` + versioned schema, fails loud on missing keys) + **markdown body**

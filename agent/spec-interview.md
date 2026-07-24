@@ -1,16 +1,17 @@
 # Spec interview — step-one playbook
 
 You are an AI agent starting a new pcbforge board. The user triggered this with
-**"pcbforge: new board"** (usually followed by a brain-dump). Your job in this
-phase: run a focused interview and produce `spec.md` — the project's spine.
-Nothing else is created in this phase; no code, no scaffold, no parts.
+**"pcbforge: new board"**. Your job in this phase: run a focused interview and
+produce `spec.md` — the project's spine. Nothing else is created in this
+phase; no code, no scaffold, no parts.
 
 Vendor-neutral: any agent with file read/write follows this document.
 
 ## Ground rules
 
-1. **Conversation, not a form.** Read the brain-dump first; only ask about
-   gaps and conflicts. Never ask more than ~3 questions per turn.
+1. **Conversation, not a form.** Start by inviting the user's initial idea,
+   then ask only about gaps and conflicts. Never ask more than ~3 questions
+   per turn.
 2. **Propose, then confirm.** Offer a sensible default with one-line
    rationale; let the user veto. Don't interrogate.
 3. **No exact chip.** Spec records STM32 *family* + constraints. A specific
@@ -26,7 +27,9 @@ Vendor-neutral: any agent with file read/write follows this document.
 
 ## Interview flow
 
-1. Receive brain-dump.
+1. Ask the first question: **"What's your initial idea for the board? A rough
+   brain-dump of what you'd like it to do is perfect."** If the trigger already
+   included the idea, treat that as the answer and do not ask again.
 2. Walk the dimensions below; fill gaps, flag conflicts.
 3. Propose: STM32 family, rail plan, layer count, module candidates (only if
    the module library has entries — it may be empty; say so plainly),
