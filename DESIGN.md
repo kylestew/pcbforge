@@ -34,7 +34,7 @@ own everything mechanical around KiCad board design for JLCPCB fab.
 |---|---|
 | **User** | spec intent, architecture approval, **layout + routing (the art)**, order |
 | **AI agent** | spec interview, writes/edits all capture code, part selection, layout spotter, review |
-| **Compiler/scripts** | netlist + BOM emission, assertions, ERC/DRC, briefs, fab-out — deterministic, free |
+| **Compiler/scripts** | netlist + BOM emission, assertions, electrical checks/DRC, briefs, fab-out — deterministic, free (stock queries excepted: live network) |
 
 ## Decision record
 
@@ -72,6 +72,17 @@ Schematic" (F8) sends pure data — components (refdes + footprint ID + fields)
 and nets (name → pin list). Graphics never reach the board file. **Code capture
 replaces eeschema as producer of that payload; pcbnew never knows.**
 
+**Ownership invariant — the code↔KiCad contract:**
+
+- Circuit source exclusively owns: component identity, footprint assignment,
+  fields, electrical connectivity.
+- `.kicad_pcb` exclusively owns: placement, routing, vias, zones, board
+  geometry — all spatial work, all human.
+- Sync modifies compiler-owned data only and must preserve user-owned
+  artwork. No exceptions, no silent repair.
+
+Mechanics:
+
 - Each part in code declares footprint ID + LCSC#; pin→net map falls out of
   connections.
 - Route into board, two options: classic netlist import (File → Import
@@ -80,12 +91,19 @@ replaces eeschema as producer of that payload; pcbnew never knows.**
   with pads bound to nets).
 - In pcbnew: new footprints arrive in a pile, pads pre-bound, ratsnest shows
   all connectivity. User places and routes.
-- **Re-sync loop:** edit code → rebuild → board updates in place. Placed
-  footprints keep position; new parts arrive unplaced; deleted flagged.
-  Matching by refdes ⇒ **refdes stability required** (designator lock file —
-  pilot criterion).
 - Footprint geometry: `fp-lib-table` → official KiCad libs first; generate +
   verify against datasheet only when missing (rule kept from B).
+
+**Sync contract** — required behavior; *hypothesis until the pilot proves it*
+for whichever compiler wins:
+
+- No-op rebuild: placement, tracks, vias, zones, rules, geometry byte-stable.
+- Add/change/remove in code → only the intended deltas on the board.
+- Net rename, footprint swap, deletion: defined, safe, documented behavior.
+- Failed build leaves the last valid `.kicad_pcb` untouched (atomic write).
+- Clean clone + locked deps rebuilds reproducibly.
+- Identity stable at component/pad/net level (UUIDs), not merely refdes;
+  designator lock file still required on top.
 
 ## Workflow
 
@@ -99,10 +117,12 @@ replaces eeschema as producer of that payload; pcbnew never knows.**
               peripherals, typed interfaces), showing block renders for
               proposed reuse. U approves — the main human gate on capture.
 4. MCU        U: CubeMX pinmux (judgment) → T: ioc2code parses .ioc →
-              generates MCU module. Pin transcription errors: extinct.
+              generates MCU module. Manual pin transcription eliminated;
+              conversion validated against the .ioc, not trusted.
 5. IMPLEMENT  AI writes module bodies: parts pinned with LCSC#, values,
               pullups, decoupling per rules. U reviews at chosen depth.
-6. build+test T: compile → netlist + BOM; assertions + ERC; fail loud.
+6. build+test T: compile → netlist + BOM; assertions + compiler-native
+              electrical checks; fail loud.
 7. brief      T: placement brief from module constraints; net classes +
               rules seeded into .kicad_pcb — canvas primed.
 8. LAYOUT     U — THE ART. AI spotter on request (see Layout copilot).
@@ -123,7 +143,7 @@ rails, MCU class, peripherals, connectors, I/O count, size, **layers — decided
 here**, special, cost, debug), writes `spec.md`.
 
 `spec.md` = two zones: **YAML frontmatter** (machine contract — `init` reads
-only this, plain yaml.load, fails loud on missing keys) + **markdown body**
+only this, `yaml.safe_load` + versioned schema, fails loud on missing keys) + **markdown body**
 (human intent, for the user and future AI sessions). AI keeps frontmatter in
 sync with prose. No exact chip in spec — family + constraints only, unless user
 names a part. Schema lives in `agent/spec-interview.md`.
@@ -159,8 +179,13 @@ Hard rule: **spotter, not painter.** Output always words + measurements.
 - **Parameterized:** `Ldo3V3(input_max_v=6)` — one module, many variants.
 - **Versioned + imported**, not copied. Version pin keeps fab-reproducibility
   (vendoring mechanism per compiler — pilot decides).
-- **Publish is a side effect:** anything built is already library-shaped.
-  Flywheel turns itself; no harvest curation step.
+- **Publish is cheap, not free:** the artifact is already library-shaped —
+  no extract/sanitize/redraw labor — but curation still gates: provenance
+  (which board proved it), interface freeze, docs, version. Flywheel
+  advantage is zero format conversion, not zero judgment.
+- **Imported layout is discarded by default.** Compiler packages may carry
+  layout data; applying it requires an explicit user-approved action. Sync
+  never silently touches human artwork (see ownership invariant).
 - **No MCU module** — MCU is per-project, generated from `.ioc`.
 
 ### Typed interfaces (replaces net-naming canon)
@@ -199,12 +224,30 @@ rule: every I2C bus has exactly one pullup pair
 ```
 
 Every board's postmortem adds a rule; all future boards inherit it. The
-assertion suite is the floor under a hands-off human. AI netlist review stays
-as second layer — catches what nobody encoded yet.
+assertion suite is the floor under a hands-off human — but it proves only
+what's encoded. AI netlist review stays as second layer; catches what nobody
+encoded yet.
 
-**BOM by construction:** LCSC# lives in module source → BOM is compiler
-output → schematic↔BOM drift is not a possible bug. `verify-stock` re-checks
-stock/price at JLC; AI suggests alternates for dead stock / extended→basic.
+Electrical validation is **compiler-native** (connectivity/drive checks on
+the resolved graph). KiCad ERC exists only if a real `.kicad_sch` is emitted —
+this flow doesn't promise one. DRC runs for real, on the `.kicad_pcb`.
+
+**BOM by construction:** BOM and connectivity derive from the same resolved
+component graph — they cannot diverge from each other. (Wrong part choice
+still possible; that's review + assertions.) `verify-stock` is a live JLC
+query — time-dependent, not deterministic; it **reports** availability and
+proposes alternates, never silently changes locked parts.
+
+## Reproducibility artifacts
+
+"Fab-reproducible years later" is a claim about files, so pin everything:
+
+- `.pcbforge`: exact compiler + KiCad versions; dependency lockfile w/ hashes.
+- Resolved selections recorded per refdes (MPN/LCSC#); generated-footprint
+  hashes.
+- `build` emits a manifest: input hashes + tool versions.
+- `fab-out` archives the set: final `.kicad_pcb`, BOM, CPL, Gerbers, DRC
+  report.
 
 ## Architecture — Tool vs Projects
 
@@ -259,8 +302,9 @@ shell + file read/write drives them. No plugin binding. Vendor-neutral.
 ## Command set
 
 `init`, `build`, `test`, `brief`, `verify`, `verify-stock`, `fab-out`,
-`publish`, `ioc2code`. Spec is not a verb — chat. `set-layers` folds into
-re-`init`/config edit.
+`publish`, `ioc2code`, `migrate`. Spec is not a verb — chat. **`init` is
+create-only** — refuses to touch an initialized project. Layer changes go
+through `migrate` (backup, rules swap, revalidation) — never re-`init`.
 
 ## Docs & bootstrap (kept from B, verbs updated)
 
@@ -287,7 +331,7 @@ capture is code).
 |---|---|
 | Bench/bringup schematic is generated, not drawn | prettified block renders + board render + interactive BOM; judge in pilot |
 | Compiler dependency (atopile young) | SKiDL fallback, then option D; ejection: netlist + `.kicad_pcb` are plain KiCad — boards outlive tool |
-| Board-1 cost (DSL + ioc2code + rules port) | crossover ~board 3–5; flywheel steeper after |
+| Board-1 cost (DSL + ioc2code + rules port) | crossover ~board 3–5 — hypothesis; pilot + early boards test it |
 | Pin swap during routing re-coded by hand | KiCad is forward-annotation-dominant anyway |
 | Weird analog corner easier drawn | raw-netlist island module; ugly but contained |
 | Refdes churn breaks placement mapping | designator lock file (pilot criterion) |
@@ -297,9 +341,11 @@ capture is code).
 Port one small already-fabbed board to atopile. Pass/fail:
 
 1. ioc2code feasibility (parse `.ioc` → MCU module).
-2. Typed-interface + assertion expressiveness covers the JLC rule set.
+2. Typed-interface + assertion expressiveness covers the JLC rule set;
+   compiler-native electrical checks adequate (no KiCad ERC in flow).
 3. Schematic render quality — bench + block presentation acceptable?
-4. Refdes/designator stability across rebuilds (placement survives).
+4. **Sync contract holds** (see Handoff): no-op idempotence, intended deltas
+   only, atomic failure, component/pad/net identity stability.
 5. Registry/versioning health, breaking-change cadence tolerable.
 
 Fail → SKiDL retry; fail again → option D.
@@ -320,8 +366,8 @@ Fail → SKiDL retry; fail again → option D.
 - Pilot board — which past board? (user picks)
 - Module layout-constraint schema — field list (`decap_max_mm`, keepout,
   `pair_with`…): define during pilot.
-- Layout copilot: file audits + SVG render review now; KiCad 9 IPC API live
-  in-editor checkpoints later?
+- Layout copilot: file audits + `kicad-cli` renders are the headless default;
+  supported KiCad IPC API for live in-editor checkpoints later (optional).
 - Review-depth default: which diffs demand user eyes?
 - Module distribution: atopile registry vs tool-repo local imports.
 - LCSC/JLC stock API access (carried over from B — research).
