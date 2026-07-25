@@ -1,0 +1,20 @@
+#!/bin/sh
+# Public pcbforge command dispatcher. The implementation runs inside the
+# repository's locked Python environment.
+set -eu
+
+tool_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+venv_python="$tool_root/toolchain/.venv/bin/python"
+
+if [ ! -x "$venv_python" ]; then
+  echo "pcbforge: toolchain venv missing — run: uv sync --project '$tool_root/toolchain'" >&2
+  exit 2
+fi
+
+if [ -n "${PYTHONPATH:-}" ]; then
+  export PYTHONPATH="$tool_root:$PYTHONPATH"
+else
+  export PYTHONPATH="$tool_root"
+fi
+
+exec "$venv_python" -m pcbforge.cli "$@"

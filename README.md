@@ -7,9 +7,9 @@ touches copper. Targets KiCad 9 + JLCPCB assembly + STM32.
 
 Full rationale, contracts, and decision history: [DESIGN.md](DESIGN.md).
 
-**Status:** pre-board-1. Pilot phase 1 done (toolchain verified); phase 2
-rides the first real board. Expect scaffolding debt: some steps below are
-manual until their scripts exist.
+**Status:** pre-board-1. Pilot phase 1 and project initialization are done;
+phase 2 rides the first real board. Some later workflow steps remain manual
+until their scripts exist.
 
 ## Requirements
 
@@ -22,11 +22,15 @@ One-time bootstrap:
 
 ```bash
 cd ~/Projects/pcbforge/toolchain && uv sync --frozen
+export PATH="$HOME/Projects/pcbforge/scripts:$PATH"
 ```
 
 Sanity: `./scripts/ato --version` → `0.15.7`, `./scripts/kicad-cli version`
 → `9.0.9`. Always use these wrappers, never a global `ato` or PATH
 `kicad-cli`.
+
+Persist the PATH line in your shell profile if desired. `pcbforge --help`
+should then show the available workflow verbs.
 
 ## Start a new board
 
@@ -39,8 +43,17 @@ Sanity: `./scripts/ato --version` → `0.15.7`, `./scripts/kicad-cli version`
    > pcbforge: new board
 
 3. The agent starts by asking for your initial idea, then interviews you and
-   writes `spec.md`. You gate it: when the spec is good, the project moves on
-   to scaffold → architecture → implementation.
+   writes `spec.md`. You gate it. When the spec is good, initialize the
+   create-only scaffold:
+
+   ```bash
+   pcbforge init
+   ```
+
+   Initialization validates `spec.md`, creates the atopile/KiCad 9 project,
+   applies conservative JLC rules, and smoke-builds it before installing any
+   generated files. The generated `AGENTS.md` then directs the AI through the
+   ARCHITECT playbook and its explicit user-approval gate.
 4. Your time concentrates at the end of the middle: **layout and routing in
    KiCad 9**, with the agent as spotter (briefs, audits, render review).
 5. `fab/` outputs upload to JLCPCB. Ordering stays human.
@@ -53,8 +66,14 @@ re-orients from `spec.md` and the files. No chat history needed.
 | Path | What |
 |---|---|
 | `DESIGN.md` | the contract — philosophy, workflow, invariants, decisions |
-| `agent/` | manuals the AI reads (`operating-manual`, `spec-interview`) |
+| `agent/` | AI manuals (`operating-manual`, `spec-interview`, `architect`) |
 | `toolchain/` | pinned compiler env (atopile 0.15.7, Python 3.14, uv.lock) |
-| `scripts/` | pinned wrappers (`ato`, `kicad-cli`) + verbs as they land |
-| `modules/` | circuit module library (grows per board; empty at start) |
+| `scripts/` | public `pcbforge` CLI + pinned wrappers (`ato`, `kicad-cli`) |
+| `pcbforge/` | CLI implementation and project scaffold generator |
+| `rules/` | versioned conservative JLC/KiCad rule profiles |
+| `modules/` | indexed circuit module library (explicitly empty at start) |
 | `pilots/` | pilot evidence: reports, scripts, machine-readable results |
+
+Existing initialized projects are not rewritten when agent guidance changes.
+The strengthened ARCHITECT instructions are generated for new projects only;
+older projects can read `agent/architect.md` directly.

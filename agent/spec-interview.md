@@ -156,8 +156,8 @@ special: []
 ## After the gate
 
 User declares spec good → next phase is `init` (project scaffold), then
-ARCHITECT (module graph proposal in code). Not this playbook's job — stop at
-a good `spec.md`.
+ARCHITECT per `agent/architect.md` (module graph proposal in code). Not this
+playbook's job — stop at a good `spec.md`.
 
 Session-resume note: any later session re-reads `spec.md` first. Keep the
 prose good enough that a cold agent recovers full intent from it.

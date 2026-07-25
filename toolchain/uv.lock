@@ -1096,10 +1096,14 @@ version = "0.0.0"
 source = { virtual = "." }
 dependencies = [
     { name = "atopile" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "atopile", specifier = "==0.15.7" }]
+requires-dist = [
+    { name = "atopile", specifier = "==0.15.7" },
+    { name = "pyyaml", specifier = "==6.0.3" },
+]
 
 [[package]]
 name = "pillow"

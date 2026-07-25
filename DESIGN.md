@@ -164,6 +164,19 @@ for whichever compiler wins:
               U optional prettify (the surviving drawing act).
 ```
 
+### Phase 3 — ARCHITECT
+
+The agent follows `agent/architect.md`. It maps every spec requirement to a
+functional block and compiler-native typed interface, keeps `src/main.ato` as
+a thin graph, and places project-local interface skeletons in separate source
+files. The MCU remains an interface-only per-project boundary until CubeMX.
+
+ARCHITECT contains no physical parts, footprints, pin assignments, or layout
+work. The skeleton must compile without changing the KiCad board. The review
+package covers the module graph, interfaces, spec coverage, reuse evidence,
+risks, diff, and build result. Explicit user approval is recorded in the
+`spec.md` Decisions log before the workflow may move to MCU.
+
 ### Phase 1 — SPEC (unchanged from B)
 
 Spec is a conversation, not a script. U opens empty project dir, starts AI
@@ -299,6 +312,7 @@ pcbforge/                    ← THE TOOL
   agent/
     operating-manual.md      what pcbforge is, phases, actor split, verbs
     spec-interview.md        step-one playbook + spec.md schema
+    architect.md             module-graph procedure + approval gate
     layout-copilot.md        spotter playbook: audits, render review, limits
   README.md                  quickstart (how to start a session)
 
@@ -408,9 +422,9 @@ Gates while building board 1:
   session, scripted on the live board with the pilots' fingerprint tooling:
   no-op rebuild fingerprint check, controlled add / rename / footprint-swap /
   remove, induced build failure — placement and routing must survive all.
-- Board 1 carries scaffolding debt by design: `init`/`brief`/`fab-out` may be
-  manual or rough; MCU module may be AI-transcribed from `.ioc` with
-  STM32_open_pin_data cross-check while ioc2code matures.
+- Board 1 carries scaffolding debt by design: `init` is implemented;
+  `brief`/`fab-out` may be manual or rough; MCU module may be AI-transcribed
+  from `.ioc` with STM32_open_pin_data cross-check while ioc2code matures.
 
 ## Build order
 
