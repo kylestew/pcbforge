@@ -1,0 +1,30 @@
+#!/bin/sh
+# Pinned STM32CubeMX 6.18 entry point for non-UI .ioc validation.
+set -eu
+
+CUBEMX_APP="/Applications/STMicroelectronics/STM32CubeMX.app"
+CUBEMX_BIN="$CUBEMX_APP/Contents/Resources/STM32CubeMX"
+CUBEMX_PLIST="$CUBEMX_APP/Contents/Info.plist"
+CUBEMX_EXPECTED="6.18"
+
+if [ ! -x "$CUBEMX_BIN" ] || [ ! -f "$CUBEMX_PLIST" ]; then
+  echo "pcbforge: STM32CubeMX 6.18 not found at: $CUBEMX_APP" >&2
+  exit 2
+fi
+
+installed=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$CUBEMX_PLIST")
+if [ "$installed" != "$CUBEMX_EXPECTED" ]; then
+  echo "pcbforge: expected STM32CubeMX $CUBEMX_EXPECTED at $CUBEMX_APP; found $installed" >&2
+  exit 2
+fi
+
+if [ "${1:-}" = "version" ]; then
+  if [ "$#" -ne 1 ]; then
+    echo "usage: cubemx version" >&2
+    exit 2
+  fi
+  echo "$installed"
+  exit 0
+fi
+
+exec "$CUBEMX_BIN" "$@"

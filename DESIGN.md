@@ -34,12 +34,21 @@ own everything mechanical around KiCad board design for JLCPCB fab.
 
 | Actor | Role |
 |---|---|
-| **User** | spec intent, architecture approval, **layout + routing (the art)**, order |
-| **AI agent** | spec interview, writes/edits all capture code, part selection, layout spotter, review |
+| **User** | spec intent, architecture approval, optional CubeMX review, **layout + routing (the art)**, order |
+| **AI agent** | spec interview, writes/edits all capture code, exact MCU/pin selection, part selection, layout spotter, review |
 | **Compiler/scripts** | netlist + BOM emission, assertions, electrical checks/DRC, briefs, fab-out — deterministic, free (stock queries excepted: live network) |
 
 ## Decision record
 
+- **2026-07-25 — MCU pinmux is AI-led; CubeMX review is optional.** After
+  ARCHITECT approval, the agent chooses the exact STM32/package, resolves the
+  pin mapping, and creates the canonical `firmware/<project>.ioc`. Pinned
+  STM32CubeMX 6.18 validates the file in non-UI mode through
+  `pcbforge check-ioc`; the user may open and edit it in CubeMX but does not
+  have to author it. A saved user edit is an explicit override and must be
+  revalidated and reconciled. Until `ioc2code` exists, the agent derives
+  `src/mcu.ato` manually and performs a one-to-one audit against the checked
+  `.ioc`.
 - **2026-07-24 — atopile pilot blocked on KiCad 10 PCB parsing.** Pinned
   atopile `0.15.7` successfully builds a KiCad 9 fixture but rejects the same
   KiCad `10.0.3` fixture at the first named-net pad (`(net "2")`), before
@@ -146,9 +155,9 @@ for whichever compiler wins:
 3. ARCHITECT  AI proposes module graph as code skeleton (power tree, MCU,
               peripherals, typed interfaces), showing block renders for
               proposed reuse. U approves — the main human gate on capture.
-4. MCU        U: CubeMX pinmux (judgment) → T: ioc2code parses .ioc →
-              generates MCU module. Manual pin transcription eliminated;
-              conversion validated against the .ioc, not trusted.
+4. MCU        AI selects exact STM32 + pins → creates .ioc → T: check-ioc;
+              U may review/edit in CubeMX. AI derives the MCU module manually
+              with a one-to-one audit until ioc2code is implemented.
 5. IMPLEMENT  AI writes module bodies: parts pinned with LCSC#, values,
               pullups, decoupling per rules. U reviews at chosen depth.
 6. build+test T: compile → netlist + BOM; assertions + compiler-native
@@ -169,13 +178,33 @@ for whichever compiler wins:
 The agent follows `agent/architect.md`. It maps every spec requirement to a
 functional block and compiler-native typed interface, keeps `src/main.ato` as
 a thin graph, and places project-local interface skeletons in separate source
-files. The MCU remains an interface-only per-project boundary until CubeMX.
+files. The MCU remains an interface-only per-project boundary until the
+AI-led MCU phase.
 
 ARCHITECT contains no physical parts, footprints, pin assignments, or layout
 work. The skeleton must compile without changing the KiCad board. The review
 package covers the module graph, interfaces, spec coverage, reuse evidence,
 risks, diff, and build result. Explicit user approval is recorded in the
 `spec.md` Decisions log before the workflow may move to MCU.
+
+### Phase 4 — MCU
+
+The agent follows `agent/mcu.md`. It converts the approved interface contract
+into a resource checklist, selects the exact orderable STM32/package, and asks
+the user only when a material tradeoff cannot be resolved from the spec and
+evidence. The agent assigns pins, modes, clocks, DMA/timer resources, SWD, and
+the optional debug UART, then creates `firmware/<project>.ioc`.
+
+The `.ioc` is authoritative for MCU identity, package, pins, peripherals, and
+clocks. `pcbforge check-ioc` validates its project contract and performs a
+non-mutating STM32CubeMX 6.18 load/save round trip. The agent presents the
+part rationale and readable mapping. CubeMX GUI review is optional; saved
+changes are deliberate overrides that require a semantic review and another
+check.
+
+`ioc2code` remains debt. Until it exists, the agent derives `src/mcu.ato`
+manually from the checked `.ioc`, independently audits every mapping, and
+builds before moving to IMPLEMENT.
 
 ### Phase 1 — SPEC (unchanged from B)
 
@@ -230,7 +259,8 @@ Hard rule: **spotter, not painter.** Output always words + measurements.
 - **Imported layout is discarded by default.** Compiler packages may carry
   layout data; applying it requires an explicit user-approved action. Sync
   never silently touches human artwork (see ownership invariant).
-- **No MCU module** — MCU is per-project, generated from `.ioc`.
+- **No shared MCU module** — MCU is per-project and derived from its checked
+  `.ioc`.
 
 ### Typed interfaces (replaces net-naming canon)
 
@@ -307,18 +337,21 @@ pcbforge/                    ← THE TOOL
   modules/                   versioned circuit modules + renders + index.md
   asserts/                   shared rule/assertion library
   toolchain/                 pinned compiler env (uv.lock — atopile 0.15.7)
-  scripts/                   init, ioc2code, brief, verify, verify_stock,
-                             fab_out, publish; pinned wrappers: ato, kicad-cli (9)
+  scripts/                   init, check-ioc, ioc2code, brief, verify,
+                             verify_stock, fab_out, publish; pinned wrappers:
+                             ato, kicad-cli (9), cubemx (6.18)
   agent/
     operating-manual.md      what pcbforge is, phases, actor split, verbs
     spec-interview.md        step-one playbook + spec.md schema
     architect.md             module-graph procedure + approval gate
+    mcu.md                   exact-device, pinmux, .ioc + audit procedure
     layout-copilot.md        spotter playbook: audits, render review, limits
   README.md                  quickstart (how to start a session)
 
 my-stm32-thing/              ← A PROJECT
   spec.md                    living design doc (the spine)
   src/                       circuit code (modules, board top)
+  firmware/<project>.ioc     authoritative MCU configuration
   my-stm32-thing.kicad_pcb   layout/routing (the art) + kicad_pro
   .pcbforge                  tool/compiler version pins
   fab/  bom/
@@ -347,10 +380,11 @@ shell + file read/write drives them. No plugin binding. Vendor-neutral.
 
 ## Command set
 
-`init`, `build`, `test`, `brief`, `verify`, `verify-stock`, `fab-out`,
-`publish`, `ioc2code`, `migrate`. Spec is not a verb — chat. **`init` is
-create-only** — refuses to touch an initialized project. Layer changes go
-through `migrate` (backup, rules swap, revalidation) — never re-`init`.
+`init`, `check-ioc`, `build`, `test`, `brief`, `verify`, `verify-stock`,
+`fab-out`, `publish`, `ioc2code`, `migrate`. Spec is not a verb — chat.
+**`init` is create-only** — refuses to touch an initialized project. Layer
+changes go through `migrate` (backup, rules swap, revalidation) — never
+re-`init`.
 
 ## Docs & bootstrap (kept from B, verbs updated)
 
@@ -362,15 +396,14 @@ through `migrate` (backup, rules swap, revalidation) — never re-`init`.
 
 ## Scope boundary
 
-**IS:** spec interview, code-capture toolchain (compiler wrapper, ioc2code,
-refdes lock), module library + publish + renders, assertion/check suite,
-layout copilot (brief + audits + render review), sourcing verify, fab output
-gen.
+**IS:** spec interview, AI-led exact MCU/pin selection, checked CubeMX `.ioc`,
+code-capture toolchain (compiler wrapper, ioc2code, refdes lock), module
+library + publish + renders, assertion/check suite, layout copilot (brief +
+audits + render review), sourcing verify, fab output gen.
 
-**IS NOT (v1):** placement/routing by tool or AI, pinmux judgment (CubeMX
-owns), simulation, ordering/payments, hand-drawn schematic capture (moot —
-capture is code), legacy-board adoption (future boards only — decision
-record).
+**IS NOT (v1):** placement/routing by tool or AI, simulation,
+ordering/payments, hand-drawn schematic capture (moot — capture is code),
+legacy-board adoption (future boards only — decision record).
 
 ## Known costs (accepted 2026-07-24)
 
@@ -399,7 +432,8 @@ Phase 2 — **the first fresh board is the pilot vehicle** (mixer port
 descoped; legacy adoption a non-goal). Remaining pass/fail, tested in board
 order:
 
-1. ioc2code feasibility (parse `.ioc` → MCU module).
+1. MCU slice: AI-authored `.ioc` + `check-ioc` is implemented; remaining gate
+   is ioc2code feasibility (parse checked `.ioc` → MCU module).
 2. Typed-interface + assertion expressiveness covers the JLC rule set;
    compiler-native electrical checks adequate (no KiCad ERC in flow).
 3. **In-loop visual schematic review** (elevated to make-or-break
@@ -422,9 +456,10 @@ Gates while building board 1:
   session, scripted on the live board with the pilots' fingerprint tooling:
   no-op rebuild fingerprint check, controlled add / rename / footprint-swap /
   remove, induced build failure — placement and routing must survive all.
-- Board 1 carries scaffolding debt by design: `init` is implemented;
-  `brief`/`fab-out` may be manual or rough; MCU module may be AI-transcribed
-  from `.ioc` with STM32_open_pin_data cross-check while ioc2code matures.
+- Board 1 carries scaffolding debt by design: `init` and `check-ioc` are
+  implemented; `brief`/`fab-out` may be manual or rough; the MCU module is
+  AI-transcribed from the checked `.ioc` with the one-to-one audit in
+  `agent/mcu.md` while ioc2code matures.
 
 ## Build order
 
@@ -432,7 +467,7 @@ Gates while building board 1:
    slice below; its gates decide compiler continuation.
 2. `agent/spec-interview.md` (reuse B's design — unchanged).
 3. `README.md` + `agent/operating-manual.md`.
-4. `init` + `ioc2code`.
+4. `init` + AI-led MCU playbook + `check-ioc` (implemented); then `ioc2code`.
 5. Assertion library + `build`/`test` wrappers.
 6. Layout copilot: `brief` + `verify` scripts + `agent/layout-copilot.md`.
 7. `fab-out`, `verify-stock`.

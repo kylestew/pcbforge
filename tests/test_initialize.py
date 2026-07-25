@@ -232,6 +232,7 @@ class InitializeTests(unittest.TestCase):
             self.assertTrue((project / "src" / "main.ato").is_file())
             self.assertTrue((project / "bom" / ".gitkeep").is_file())
             self.assertTrue((project / "fab" / ".gitkeep").is_file())
+            self.assertTrue((project / "firmware" / ".gitkeep").is_file())
             self.assertFalse((project / "build").exists())
 
             ato_yaml = (project / "ato.yaml").read_text(encoding="utf-8")
@@ -262,18 +263,22 @@ class InitializeTests(unittest.TestCase):
             self.assertIn("kicad: 9.0.9", pins)
             self.assertIn("jlc-2layer-conservative-v1", pins)
             pin_data = yaml.safe_load(pins)
-            self.assertEqual(pin_data["schema"], 2)
-            self.assertEqual(pin_data["guidance"]["agents_schema"], 2)
-            self.assertEqual(pin_data["guidance"]["architect_schema"], 1)
+            self.assertEqual(pin_data["schema"], 3)
+            self.assertEqual(pin_data["guidance"]["agents_schema"], 3)
+            self.assertEqual(pin_data["guidance"]["architect_schema"], 2)
+            self.assertEqual(pin_data["guidance"]["mcu_schema"], 1)
 
             agents = (project / "AGENTS.md").read_text(encoding="utf-8")
-            self.assertIn("pcbforge-agents-schema: 2", agents)
+            self.assertIn("pcbforge-agents-schema: 3", agents)
             self.assertIn("Never place, route, move", agents)
             self.assertIn("ready for architect", agents.lower())
             self.assertIn("/agent/architect.md", agents)
+            self.assertIn("/agent/mcu.md", agents)
             self.assertIn("/modules/index.md", agents)
             self.assertIn("ARCHITECT approved", agents)
             self.assertIn("Do not choose parts", agents)
+            self.assertIn("check-ioc", agents)
+            self.assertIn("optional CubeMX 6.18 review", agents)
 
         build_calls = [call for call in runner.calls if "build" in call[0]]
         self.assertEqual(len(build_calls), 1)
@@ -378,7 +383,7 @@ class GuidanceTests(unittest.TestCase):
     def test_architect_playbook_and_empty_catalog_are_explicit(self) -> None:
         playbook = (TOOL_ROOT / "agent" / "architect.md").read_text(encoding="utf-8")
         for required in (
-            "pcbforge-architect-schema: 1",
+            "pcbforge-architect-schema: 2",
             "src/modules/<snake_case>.ato",
             "src/mcu.ato",
             "ElectricPower",
@@ -386,9 +391,21 @@ class GuidanceTests(unittest.TestCase):
             "spec-to-module coverage",
             "board hash",
             "ARCHITECT approved",
-            "next phase is MCU/CubeMX",
+            "AI-led MCU workflow",
         ):
             self.assertIn(required, playbook)
+
+        mcu_playbook = (TOOL_ROOT / "agent" / "mcu.md").read_text(encoding="utf-8")
+        for required in (
+            "pcbforge-mcu-schema: 1",
+            "firmware/<project>.ioc",
+            "DEBUG_UART_TX",
+            "check-ioc",
+            "optional and is not an approval gate",
+            "one-to-one audit",
+            "IMPLEMENT as the next phase",
+        ):
+            self.assertIn(required, mcu_playbook)
 
         catalog = (TOOL_ROOT / "modules" / "index.md").read_text(encoding="utf-8")
         self.assertIn("No modules have been published yet", catalog)

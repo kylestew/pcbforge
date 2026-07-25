@@ -14,8 +14,8 @@ LCSC parts, one-offs, 2/4 layer.
 
 | Actor | Owns |
 |---|---|
-| **User** | spec intent, architecture approval, **layout + routing**, ordering |
-| **You (agent)** | spec interview, all capture code, part selection, layout spotting/audits, review |
+| **User** | spec intent, architecture approval, optional CubeMX review, **layout + routing**, ordering |
+| **You (agent)** | spec interview, all capture code, exact MCU/pin selection, part selection, layout spotting/audits, review |
 | **Compiler/scripts** | netlist/BOM emission, assertions, checks, fab outputs |
 
 Non-negotiable rules:
@@ -29,7 +29,8 @@ Non-negotiable rules:
 3. **KiCad 9 only.** Use the tool repo's `scripts/kicad-cli` (pinned 9.0.9)
    and `scripts/ato` (pinned atopile 0.15.7). Never a global `ato`, never
    PATH `kicad-cli` (KiCad 10 is installed but banned — it produces boards
-   the compiler cannot read; DESIGN.md decision record).
+   the compiler cannot read; DESIGN.md decision record). Use
+   `scripts/cubemx` for pinned CubeMX 6.18 command-line validation.
 4. **Ordering/money is human.** Generate `fab/` outputs; stop there.
 5. The user reviews capture at their chosen depth — surface meaningful
    diffs; don't bury decisions in bulk edits.
@@ -40,7 +41,7 @@ Non-negotiable rules:
 1. SPEC        you — interview per agent/spec-interview.md → spec.md
 2. init        `pcbforge init` validates spec + scaffolds and smoke-builds project
 3. ARCHITECT   follow agent/architect.md; code skeleton; USER approves
-4. MCU         user does CubeMX pinmux → .ioc → MCU module (see debt note)
+4. MCU         follow agent/mcu.md; AI selects pins → checked .ioc → MCU module
 5. IMPLEMENT   you write module bodies (LCSC parts, values, rules)
 6. build+test  scripts/ato build; assertions; fail loud
 7. brief       placement brief + net classes (manual/rough for now)
@@ -62,15 +63,16 @@ Non-negotiable rules:
 
 ## Current build state (honest — board 1 carries scaffolding debt)
 
-Exists today: pinned toolchain (`scripts/ato`, `scripts/kicad-cli`),
-`pcbforge init`, spec + ARCHITECT playbooks, an explicit empty module catalog,
-and pilot evidence (`pilots/`).
+Exists today: pinned toolchain (`scripts/ato`, `scripts/kicad-cli`,
+`scripts/cubemx`), `pcbforge init`, spec + ARCHITECT + MCU playbooks,
+`pcbforge check-ioc`, an explicit empty module catalog, and pilot evidence
+(`pilots/`).
 
 Not built yet (do manually, per DESIGN.md, and say you're doing it manually):
-`ioc2code` (transcribe the `.ioc` yourself and cross-check against
-STM32_open_pin_data — never trust your own transcription unchecked), `brief`,
-`verify` audits, `fab-out`, `verify-stock`. The module catalog is empty —
-propose architecture from scratch and say so; don't invent library modules.
+`ioc2code` (derive `src/mcu.ato` from the checked `.ioc` yourself and perform
+the one-to-one audit in `agent/mcu.md`), `brief`, `verify` audits, `fab-out`,
+`verify-stock`. The module catalog is empty — propose architecture from
+scratch and say so; don't invent library modules.
 
 Board-1 gates you must respect (DESIGN.md → Pilot): judge schematic-viewer
 adequacy BEFORE the user invests in layout (week-1 kill switch); run the

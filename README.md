@@ -16,6 +16,7 @@ until their scripts exist.
 - macOS with [uv](https://docs.astral.sh/uv/) on PATH
 - KiCad 9 app at `/Applications/KiCad 9/` (KiCad 10 is deliberately NOT used
   — see DESIGN.md decision record)
+- STM32CubeMX 6.18 at `/Applications/STMicroelectronics/STM32CubeMX.app`
 - An AI coding agent with shell + file access (any vendor)
 
 One-time bootstrap:
@@ -26,8 +27,8 @@ export PATH="$HOME/Projects/pcbforge/scripts:$PATH"
 ```
 
 Sanity: `./scripts/ato --version` → `0.15.7`, `./scripts/kicad-cli version`
-→ `9.0.9`. Always use these wrappers, never a global `ato` or PATH
-`kicad-cli`.
+→ `9.0.9`, and `./scripts/cubemx version` → `6.18`. Always use these
+wrappers, never global or PATH-resolved tools.
 
 Persist the PATH line in your shell profile if desired. `pcbforge --help`
 should then show the available workflow verbs.
@@ -54,9 +55,13 @@ should then show the available workflow verbs.
    applies conservative JLC rules, and smoke-builds it before installing any
    generated files. The generated `AGENTS.md` then directs the AI through the
    ARCHITECT playbook and its explicit user-approval gate.
-4. Your time concentrates at the end of the middle: **layout and routing in
+4. After ARCHITECT approval, the AI follows `agent/mcu.md`: it selects the
+   exact STM32 and pin mapping, creates `firmware/<project>.ioc`, and runs
+   `pcbforge check-ioc`. You may open the file in CubeMX 6.18 to review or
+   edit it, but CubeMX authoring is not required.
+5. Your time concentrates at the end of the middle: **layout and routing in
    KiCad 9**, with the agent as spotter (briefs, audits, render review).
-5. `fab/` outputs upload to JLCPCB. Ordering stays human.
+6. `fab/` outputs upload to JLCPCB. Ordering stays human.
 
 Resuming days later: just start a session in the project dir — the agent
 re-orients from `spec.md` and the files. No chat history needed.
@@ -66,14 +71,15 @@ re-orients from `spec.md` and the files. No chat history needed.
 | Path | What |
 |---|---|
 | `DESIGN.md` | the contract — philosophy, workflow, invariants, decisions |
-| `agent/` | AI manuals (`operating-manual`, `spec-interview`, `architect`) |
+| `agent/` | AI manuals (`operating-manual`, `spec-interview`, `architect`, `mcu`) |
 | `toolchain/` | pinned compiler env (atopile 0.15.7, Python 3.14, uv.lock) |
-| `scripts/` | public `pcbforge` CLI + pinned wrappers (`ato`, `kicad-cli`) |
+| `scripts/` | public `pcbforge` CLI + pinned wrappers (`ato`, `kicad-cli`, `cubemx`) |
 | `pcbforge/` | CLI implementation and project scaffold generator |
 | `rules/` | versioned conservative JLC/KiCad rule profiles |
 | `modules/` | indexed circuit module library (explicitly empty at start) |
 | `pilots/` | pilot evidence: reports, scripts, machine-readable results |
 
-Existing initialized projects are not rewritten when agent guidance changes.
-The strengthened ARCHITECT instructions are generated for new projects only;
-older projects can read `agent/architect.md` directly.
+Existing initialized projects are not rewritten automatically when agent
+guidance changes. Temper is manually migrated to the current guidance;
+other older projects can read `agent/architect.md` and `agent/mcu.md`
+directly until a general migration command exists.

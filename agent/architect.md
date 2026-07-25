@@ -1,4 +1,4 @@
-<!-- pcbforge-architect-schema: 1 -->
+<!-- pcbforge-architect-schema: 2 -->
 # pcbforge — ARCHITECT playbook
 
 This playbook operationalizes the ARCHITECT phase in
@@ -43,8 +43,9 @@ contract. Do not ask about details already settled by the spec.
   blocks.
 - Put functional blocks in `src/modules/<snake_case>.ato`, using PascalCase
   module names and snake_case instances.
-- Reserve `src/mcu.ato` for an interface-only `Mcu` placeholder. The MCU phase
-  replaces its body from CubeMX while preserving the approved public contract.
+- Reserve `src/mcu.ato` for an interface-only `Mcu` placeholder. The AI-led
+  MCU phase replaces its body from a checked `.ioc` while preserving the
+  approved public contract.
 - Give each module one clear responsibility. Connect modules with typed
   interfaces, not naming conventions:
 
@@ -95,5 +96,5 @@ After approval, append a dated decision in this exact form to the existing
 ```
 
 The approved code plus this decision are the durable gate across sessions.
-Report that the next phase is MCU/CubeMX and do not begin it without a new user
-request.
+Report that the next phase is the AI-led MCU workflow in `agent/mcu.md` and do
+not begin it without a new user request.

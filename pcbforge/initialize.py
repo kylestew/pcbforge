@@ -20,9 +20,10 @@ import yaml
 ATO_VERSION = "0.15.7"
 KICAD_VERSION = "9.0.9"
 SPEC_SCHEMA = 1
-PIN_SCHEMA = 2
-AGENTS_SCHEMA = 2
-ARCHITECT_GUIDE_SCHEMA = 1
+PIN_SCHEMA = 3
+AGENTS_SCHEMA = 3
+ARCHITECT_GUIDE_SCHEMA = 2
+MCU_GUIDE_SCHEMA = 1
 BOARD_ORIGIN_MM = 100.0
 
 REQUIRED_KEYS = {
@@ -656,11 +657,14 @@ cold start, then derive status from source, compiler output, and the KiCad board
 1. This file and `spec.md`.
 2. `{tool_root}/agent/operating-manual.md`.
 3. `{tool_root}/agent/architect.md` before doing ARCHITECT work.
+4. `{tool_root}/agent/mcu.md` before doing MCU work.
 
 ## Ownership
 
-- The user owns intent, architecture approval, layout, routing, and ordering.
-- The agent owns circuit code, part selection, checks, and written layout audits.
+- The user owns intent, architecture approval, optional CubeMX review, layout,
+  routing, and ordering.
+- The agent owns circuit code, exact MCU and pin selection, part selection,
+  checks, and written layout audits.
 - Never place, route, move, or “fix” copper. Never rewrite spatial board data.
 - Circuit source owns identity, footprints, fields, and connectivity.
 - `{spec.name}.kicad_pcb` owns all spatial work.
@@ -670,6 +674,7 @@ cold start, then derive status from source, compiler output, and the KiCad board
 - KiCad 9 only; KiCad 10 is incompatible with the pinned compiler.
 - Use `{tool_root}/scripts/ato`, never a global `ato`.
 - Use `{tool_root}/scripts/kicad-cli`, never a PATH `kicad-cli`.
+- Use `{tool_root}/scripts/cubemx` for command-line CubeMX 6.18 validation.
 - Ordering and spending remain human actions.
 
 ## Resume
@@ -694,8 +699,8 @@ phase, not component implementation:
    `src/modules/*.ato`; reserve `src/mcu.ato` for the per-project MCU boundary.
 4. Prefer `ElectricPower`, `I2C`, `SPI`, `UART`, `USB2_0_IF`, `CAN`, `SWD`,
    and `ElectricSignal`/`Electrical` over raw nets. Clarify `other` interfaces.
-5. Do not choose parts, footprints, LCSC numbers, resistor values, MCU pins,
-   or layout geometry. Do not begin CubeMX or implementation.
+5. Do not choose parts, footprints, LCSC numbers, resistor values, exact MCU
+   pins, or layout geometry. Do not begin the MCU or implementation phase.
 6. Build with the pinned compiler and require the PCB bytes/spatial content to
    remain unchanged because an architecture skeleton has no physical parts.
 7. Present the module graph, interface table, spec coverage, reuse status,
@@ -703,6 +708,23 @@ phase, not component implementation:
 8. After explicit approval, append
    `YYYY-MM-DD: ARCHITECT approved — <summary>` to the `spec.md` Decisions log,
    then stop at the MCU handoff. Never infer approval.
+
+## MCU phase
+
+After explicit ARCHITECT approval and a new MCU request, follow
+`{tool_root}/agent/mcu.md`:
+
+1. Select the exact STM32 and package, asking only when a material tradeoff is
+   unresolved.
+2. Assign every required interface, preserve SWD, label application pins, and
+   create the authoritative `firmware/{spec.name}.ioc`.
+3. Run `{tool_root}/scripts/pcbforge check-ioc` from this project and present
+   the exact part, pin table, clocks, peripherals, spare pins, and assumptions.
+4. Offer optional CubeMX 6.18 review. If the user saves changes, show the
+   semantic change and rerun the check.
+5. Until `ioc2code` exists, manually derive `src/mcu.ato` from the checked
+   `.ioc` and perform an explicit one-to-one audit. Never let it silently
+   diverge from the `.ioc`.
 """
 
 
@@ -744,6 +766,7 @@ def _render_pins(
         "guidance": {
             "agents_schema": AGENTS_SCHEMA,
             "architect_schema": ARCHITECT_GUIDE_SCHEMA,
+            "mcu_schema": MCU_GUIDE_SCHEMA,
         },
     }
     return yaml.safe_dump(pins, sort_keys=False)
@@ -772,6 +795,7 @@ def _render_scaffold(
     _write(stage / ".gitignore", _render_gitignore())
     _write(stage / "bom" / ".gitkeep", "")
     _write(stage / "fab" / ".gitkeep", "")
+    _write(stage / "firmware" / ".gitkeep", "")
     _write(
         stage / ".pcbforge",
         _render_pins(spec, metadata, profile, profile_path),
@@ -790,6 +814,7 @@ def _generated_paths(spec: ProjectSpec) -> list[Path]:
         Path(".gitignore"),
         Path("bom"),
         Path("fab"),
+        Path("firmware"),
         Path(".pcbforge"),
     ]
 
