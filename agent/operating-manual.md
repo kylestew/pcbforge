@@ -40,7 +40,7 @@ Non-negotiable rules:
 ```
 1. SPEC        you — interview per agent/spec-interview.md → spec.md
 2. init        `pcbforge init` validates spec + scaffolds and smoke-builds project
-3. ARCHITECT   follow agent/architect.md; code skeleton; USER approves
+3. ARCHITECT   code skeleton + tracked Mermaid diagram; USER approves both
 4. MCU         follow agent/mcu.md; AI selects pins → checked .ioc → MCU module
 5. IMPLEMENT   you write module bodies (LCSC parts, values, rules)
 6. build+test  scripts/ato build; assertions; fail loud
@@ -55,11 +55,18 @@ Non-negotiable rules:
 
 ## Session resume (run this on every cold start in a project)
 
-1. Read this manual, then the project's `spec.md` (intent + contract).
-2. Derive state from files — never trust a status note over files:
-   `ato build` result, which modules exist in `src/`, board file present?
-   placed? routed? `fab/` generated?
-3. Report where the board stands, propose the next step, wait for the user.
+1. Read this manual, then the project's `spec.md` and tracked `STATUS.md`.
+2. Run `pcbforge status --check --write`. The dashboard combines live file
+   evidence, current check fingerprints, and explicit human gates; a note
+   never overrides missing evidence.
+3. Report the current focus, blockers, and next actions, then wait for the
+   user where the workflow requires a gate.
+
+Refresh `STATUS.md` after meaningful transitions. Record explicit gates with
+`pcbforge status mark <phase> complete --note "<reason>"`; never infer
+architecture approval, layout/routing completion, or ordering. Use `blocked`
+for an actionable blocker, `reopened` when earlier work changes, and `skipped`
+only for optional publish.
 
 ## Current build state (honest — board 1 carries scaffolding debt)
 

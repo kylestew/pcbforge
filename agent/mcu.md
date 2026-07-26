@@ -8,10 +8,11 @@ it. The user may review the result in CubeMX, but does not have to author it.
 
 ## Preconditions
 
-1. Read the project-local `AGENTS.md`, the complete `spec.md`,
+1. Read the project-local `AGENTS.md`, the complete `spec.md`, `STATUS.md`,
    `agent/operating-manual.md`, and the approved ARCHITECT source.
-2. Require an explicit `ARCHITECT approved` decision in `spec.md`. If it is
-   missing, stop at the gate rather than inferring approval from source files.
+2. Run `pcbforge status` and require ARCHITECT to be complete. If its explicit
+   approval event or current evidence is missing, stop at the gate rather than
+   inferring approval from source files.
 3. Run the pinned `scripts/ato build` and record the KiCad board hash. MCU work
    may change connectivity later, but it must never change spatial board data.
 4. Treat `src/mcu.ato` as an interface contract at the start of this phase.
@@ -123,5 +124,6 @@ Perform a one-to-one audit after transcription:
 
 Run the pinned compiler and present the source diff and audit result. The MCU
 phase is complete only when the `.ioc` passes, the derived module matches it,
-and the approved architecture contract is still satisfied. Then report
-IMPLEMENT as the next phase.
+and the approved architecture contract is still satisfied. Record the audit
+with `pcbforge status mark mcu complete --note "<part and audit summary>"`,
+then report IMPLEMENT as the next phase.

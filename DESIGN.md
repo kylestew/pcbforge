@@ -149,7 +149,8 @@ for whichever compiler wins:
 **U** user, **T** tool/compiler, **AI** agent.
 
 ```
-1. SPEC       chat interview → spec.md (frontmatter contract + prose body).
+1. SPEC       chat interview → spec.md (frontmatter contract + prose body)
+              + tracked STATUS.md; U records approval through status.
               Not a CLI verb — chat is the medium (see Spec).
 2. init       T: spec.md → compiler project + KiCad shell + JLC rules profile
 3. ARCHITECT  AI proposes module graph as code skeleton (power tree, MCU,
@@ -183,9 +184,15 @@ AI-led MCU phase.
 
 ARCHITECT contains no physical parts, footprints, pin assignments, or layout
 work. The skeleton must compile without changing the KiCad board. The review
-package covers the module graph, interfaces, spec coverage, reuse evidence,
-risks, diff, and build result. Explicit user approval is recorded in the
-`spec.md` Decisions log before the workflow may move to MCU.
+package covers the tracked `docs/architecture.md` Mermaid graph, interfaces,
+spec coverage, reuse evidence, risks, source-to-diagram audit, diff, and build
+result. The AI drafts the diagram with the module graph and keeps it
+synchronized while revising source. Source remains authoritative; the diagram
+contains functional modules and typed interfaces, never parts, pins, or
+spatial detail. Explicit user approval is recorded as an append-only STATUS
+event referencing the diagram before the workflow may move to MCU. Design
+rationale may remain in the `spec.md` Decisions log, but prose is not the
+workflow gate.
 
 ### Phase 4 — MCU
 
@@ -220,6 +227,14 @@ only this, `yaml.safe_load` + versioned schema, fails loud on missing keys) + **
 (human intent, for the user and future AI sessions). AI keeps frontmatter in
 sync with prose. No exact chip in spec — family + constraints only, unless user
 names a part. Schema lives in `agent/spec-interview.md`.
+
+`STATUS.md` is created after the first valid spec draft and survives `init`.
+Its YAML frontmatter contains append-only workflow events and fingerprints for
+saved build, IOC, and DRC results. Its generated body is the single user-facing
+dashboard: current focus, required-phase count, blockers, next actions, all 13
+phases, and recent progress. Static refreshes inspect files; explicit
+`--check` refreshes deterministic evidence. Human-owned gates are never
+inferred from board contents.
 
 ## Layout copilot — serving the art
 
@@ -350,7 +365,9 @@ pcbforge/                    ← THE TOOL
 
 my-stm32-thing/              ← A PROJECT
   spec.md                    living design doc (the spine)
+  STATUS.md                  tracked generated workflow dashboard + gates
   src/                       circuit code (modules, board top)
+  docs/architecture.md       tracked Mermaid architecture review artifact
   firmware/<project>.ioc     authoritative MCU configuration
   my-stm32-thing.kicad_pcb   layout/routing (the art) + kicad_pro
   .pcbforge                  tool/compiler version pins
@@ -366,12 +383,14 @@ context by `cd`-ing in — zero dependence on prior conversation.
 |---|---|---|
 | Project-local agent instructions | "what is this + how to operate" | dropped by `init` |
 | `spec.md` | "what are we building + why" | contract + prose |
-| Source tree + board file | "where are we right now" | **`build && test` output = status report** |
+| `STATUS.md` | "what is done, blocked, and next" | evidence + append-only gates |
+| Source tree + board file | "what evidence exists right now" | checked by `pcbforge status` |
 
-Orient routine: read instructions → read spec.md → run `build && test` +
-inspect `.kicad_pcb` → report step + propose next. Progress re-derived from
-files, never a stored status field. Code capture strengthens this: compile +
-test output is machine-precise progress.
+Orient routine: read instructions → read spec.md + STATUS.md → run
+`pcbforge status --check --write` → report the current focus, blockers, and
+next actions. Derived file/check evidence carries mechanical truth; append-only
+events carry explicit human declarations. Neither can override a missing
+requirement from the other.
 
 ## Agent tool access
 
@@ -380,7 +399,7 @@ shell + file read/write drives them. No plugin binding. Vendor-neutral.
 
 ## Command set
 
-`init`, `check-ioc`, `build`, `test`, `brief`, `verify`, `verify-stock`,
+`status`, `init`, `check-ioc`, `build`, `test`, `brief`, `verify`, `verify-stock`,
 `fab-out`, `publish`, `ioc2code`, `migrate`. Spec is not a verb — chat.
 **`init` is create-only** — refuses to touch an initialized project. Layer
 changes go through `migrate` (backup, rules swap, revalidation) — never

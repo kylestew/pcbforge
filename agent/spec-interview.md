@@ -2,8 +2,8 @@
 
 You are an AI agent starting a new pcbforge board. The user triggered this with
 **"pcbforge: new board"**. Your job in this phase: run a focused interview and
-produce `spec.md` — the project's spine. Nothing else is created in this
-phase; no code, no scaffold, no parts.
+produce `spec.md` — the project's spine — plus its generated `STATUS.md`
+workflow dashboard. No code, scaffold, or parts are created in this phase.
 
 Vendor-neutral: any agent with file read/write follows this document.
 
@@ -35,8 +35,11 @@ Vendor-neutral: any agent with file read/write follows this document.
    the module library has entries — it may be empty; say so plainly),
    rough BOM feasibility vs ceiling.
 4. Draft `spec.md` (format below). Show it.
-5. Iterate until the user declares it good.
-6. Remind: `spec.md` is a **living doc** — later changes go here first, and
+5. Once the draft validates, run `pcbforge status --write`; refresh the
+   dashboard after material revisions.
+6. Iterate until the user declares it good, then record the gate with
+   `pcbforge status mark spec complete --note "<approval summary>"`.
+7. Remind: `spec.md` is a **living doc** — later changes go here first, and
    frontmatter must be updated in the same edit as the prose.
 
 ## Dimensions
@@ -155,9 +158,10 @@ special: []
 
 ## After the gate
 
-User declares spec good → next phase is `init` (project scaffold), then
-ARCHITECT per `agent/architect.md` (module graph proposal in code). Not this
-playbook's job — stop at a good `spec.md`.
+User declares spec good and its STATUS gate is recorded → next phase is `init`
+(project scaffold), then ARCHITECT per `agent/architect.md` (module graph
+proposal in code). Not this playbook's job — stop at the approved spec and
+refreshed dashboard.
 
 Session-resume note: any later session re-reads `spec.md` first. Keep the
 prose good enough that a cold agent recovers full intent from it.

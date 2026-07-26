@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import tempfile
 import unittest
@@ -19,10 +20,43 @@ from pcbforge.initialize import (
     initialize_project,
     read_spec,
 )
+from pcbforge.status import mark_status, read_status_document, write_status
 
 TOOL_ROOT = Path(__file__).resolve().parents[1]
 
 ARCHITECTURE_FILES = {
+    "docs/architecture.md": """<!-- pcbforge-architecture-diagram-schema: 1 -->
+# garden-logger architecture
+
+> Architecture only: functional modules and typed interfaces. No parts, values,
+> footprints, MCU pins, CubeMX configuration, placement, or routing.
+
+## Functional graph
+
+```mermaid
+flowchart LR
+    power["Power tree"]:::project_local
+    mcu{{"Generic MCU"}}:::mcu
+    external_io(["External I/O"]):::external
+
+    power -->|+3V3 ElectricPower| mcu
+    mcu <-->|USB USB2_0_IF| external_io
+    mcu <-->|sensor I2C| external_io
+    mcu ---|ADC ElectricSignal| external_io
+    mcu <-->|debug UART| external_io
+    mcu <-->|programming SWD| external_io
+
+    classDef project_local fill:#d9ecff,stroke:#23618f,color:#111
+    classDef mcu fill:#eadcff,stroke:#67428f,color:#111
+    classDef external fill:#f1f1f1,stroke:#555,color:#111,stroke-dasharray: 4 2
+```
+
+## Legend
+
+- Rectangle: project-local module
+- Hexagon: generic MCU boundary
+- Rounded dashed node: external boundary
+""",
     "src/modules/power_tree.ato": """import ElectricPower
 
 module PowerTree:
@@ -233,6 +267,8 @@ class InitializeTests(unittest.TestCase):
             self.assertTrue((project / "bom" / ".gitkeep").is_file())
             self.assertTrue((project / "fab" / ".gitkeep").is_file())
             self.assertTrue((project / "firmware" / ".gitkeep").is_file())
+            self.assertTrue((project / "STATUS.md").is_file())
+            self.assertFalse((project / "docs").exists())
             self.assertFalse((project / "build").exists())
 
             ato_yaml = (project / "ato.yaml").read_text(encoding="utf-8")
@@ -263,20 +299,29 @@ class InitializeTests(unittest.TestCase):
             self.assertIn("kicad: 9.0.9", pins)
             self.assertIn("jlc-2layer-conservative-v1", pins)
             pin_data = yaml.safe_load(pins)
-            self.assertEqual(pin_data["schema"], 3)
-            self.assertEqual(pin_data["guidance"]["agents_schema"], 3)
-            self.assertEqual(pin_data["guidance"]["architect_schema"], 2)
+            self.assertEqual(pin_data["schema"], 5)
+            self.assertEqual(pin_data["guidance"]["agents_schema"], 5)
+            self.assertEqual(pin_data["guidance"]["architect_schema"], 3)
+            self.assertEqual(
+                pin_data["guidance"]["architecture_diagram_schema"],
+                1,
+            )
             self.assertEqual(pin_data["guidance"]["mcu_schema"], 1)
+            self.assertEqual(pin_data["guidance"]["status_schema"], 1)
 
             agents = (project / "AGENTS.md").read_text(encoding="utf-8")
-            self.assertIn("pcbforge-agents-schema: 3", agents)
+            self.assertIn("pcbforge-agents-schema: 5", agents)
             self.assertIn("Never place, route, move", agents)
-            self.assertIn("ready for architect", agents.lower())
+            self.assertIn("ready for\nARCHITECT", agents)
             self.assertIn("/agent/architect.md", agents)
             self.assertIn("/agent/mcu.md", agents)
             self.assertIn("/modules/index.md", agents)
-            self.assertIn("ARCHITECT approved", agents)
+            self.assertIn("status mark architect complete", agents)
             self.assertIn("Do not choose parts", agents)
+            self.assertIn("docs/architecture.md", agents)
+            self.assertIn("pcbforge-architecture-diagram-schema: 1", agents)
+            self.assertIn("Audit every functional `App` instance", agents)
+            self.assertIn("diagram:", agents)
             self.assertIn("check-ioc", agents)
             self.assertIn("optional CubeMX 6.18 review", agents)
 
@@ -343,6 +388,68 @@ class InitializeTests(unittest.TestCase):
             self.assertEqual([path.name for path in project.iterdir()], ["spec.md"])
             self.assertEqual(list(root.glob(".garden-logger.pcbforge-init-*")), [])
 
+    def test_preserves_pre_init_dashboard_and_refreshes_after_success(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self._project(Path(temporary), "garden-logger")
+            write_status(project, now="2026-07-26T10:00:00+00:00")
+            mark_status(
+                project,
+                "spec",
+                "complete",
+                "Requirements approved",
+                now="2026-07-26T11:00:00+00:00",
+            )
+
+            initialize_project(
+                project,
+                tool_root=TOOL_ROOT,
+                runner=FakeRunner(),
+            )
+
+            report = read_status_document(project)
+            self.assertEqual(len(report.events), 1)
+            self.assertEqual(report.events[0].phase, "spec")
+            dashboard = (project / "STATUS.md").read_text(encoding="utf-8")
+            self.assertIn("2 of 12 required phases complete", dashboard)
+
+    def test_failed_init_does_not_mutate_pre_init_dashboard(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self._project(Path(temporary), "garden-logger")
+            write_status(project, now="2026-07-26T10:00:00+00:00")
+            before = (project / "STATUS.md").read_bytes()
+
+            with self.assertRaisesRegex(InitError, "smoke test failed"):
+                initialize_project(
+                    project,
+                    tool_root=TOOL_ROOT,
+                    runner=FakeRunner(fail_build=True),
+                )
+
+            self.assertEqual((project / "STATUS.md").read_bytes(), before)
+
+    def test_invalid_pre_init_dashboard_blocks_before_scaffolding(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self._project(Path(temporary), "garden-logger")
+            (project / "STATUS.md").write_text(
+                """---
+pcbforge_status_schema: 99
+events: []
+checks: {}
+---
+""",
+                encoding="utf-8",
+            )
+            before = sorted(path.name for path in project.iterdir())
+
+            with self.assertRaisesRegex(InitInputError, "STATUS.md"):
+                initialize_project(
+                    project,
+                    tool_root=TOOL_ROOT,
+                    runner=FakeRunner(),
+                )
+
+            self.assertEqual(sorted(path.name for path in project.iterdir()), before)
+
 
 class CliTests(unittest.TestCase):
     def test_cli_success(self) -> None:
@@ -383,15 +490,19 @@ class GuidanceTests(unittest.TestCase):
     def test_architect_playbook_and_empty_catalog_are_explicit(self) -> None:
         playbook = (TOOL_ROOT / "agent" / "architect.md").read_text(encoding="utf-8")
         for required in (
-            "pcbforge-architect-schema: 2",
+            "pcbforge-architect-schema: 3",
             "src/modules/<snake_case>.ato",
             "src/mcu.ato",
             "ElectricPower",
             "USB2_0_IF",
             "spec-to-module coverage",
             "board hash",
-            "ARCHITECT approved",
+            "status mark architect complete",
             "AI-led MCU workflow",
+            "docs/architecture.md",
+            "pcbforge-architecture-diagram-schema: 1",
+            "source-to-diagram audit",
+            "status mark architect reopened",
         ):
             self.assertIn(required, playbook)
 
@@ -412,11 +523,43 @@ class GuidanceTests(unittest.TestCase):
         self.assertIn("| Module | Version | Proven on | Interfaces | Render |", catalog)
 
     def test_architecture_fixture_contains_interfaces_but_no_parts(self) -> None:
-        source = "\n".join(ARCHITECTURE_FILES.values()).lower()
+        source = "\n".join(
+            contents
+            for path, contents in ARCHITECTURE_FILES.items()
+            if path.endswith(".ato")
+        ).lower()
         for interface in ("electricpower", "i2c", "uart", "usb2_0_if", "swd"):
             self.assertIn(interface, source)
         for forbidden in ("component ", "footprint", "lcsc", "partnumber"):
             self.assertNotIn(forbidden, source)
+
+    def test_architecture_fixture_mermaid_matches_top_level_graph(self) -> None:
+        diagram = ARCHITECTURE_FILES["docs/architecture.md"]
+        self.assertIn("pcbforge-architecture-diagram-schema: 1", diagram)
+        self.assertIn("Architecture only", diagram)
+        graph = diagram.split("```mermaid\n", 1)[1].split("\n```", 1)[0]
+
+        for node in ("power[", "mcu{{", "external_io("):
+            self.assertEqual(graph.count(node), 1)
+        for interface in (
+            "ElectricPower",
+            "USB2_0_IF",
+            "I2C",
+            "ElectricSignal",
+            "UART",
+            "SWD",
+        ):
+            self.assertEqual(graph.count(interface), 1)
+
+        source_edges = ARCHITECTURE_FILES["src/main.ato"].count(" ~ ")
+        diagram_edges = sum(
+            1
+            for line in graph.splitlines()
+            if re.search(r"(?:-->|<-->|---)", line)
+        )
+        self.assertEqual(diagram_edges, source_edges)
+        for forbidden in ("footprint", "lcsc", "stm32g0", "pa0", "cubemx"):
+            self.assertNotIn(forbidden, graph.lower())
 
 
 @unittest.skipUnless(
@@ -436,6 +579,45 @@ class RealToolchainIntegrationTests(unittest.TestCase):
                 (project / "spec.md").write_text(
                     spec_text(name=name, layers=layers),
                     encoding="utf-8",
+                )
+
+                status_draft = subprocess.run(
+                    [
+                        str(TOOL_ROOT / "scripts" / "pcbforge"),
+                        "status",
+                        "--write",
+                        str(project),
+                    ],
+                    cwd=TOOL_ROOT,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(
+                    status_draft.returncode,
+                    0,
+                    status_draft.stdout + status_draft.stderr,
+                )
+                spec_gate = subprocess.run(
+                    [
+                        str(TOOL_ROOT / "scripts" / "pcbforge"),
+                        "status",
+                        "mark",
+                        "spec",
+                        "complete",
+                        "--note",
+                        "Integration requirements approved",
+                        str(project),
+                    ],
+                    cwd=TOOL_ROOT,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(
+                    spec_gate.returncode,
+                    0,
+                    spec_gate.stdout + spec_gate.stderr,
                 )
 
                 initialized = subprocess.run(
@@ -491,6 +673,30 @@ class RealToolchainIntegrationTests(unittest.TestCase):
                 board_hash_after = hashlib.sha256(board.read_bytes()).hexdigest()
                 self.assertEqual(board_hash_after, board_hash_before)
                 self.assertNotIn("(footprint ", board.read_text(encoding="utf-8"))
+
+                architecture_gate = subprocess.run(
+                    [
+                        str(TOOL_ROOT / "scripts" / "pcbforge"),
+                        "status",
+                        "mark",
+                        "architect",
+                        "complete",
+                        "--note",
+                        "Integration graph approved; diagram: docs/architecture.md",
+                        str(project),
+                    ],
+                    cwd=TOOL_ROOT,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(
+                    architecture_gate.returncode,
+                    0,
+                    architecture_gate.stdout + architecture_gate.stderr,
+                )
+                dashboard = (project / "STATUS.md").read_text(encoding="utf-8")
+                self.assertIn("3 of 12 required phases complete", dashboard)
 
                 report = project / "drc-report.json"
                 completed = subprocess.run(

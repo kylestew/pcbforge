@@ -20,10 +20,12 @@ import yaml
 ATO_VERSION = "0.15.7"
 KICAD_VERSION = "9.0.9"
 SPEC_SCHEMA = 1
-PIN_SCHEMA = 3
-AGENTS_SCHEMA = 3
-ARCHITECT_GUIDE_SCHEMA = 2
+PIN_SCHEMA = 5
+AGENTS_SCHEMA = 5
+ARCHITECT_GUIDE_SCHEMA = 3
+ARCHITECTURE_DIAGRAM_SCHEMA = 1
 MCU_GUIDE_SCHEMA = 1
+STATUS_SCHEMA = 1
 BOARD_ORIGIN_MM = 100.0
 
 REQUIRED_KEYS = {
@@ -650,11 +652,12 @@ def _render_agents(spec: ProjectSpec, tool_root: Path) -> str:
 # pcbforge project: {spec.name}
 
 This is a pcbforge circuit-as-code board project. Read `spec.md` first on every
-cold start, then derive status from source, compiler output, and the KiCad board.
+cold start, then refresh `STATUS.md` from source, saved workflow gates, compiler
+output, and the KiCad board.
 
 ## Required reading
 
-1. This file and `spec.md`.
+1. This file, `spec.md`, and `STATUS.md`.
 2. `{tool_root}/agent/operating-manual.md`.
 3. `{tool_root}/agent/architect.md` before doing ARCHITECT work.
 4. `{tool_root}/agent/mcu.md` before doing MCU work.
@@ -679,15 +682,30 @@ cold start, then derive status from source, compiler output, and the KiCad board
 
 ## Resume
 
-1. Read this file and `spec.md`.
-2. Run `{tool_root}/scripts/ato build` from this directory.
-3. Inspect `src/` and `{spec.name}.kicad_pcb`; report the current phase.
-4. Propose the next step and wait for user approval where the workflow requires it.
+1. Read this file, `spec.md`, and `STATUS.md`.
+2. Run `{tool_root}/scripts/pcbforge status --check --write` from this directory.
+3. Inspect any dashboard blocker and the evidence for the reported current phase.
+4. Report the current focus and next actions, then wait for user approval where
+   the workflow requires it.
+
+## Status dashboard
+
+- `STATUS.md` is the tracked, user-facing workflow dashboard. Its YAML
+  frontmatter contains append-only workflow events and check fingerprints; its
+  Markdown body is generated. Never edit the body manually.
+- Use `{tool_root}/scripts/pcbforge status --write` after meaningful project
+  changes. Use `--check` when compiler, IOC, or DRC evidence must be refreshed.
+- Record human gates only after an explicit declaration:
+  `{tool_root}/scripts/pcbforge status mark <phase> complete --note "<reason>"`.
+- Use `blocked` with a concrete reason, `reopened` when an approved phase
+  changes, and `skipped` only for optional publish. Never infer user approval,
+  layout completion, routing completion, or ordering.
 
 ## ARCHITECT gate
 
-The scaffold is ready for ARCHITECT. This is a code-skeleton and human-review
-phase, not component implementation:
+Once STATUS reports SPEC and init complete, the scaffold is ready for
+ARCHITECT. This is a code-skeleton and human-review phase, not component
+implementation:
 
 1. Map every spec requirement to a functional block and typed interface:
    power input and every rail, MCU family, SWD, optional debug UART, every
@@ -699,15 +717,23 @@ phase, not component implementation:
    `src/modules/*.ato`; reserve `src/mcu.ato` for the per-project MCU boundary.
 4. Prefer `ElectricPower`, `I2C`, `SPI`, `UART`, `USB2_0_IF`, `CAN`, `SWD`,
    and `ElectricSignal`/`Electrical` over raw nets. Clarify `other` interfaces.
-5. Do not choose parts, footprints, LCSC numbers, resistor values, exact MCU
+5. Create and maintain `docs/architecture.md` with marker
+   `pcbforge-architecture-diagram-schema: {ARCHITECTURE_DIAGRAM_SCHEMA}` and a
+   Mermaid `flowchart LR`. Draft it with the module graph, then keep it
+   synchronized with every source revision.
+6. Do not choose parts, footprints, LCSC numbers, resistor values, exact MCU
    pins, or layout geometry. Do not begin the MCU or implementation phase.
-6. Build with the pinned compiler and require the PCB bytes/spatial content to
+7. Build with the pinned compiler and require the PCB bytes/spatial content to
    remain unchanged because an architecture skeleton has no physical parts.
-7. Present the module graph, interface table, spec coverage, reuse status,
-   risks, source diff, and build result. Stop for explicit user approval.
-8. After explicit approval, append
-   `YYYY-MM-DD: ARCHITECT approved — <summary>` to the `spec.md` Decisions log,
-   then stop at the MCU handoff. Never infer approval.
+8. Audit every functional `App` instance, typed top-level connection, and
+   external boundary against the diagram. Present the tracked Mermaid diagram
+   with the interface table, spec coverage, reuse status, risks, source diff,
+   and build result. Stop for explicit user approval.
+9. After explicit approval, run
+   `{tool_root}/scripts/pcbforge status mark architect complete --note "<summary>; diagram: docs/architecture.md"`,
+   optionally retain the design rationale in the `spec.md` Decisions log, then
+   stop at the MCU handoff. The STATUS event is the durable workflow gate.
+   Never infer approval.
 
 ## MCU phase
 
@@ -766,7 +792,9 @@ def _render_pins(
         "guidance": {
             "agents_schema": AGENTS_SCHEMA,
             "architect_schema": ARCHITECT_GUIDE_SCHEMA,
+            "architecture_diagram_schema": ARCHITECTURE_DIAGRAM_SCHEMA,
             "mcu_schema": MCU_GUIDE_SCHEMA,
+            "status_schema": STATUS_SCHEMA,
         },
     }
     return yaml.safe_dump(pins, sort_keys=False)
@@ -902,6 +930,18 @@ def initialize_project(
     )
     spec = read_spec(project_dir / "spec.md")
     _preflight_destination(project_dir, spec)
+    from pcbforge.status import (
+        StatusError,
+        StatusInputError as DashboardInputError,
+        read_status_document,
+        write_status,
+    )
+
+    try:
+        status_document = read_status_document(project_dir)
+    except DashboardInputError as exc:
+        raise InitInputError(str(exc)) from exc
+
     profile, profile_path = _load_profile(tool_root, spec.layers)
     metadata = _tool_metadata(tool_root, runner)
 
@@ -927,5 +967,13 @@ def initialize_project(
         _commit_scaffold(stage, project_dir, spec)
     finally:
         shutil.rmtree(stage, ignore_errors=True)
+
+    # STATUS.md may already exist from the conversational SPEC phase. Refresh it
+    # only after the create-only scaffold commits successfully so a failed init
+    # never mutates the pre-init dashboard.
+    try:
+        write_status(project_dir, document=status_document)
+    except StatusError as exc:
+        raise InitError(f"project initialized but STATUS.md refresh failed: {exc}") from exc
 
     return InitResult(name=spec.name, project_dir=project_dir)

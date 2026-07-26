@@ -1,4 +1,4 @@
-<!-- pcbforge-architect-schema: 2 -->
+<!-- pcbforge-architect-schema: 3 -->
 # pcbforge — ARCHITECT playbook
 
 This playbook operationalizes the ARCHITECT phase in
@@ -8,8 +8,8 @@ does not select or implement physical parts.
 
 ## Preconditions
 
-1. Read the project-local `AGENTS.md`, the complete `spec.md`, and
-   `agent/operating-manual.md`.
+1. Read the project-local `AGENTS.md`, the complete `spec.md`, `STATUS.md`,
+   and `agent/operating-manual.md`.
 2. Confirm `.pcbforge`, `ato.yaml`, `src/main.ato`, and the named KiCad board
    exist.
 3. Run the pinned `scripts/ato build` from the project directory. Stop and
@@ -66,6 +66,55 @@ Do not add physical components, footprints, LCSC numbers, passive values,
 exact MCU pins, CubeMX output, copper, placement, routing, zones, or board
 geometry. Do not hide implementation decisions inside placeholder modules.
 
+## Maintain the architecture diagram
+
+Create `docs/architecture.md` when the proposed module graph first becomes
+concrete, before or alongside writing the skeleton. It is a tracked review
+artifact derived from the architecture source; `src/` remains authoritative.
+Update the diagram whenever an instance, boundary, or typed connection changes.
+
+The artifact contract is:
+
+````markdown
+<!-- pcbforge-architecture-diagram-schema: 1 -->
+# <project> architecture
+
+> Architecture only: functional modules and typed interfaces. No parts, values,
+> footprints, MCU pins, CubeMX configuration, placement, or routing.
+
+## Functional graph
+
+```mermaid
+flowchart LR
+    ...
+```
+
+## Legend
+
+- Project-local module
+- Reused module
+- Generic MCU boundary
+- External boundary
+````
+
+Build the Mermaid graph using these rules:
+
+- use `flowchart LR`;
+- derive functional node IDs from top-level `App` instance names;
+- prefix external-boundary IDs with `ext_`;
+- show every functional module and required external connector boundary once;
+- show every top-level typed connection once;
+- label each edge with its logical role and interface type;
+- direct power from source to consumer, use bidirectional edges for buses,
+  direct a signal only when its direction is established, and otherwise use a
+  neutral edge;
+- distinguish project-local, reused, generic-MCU, and external nodes with
+  semantic Mermaid classes and with labels or shapes, never color alone.
+
+Do not expand the graph into net-level wiring or add information not present in
+the spec and architecture source. The diagram may be rendered inline for
+review, but the tracked Markdown is the durable artifact.
+
 ## Validate and present
 
 Run the pinned compiler after writing the skeleton. Require:
@@ -76,25 +125,37 @@ Run the pinned compiler after writing the skeleton. Require:
 - no physical parts or footprints emitted;
 - the KiCad board hash and spatial fingerprint unchanged.
 
+Perform an explicit source-to-diagram audit:
+
+- every functional top-level `App` instance has exactly one node;
+- every top-level typed connection has exactly one edge;
+- every required external boundary is represented;
+- every diagram node and edge is backed by the source or spec;
+- no forbidden implementation detail appears.
+
 Present one review package:
 
-1. functional module graph;
+1. the tracked `docs/architecture.md` Mermaid graph, rendered inline;
 2. module responsibility and typed-interface table;
 3. spec-to-module coverage checklist;
 4. reused versus new modules, with indexed renders when any exist;
 5. unresolved risks and explicit tradeoffs;
-6. meaningful source diff and compiler result.
+6. source-to-diagram audit;
+7. meaningful source diff and compiler result.
 
 Ask for explicit architecture approval and stop. Rejection means revise only
-the skeleton and repeat validation.
+the skeleton and diagram, then repeat the build and audit.
 
-After approval, append a dated decision in this exact form to the existing
-`spec.md` Decisions log:
+After approval, record the durable workflow gate:
 
-```markdown
-- YYYY-MM-DD: ARCHITECT approved — <one-line module graph summary and key choice>.
+```bash
+<pcbforge-root>/scripts/pcbforge status mark architect complete \
+  --note "<one-line module graph summary and key choice>; diagram: docs/architecture.md"
 ```
 
-The approved code plus this decision are the durable gate across sessions.
-Report that the next phase is the AI-led MCU workflow in `agent/mcu.md` and do
-not begin it without a new user request.
+The STATUS event is the authoritative approval gate across sessions. Keep
+design rationale in the `spec.md` Decisions log when it is useful, but do not
+use prose as workflow state. A later change to the module graph or a public
+interface requires `status mark architect reopened`, an updated diagram, and
+renewed approval. Report that the next phase is the AI-led MCU workflow in
+`agent/mcu.md` and do not begin it without a new user request.
