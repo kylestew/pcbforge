@@ -34,17 +34,47 @@ Non-negotiable rules:
 4. **Ordering/money is human.** Generate `fab/` outputs; stop there.
 5. The user reviews capture at their chosen depth — surface meaningful
    diffs; don't bury decisions in bulk edits.
+6. **The schema-10 policy is binding.** Read `policy.yaml`; run
+   `pcbforge check-policy`; never invent or self-approve an exception.
+
+## Decision authority (global constraint)
+
+The agent may derive consequences of approved requirements, but it may not
+choose between materially different reasonable designs. If two viable options
+satisfy the current contract and differ in topology, public interfaces,
+connector behavior, resource allocation, cost, risk, reversibility, or user
+experience, present the options, recommendation, tradeoffs, and consequences,
+then stop for the user before changing the affected artifact.
+
+User approval is explicit, artifact-specific, and one-time:
+
+- never infer approval from silence, a general request to continue, or a broad
+  request to implement a plan;
+- the agent may record approval already expressed by the user, but may never
+  originate or self-approve it;
+- proposal approval happens before affected implementation work;
+- final approval happens after the resulting artifact and checks are
+  presented;
+- approval is bound to the approved artifact fingerprint; a material change
+  invalidates it, and rerunning checks cannot revive it;
+- checked dashboard writes durably reopen changed approved phases.
+
+When uncertain whether a choice is material, treat it as material and ask. Only
+local, reversible details with no effect outside the already-approved contract
+may be selected autonomously, and those assumptions must be stated.
 
 ## Workflow phases (who leads)
 
 ```
-1. SPEC        you — interview per agent/spec-interview.md → spec.md
-2. init        `pcbforge init` validates spec + scaffolds and smoke-builds project
-3. ARCHITECT   code skeleton + tracked Mermaid diagram; USER approves both
+1. SPEC        you — interview → approved spec.md + policy.yaml
+2. init        validates approved spec/policy + scaffolds and smoke-builds
+3. ARCHITECT   USER approves proposed graph; then code skeleton + audit;
+               USER gives separate final approval
 4. MCU         follow agent/mcu.md; AI selects pins → checked .ioc → MCU module
-5. IMPLEMENT   you write module bodies (LCSC parts, values, rules)
-6. build+test  scripts/ato build; assertions; fail loud
-7. brief       placement brief + net classes (manual/rough for now)
+5. IMPLEMENT   follow agent/implement.md; exact parts, canonical libraries, rules
+6. build+test  agent/build-test.md; exact contract + frozen build + tracked report
+7. brief       agent/brief.md; exact placement contract + generated brief;
+               USER approves brief and schematic presentation
 8. LAYOUT      USER. You spot on request only.
 9. ROUTE       USER. Sanity checks on request.
 10. verify     DRC (scripts/kicad-cli) + audits + render review
@@ -55,41 +85,67 @@ Non-negotiable rules:
 
 ## Session resume (run this on every cold start in a project)
 
-1. Read this manual, then the project's `spec.md` and tracked `STATUS.md`.
+1. Read this manual, then the project's `spec.md`, `policy.yaml`, and tracked
+   `STATUS.md`.
 2. Run `pcbforge status --check --write`. The dashboard combines live file
-   evidence, current check fingerprints, and explicit human gates; a note
-   never overrides missing evidence.
+   evidence, compiler, build-test, parts-policy, technology-policy,
+   placement-brief, IOC, and DRC check fingerprints, and explicit human gates;
+   a note never overrides missing evidence.
 3. Report the current focus, blockers, and next actions, then wait for the
    user where the workflow requires a gate.
 
-Refresh `STATUS.md` after meaningful transitions. Record explicit gates with
-`pcbforge status mark <phase> complete --note "<reason>"`; never infer
-architecture approval, layout/routing completion, or ordering. Use `blocked`
-for an actionable blocker, `reopened` when earlier work changes, and `skipped`
-only for optional publish.
+Refresh `STATUS.md` after meaningful transitions. Users grant approval in
+conversation; after receiving it, record the gate yourself with
+`pcbforge status mark <phase> complete --note "<reason>"`. The command
+persists an approval but never constitutes one. Never infer architecture
+approval, layout/routing completion, or ordering. Use `blocked` for an
+actionable blocker, `reopened` when earlier work changes, and `skipped` only
+for optional publish. ARCHITECT also requires
+`status mark architect proposal-approved` after the user approves the proposed
+diagram and before source coding begins.
+
+`policy.yaml` requests exceptions but never approves them. After the user
+explicitly accepts one, record it with
+`pcbforge policy approve-exception <id> --note "<decision>"`. A changed
+exception fingerprint becomes stale and reopens its profile-mapped phase. A
+schema-7-through-9 migration separately requires
+`pcbforge policy approve-baseline`.
+After FAB-OUT, refresh live sourcing evidence and record the user's final
+review with `pcbforge policy confirm-sourcing`; ORDER remains blocked without
+it.
 
 ## Current build state (honest — board 1 carries scaffolding debt)
 
 Exists today: pinned toolchain (`scripts/ato`, `scripts/kicad-cli`,
-`scripts/cubemx`), `pcbforge init`, spec + ARCHITECT + MCU playbooks,
-`pcbforge check-ioc`, an explicit empty module catalog, and pilot evidence
-(`pilots/`).
+`scripts/cubemx`), `pcbforge init`, spec + ARCHITECT + MCU + IMPLEMENT +
+build/test playbooks, `pcbforge check-ioc`, `pcbforge check-parts`,
+`pcbforge check-build-test`, the tracked Step 6 report gate, an explicit empty
+module catalog, `pcbforge brief` / `pcbforge check-brief`, the Step 7
+placement schema and approval gate, schema-10 `policy.yaml`,
+`pcbforge check-policy`, explicit policy approval commands, and
+`pcbforge migrate-policy`.
 
 Not built yet (do manually, per DESIGN.md, and say you're doing it manually):
 `ioc2code` (derive `src/mcu.ato` from the checked `.ioc` yourself and perform
-the one-to-one audit in `agent/mcu.md`), `brief`, `verify` audits, `fab-out`,
-`verify-stock`. The module catalog is empty — propose architecture from
+the one-to-one audit in `agent/mcu.md`), `verify` audits, `fab-out`,
+automated live `verify-stock` lookup. Live sourcing research is performed
+during IMPLEMENT and again after FAB-OUT, then recorded through the policy
+gate. The module catalog is empty — propose architecture from
 scratch and say so; don't invent library modules.
 
-Board-1 gates you must respect (DESIGN.md → Pilot): judge schematic-viewer
-adequacy BEFORE the user invests in layout (week-1 kill switch); run the
+Board-1 gates you must respect (DESIGN.md → Pilot): Step 7 records
+schematic-viewer adequacy BEFORE the user invests in layout (week-1 kill
+switch); run the
 sync drill after first placement (no-op rebuild + controlled deltas must
 preserve placement — fingerprint scripts in `pilots/*/scripts/`).
 
 ## Registry / parts notes
 
-- atopile's component API was unreachable during the pilot — prefer local /
-  vendored part definitions; treat registry availability as unreliable.
-- Parts: prefer JLC **basic** library; LCSC# pinned in source. Footprints:
-  official KiCad libs first; `easyeda2kicad` for LCSC parts when missing;
-  always verify generated footprints against the datasheet.
+- atopile's component API was unreachable during the pilot, so registry
+  availability remains unreliable. This may justify local source wrappers, but
+  never redundant local KiCad assets for commodity parts.
+- Parts: prefer JLC **basic** library; pin the LCSC# in source/BOM metadata.
+  Use official KiCad symbols and footprints first. Use `easyeda2kicad` only
+  when the exact package or pin mapping is missing, and always verify generated
+  assets against the datasheet. `pcbforge check-parts` enforces the commodity
+  subset of this rule.

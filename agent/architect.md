@@ -1,4 +1,4 @@
-<!-- pcbforge-architect-schema: 3 -->
+<!-- pcbforge-architect-schema: 4 -->
 # pcbforge — ARCHITECT playbook
 
 This playbook operationalizes the ARCHITECT phase in
@@ -37,6 +37,38 @@ Ask the user before coding when an unresolved choice changes power topology,
 module boundaries, bus allocation, connector behavior, or the MCU interface
 contract. Do not ask about details already settled by the spec.
 
+An unresolved choice exists whenever two materially different reasonable
+architectures satisfy the approved spec. The agent may recommend one, but it
+may not silently choose between them. Present the alternatives, recommendation,
+tradeoffs, and downstream consequences, then stop for the user. Silence,
+general permission to continue, and a request to implement the workflow are not
+architecture approval.
+
+## Proposal approval before code
+
+Draft `docs/architecture.md` before writing the module skeleton. At this point
+it is the proposed graph: functional modules, external boundaries, typed
+interfaces, material options, recommendation, and unresolved risks. Do not
+write or revise architecture source until the user explicitly approves this
+proposal.
+
+After explicit proposal approval, record the artifact-bound gate:
+
+```bash
+<pcbforge-root>/scripts/pcbforge status mark architect proposal-approved \
+  --note "<user-approved graph and material choices>; diagram: docs/architecture.md"
+```
+
+This approval is bound to the current `spec.md` and
+`docs/architecture.md` fingerprints. Any change to either artifact invalidates
+it and requires another presentation and approval before coding continues. The
+agent may record approval already given by the user, but must never originate,
+infer, or reuse it.
+
+On schema-9 projects, creating architecture source before this event makes the
+dashboard report ARCHITECT blocked. Stop source changes and present the current
+diagram rather than attempting to work through that blocker.
+
 ## Write the code skeleton
 
 - Keep `src/main.ato` as a thin `App` that imports, instantiates, and connects
@@ -68,10 +100,11 @@ geometry. Do not hide implementation decisions inside placeholder modules.
 
 ## Maintain the architecture diagram
 
-Create `docs/architecture.md` when the proposed module graph first becomes
-concrete, before or alongside writing the skeleton. It is a tracked review
-artifact derived from the architecture source; `src/` remains authoritative.
-Update the diagram whenever an instance, boundary, or typed connection changes.
+After proposal approval, treat `docs/architecture.md` as the approved
+architecture contract while creating the skeleton. `src/` remains
+authoritative for executable capture, but every instance, boundary, or typed
+connection change must first be reflected in the diagram and reapproved before
+the corresponding source change.
 
 The artifact contract is:
 
@@ -143,8 +176,11 @@ Present one review package:
 6. source-to-diagram audit;
 7. meaningful source diff and compiler result.
 
-Ask for explicit architecture approval and stop. Rejection means revise only
-the skeleton and diagram, then repeat the build and audit.
+Ask for explicit final architecture approval and stop. This is separate from
+proposal approval: it confirms that the compiled skeleton, diagram, coverage,
+and source-to-diagram audit implement the approved proposal. Rejection means
+revise the proposal first, obtain renewed proposal approval, then revise and
+reaudit the skeleton.
 
 After approval, record the durable workflow gate:
 
@@ -153,9 +189,15 @@ After approval, record the durable workflow gate:
   --note "<one-line module graph summary and key choice>; diagram: docs/architecture.md"
 ```
 
-The STATUS event is the authoritative approval gate across sessions. Keep
-design rationale in the `spec.md` Decisions log when it is useful, but do not
-use prose as workflow state. A later change to the module graph or a public
-interface requires `status mark architect reopened`, an updated diagram, and
-renewed approval. Report that the next phase is the AI-led MCU workflow in
-`agent/mcu.md` and do not begin it without a new user request.
+The completion event is bound to the current approved artifact fingerprint.
+Rerunning a build cannot make an old approval current again. A checked
+dashboard write automatically records a reopen event when approved artifacts
+change, so restoring old contents later does not silently restore workflow
+approval.
+
+Keep design rationale in the `spec.md` Decisions log when it is useful, but do
+not use prose as workflow state. A later change to the module graph or a public
+interface requires an updated proposal, renewed proposal approval, updated
+skeleton and audit, and renewed final approval. Report that the next phase is
+the AI-led MCU workflow in `agent/mcu.md` and do not begin it without a new user
+request.

@@ -2,8 +2,9 @@
 
 You are an AI agent starting a new pcbforge board. The user triggered this with
 **"pcbforge: new board"**. Your job in this phase: run a focused interview and
-produce `spec.md` — the project's spine — plus its generated `STATUS.md`
-workflow dashboard. No code, scaffold, or parts are created in this phase.
+produce `spec.md` — the project's spine — and the initial `policy.yaml`
+technology contract, plus the generated `STATUS.md` workflow dashboard. No
+code, scaffold, or parts are created in this phase.
 
 Vendor-neutral: any agent with file read/write follows this document.
 
@@ -24,6 +25,10 @@ Vendor-neutral: any agent with file read/write follows this document.
    offer the nearest feasible shape.
 7. **The user gates.** They decide when spec is good. Then (and only then)
    the project moves to `init`.
+8. **Hard platform constraints are not options.** JLCPCB fabrication and
+   assembly, STM32, KiCad 9, pinned atopile/CubeMX, 2/4 layers, SWD, spatial
+   ownership, and human ordering authority require a different future policy
+   profile to change; do not create an exception for them.
 
 ## Interview flow
 
@@ -34,13 +39,19 @@ Vendor-neutral: any agent with file read/write follows this document.
 3. Propose: STM32 family, rail plan, layer count, module candidates (only if
    the module library has entries — it may be empty; say so plainly),
    rough BOM feasibility vs ceiling.
-4. Draft `spec.md` (format below). Show it.
-5. Once the draft validates, run `pcbforge status --write`; refresh the
-   dashboard after material revisions.
-6. Iterate until the user declares it good, then record the gate with
-   `pcbforge status mark spec complete --note "<approval summary>"`.
-7. Remind: `spec.md` is a **living doc** — later changes go here first, and
-   frontmatter must be updated in the same edit as the prose.
+4. Draft `spec.md` and `policy.yaml` (formats below). Show both. Resolve the
+   policy applicability questions, but leave later implementation evidence
+   empty.
+5. Once the draft validates, you run `pcbforge status --write`; refresh the
+   dashboard after material revisions. Do not ask the user to run this command.
+6. Iterate until the user explicitly declares it good in conversation. Only
+   then do you record the gate with
+   `pcbforge status mark spec complete --note "<approval summary>"`. The
+   command persists the approval; it does not constitute approval by itself.
+7. Remind: `spec.md` and `policy.yaml` are **living contracts**. Later
+   requirement changes go to the spec first; technology declarations,
+   sourcing evidence, and requested exceptions go to policy. Keep each file
+   internally consistent.
 
 ## Dimensions
 
@@ -58,6 +69,9 @@ Vendor-neutral: any agent with file read/write follows this document.
 | Special | analog precision, RF, high current, thermal, low power | none |
 | Cost / qty | BOM ceiling per board; board count | qty 5 (JLC min) |
 | Debug | SWD is always present (invariant); debug UART? test points? | uart yes |
+| Construction | standard FR4 1.6 mm / 1 oz? impedance or unusual vias? | standard |
+| Protection | reverse polarity, overcurrent, connector ESD applicability | required when applicable |
+| Marking | polarity and pin-1 marking applicability | required when applicable |
 
 ### STM32 family quick guide
 
@@ -156,9 +170,72 @@ special: []
 ---
 ```
 
+## Output — `policy.yaml`
+
+Start from the tracked schema-1 project contract below. The tool-owned
+`policies/pcbforge-standard-v1.yaml` profile defines rule severity and the
+earliest phase affected by an exception.
+
+```yaml
+policy_schema: 1
+profile: pcbforge-standard-v1
+manufacturing:
+  fabricator: jlcpcb
+  assembler: jlcpcb
+  material: FR4
+  thickness_mm: 1.6
+  copper_oz: 1
+  controlled_impedance: false
+  advanced_vias: false
+components:
+  mcu_vendor: STMicroelectronics
+  commodity_min_package: "0603"
+  advanced_packages: []
+assurances:
+  reverse-polarity:
+    status: required
+    rationale: Required for the selected power-input risk.
+    evidence: []
+  overcurrent:
+    status: required
+    rationale: Required for the selected power-input risk.
+    evidence: []
+  connector-esd:
+    status: required
+    rationale: Required on user-accessible electronic connectors.
+    evidence: []
+  test-points:
+    status: required
+    rationale: Power, ground, reset, and critical signals need test access.
+    evidence: []
+  polarity-marking:
+    status: required
+    rationale: Polarized components and connectors need visible markings.
+    evidence: []
+  pin1-marking:
+    status: required
+    rationale: Multi-pin ICs and connectors need visible pin-1 markings.
+    evidence: []
+sourcing: []
+exceptions: []
+```
+
+Each assurance status is `required`, `not-applicable`, or `exception`.
+`not-applicable` needs a concrete rationale. `exception` also needs one
+matching entry in `exceptions`; the user must explicitly approve it later.
+Never put approval claims in this editable file. STATUS stores approvals with
+artifact fingerprints.
+
+Safe defaults are FR4, 1.6 mm, 1 oz outer copper, conventional vias, no
+controlled impedance, ordinary R/C/LED packages of 0603 or larger, and no
+BGA, WLCSP, or QFN pitch below 0.5 mm. A deviation is not forbidden, but it
+must be declared and approved. Sourcing entries are added during IMPLEMENT,
+not guessed during SPEC.
+
 ## After the gate
 
-User declares spec good and its STATUS gate is recorded → next phase is `init`
+User declares the spec and initial policy good and their fingerprint-bound
+STATUS gate is recorded → next phase is `init`
 (project scaffold), then ARCHITECT per `agent/architect.md` (module graph
 proposal in code). Not this playbook's job — stop at the approved spec and
 refreshed dashboard.

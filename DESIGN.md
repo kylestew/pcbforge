@@ -38,8 +38,54 @@ own everything mechanical around KiCad board design for JLCPCB fab.
 | **AI agent** | spec interview, writes/edits all capture code, exact MCU/pin selection, part selection, layout spotter, review |
 | **Compiler/scripts** | netlist + BOM emission, assertions, electrical checks/DRC, briefs, fab-out — deterministic, free (stock queries excepted: live network) |
 
+### Decision-authority invariant
+
+The AI may derive consequences of approved requirements, but may not choose
+between materially different reasonable designs. Alternatives affecting
+topology, public interfaces, connectors, resource allocation, cost, risk,
+reversibility, or user experience are user decisions. The AI presents options,
+recommendation, tradeoffs, and consequences, then stops before changing the
+affected artifact.
+
+Silence, general permission to continue, and broad implementation requests are
+not approval. The AI may record approval already expressed by the user but may
+not originate, infer, self-approve, or reuse it. Proposal approval precedes
+implementation and final approval follows presentation plus validation.
+Approval events are bound to artifact fingerprints. A changed approved
+artifact becomes stale; a dashboard write durably reopens its phase so tool
+reruns or later content restoration cannot silently revive the approval.
+
+### Manufacturing-policy invariant
+
+Schema-10 projects consume the hash-pinned
+`policies/pcbforge-standard-v1.yaml` profile and track their declarations,
+evidence, sourcing, and exception requests in `policy.yaml`. The profile—not
+the editable project contract—defines hard rules, exception-capable defaults,
+and each exception's earliest affected workflow phase.
+
+JLCPCB fabrication/assembly, STM32, 2/4 layers, SWD, pinned tools, exact part
+identity, canonical commodity libraries, spatial ownership, and human ordering
+authority are hard and cannot be excepted. FR4 1.6 mm / 1 oz, conventional
+vias, no controlled impedance, 0603 minimum ordinary R/C/LED, and avoiding
+BGA/WLCSP/sub-0.5-mm QFN are defaults. Protection, testability, marking, and
+sourcing require explicit applicability/evidence.
+
+The normal policy checker is deterministic and offline. `policy.yaml` can
+request but cannot grant an exception. STATUS keeps a separate append-only
+policy approval stream whose events fingerprint the baseline, individual
+exception, or post-FAB sourcing package. Changed approvals durably reopen;
+exception approval reopens the profile-mapped completed phase.
+
 ## Decision record
 
+- **2026-07-27 — schema-10 manufacturing policy adopted.** Tool-owned policy
+  profiles separate unconditional platform constraints from approval-required
+  defaults and advisory sourcing preferences. New SPEC approval binds the
+  policy baseline. Existing generated schema-7-through-9 projects use an
+  explicit migration and a separate user baseline approval; migration itself
+  is not approval. Routine
+  checks stay offline. Live JLC availability/lifecycle is reviewed during
+  IMPLEMENT and again after FAB-OUT before the user may complete ORDER.
 - **2026-07-25 — MCU pinmux is AI-led; CubeMX review is optional.** After
   ARCHITECT approval, the agent chooses the exact STM32/package, resolves the
   pin mapping, and creates the canonical `firmware/<project>.ioc`. Pinned
@@ -149,50 +195,65 @@ for whichever compiler wins:
 **U** user, **T** tool/compiler, **AI** agent.
 
 ```
-1. SPEC       chat interview → spec.md (frontmatter contract + prose body)
-              + tracked STATUS.md; U records approval through status.
+1. SPEC       chat interview → spec.md + policy.yaml + tracked STATUS.md;
+              U approves requirements/policy baseline, AI records through status.
               Not a CLI verb — chat is the medium (see Spec).
-2. init       T: spec.md → compiler project + KiCad shell + JLC rules profile
-3. ARCHITECT  AI proposes module graph as code skeleton (power tree, MCU,
+2. init       T: approved spec/policy → compiler project + KiCad shell +
+              pinned JLC rules and manufacturing-policy profiles
+3. ARCHITECT  AI proposes module graph before code (power tree, MCU,
               peripherals, typed interfaces), showing block renders for
-              proposed reuse. U approves — the main human gate on capture.
+              proposed reuse. U approves proposal; AI writes/builds/audits
+              skeleton; U gives separate final approval.
 4. MCU        AI selects exact STM32 + pins → creates .ioc → T: check-ioc;
               U may review/edit in CubeMX. AI derives the MCU module manually
               with a one-to-one audit until ioc2code is implemented.
-5. IMPLEMENT  AI writes module bodies: parts pinned with LCSC#, values,
-              pullups, decoupling per rules. U reviews at chosen depth.
-6. build+test T: compile → netlist + BOM; assertions + compiler-native
-              electrical checks; fail loud.
-7. brief      T: placement brief from module constraints; net classes +
-              rules seeded into .kicad_pcb — canvas primed.
+5. IMPLEMENT  AI follows agent/implement.md: parts pinned with LCSC#, values,
+              pullups, decoupling; official KiCad assets first; sourcing and
+              assurance evidence recorded. T: check-parts + check-policy.
+6. build+test T: exact build-test.yaml → frozen compile → resolved
+              connectivity + BOM; marked assertions + compiler-native checks;
+              no-op spatial-preservation audit → tracked report; fail loud.
+7. brief      AI: exact placement.yaml from reviewed intent; T validates
+              complete footprint/ref/pad/net coverage, generates brief.md,
+              and seeds PCBForge-owned classes in .kicad_pro without touching
+              .kicad_pcb; U approves brief + schematic presentation.
 8. LAYOUT     U — THE ART. AI spotter on request (see Layout copilot).
 9. ROUTE      U — the art continues. AI sanity checks on request.
 10. verify    T: DRC vs JLC rules + scripted layout audits; AI render review.
 11. fab-out   T: JLC Gerbers + drill + BOM + CPL → fab/board.zip
-12. order     U uploads to JLCPCB (tool never touches money/orders)
+12. order     post-FAB sourcing confirmation → U uploads to JLCPCB
+              (tool never touches money/orders)
 13. publish   proven modules: version tag + generated schematic render;
               U optional prettify (the surviving drawing act).
 ```
 
 ### Phase 3 — ARCHITECT
 
-The agent follows `agent/architect.md`. It maps every spec requirement to a
-functional block and compiler-native typed interface, keeps `src/main.ato` as
-a thin graph, and places project-local interface skeletons in separate source
-files. The MCU remains an interface-only per-project boundary until the
-AI-led MCU phase.
+The agent follows `agent/architect.md`. It first maps every spec requirement to
+a proposed functional block and compiler-native typed interface in
+`docs/architecture.md`. If multiple material designs satisfy the spec, it
+presents alternatives and stops. The user approves the proposal before the
+agent writes the skeleton. Proposal approval is fingerprint-bound to the spec
+and diagram.
+
+Only after proposal approval does the agent keep `src/main.ato` as a thin graph
+and place project-local interface skeletons in separate source files. The MCU
+remains an interface-only per-project boundary until the AI-led MCU phase.
 
 ARCHITECT contains no physical parts, footprints, pin assignments, or layout
 work. The skeleton must compile without changing the KiCad board. The review
 package covers the tracked `docs/architecture.md` Mermaid graph, interfaces,
 spec coverage, reuse evidence, risks, source-to-diagram audit, diff, and build
-result. The AI drafts the diagram with the module graph and keeps it
-synchronized while revising source. Source remains authoritative; the diagram
-contains functional modules and typed interfaces, never parts, pins, or
-spatial detail. Explicit user approval is recorded as an append-only STATUS
-event referencing the diagram before the workflow may move to MCU. Design
-rationale may remain in the `spec.md` Decisions log, but prose is not the
-workflow gate.
+result. The diagram is the approved architecture contract and source remains
+the executable authority; changes are proposed in the diagram and reapproved
+before corresponding source edits. The diagram contains functional modules and
+typed interfaces, never parts, pins, or spatial detail.
+
+After build and audit, the user gives separate final approval. Its append-only
+STATUS event is fingerprint-bound to the spec, diagram, and thin top-level
+source graph. Artifact changes make approval stale and the next dashboard write
+records a durable reopen before the workflow may move to MCU. Design rationale
+may remain in the `spec.md` Decisions log, but prose is not the workflow gate.
 
 ### Phase 4 — MCU
 
@@ -241,11 +302,12 @@ inferred from board contents.
 Tool's job in the art phase: prime, spot, audit. Never move copper.
 
 **Pre-layout — prime the canvas:**
-- Modules declare layout constraints as structured fields (`decap_max_mm: 2`,
-  crystal keepout, diff-pair markers, thermal notes, "near connector" hints).
-- Compiler emits **placement brief** (`brief.md`): per-block constraints, net
-  priorities, suggested regions.
-- Net classes + design rules pre-seeded into `.kicad_pcb`/`.kicad_pro`.
+- The agent records exact board-specific constraints in `placement.yaml`
+  (`max_mm`, keepouts, differential-pair settings, thermal and access notes).
+- `pcbforge brief` emits **placement brief** (`brief.md`): per-block
+  constraints, net priorities, suggested regions.
+- PCBForge-owned net classes are pre-seeded into `.kicad_pro`; the PCB and
+  design-rules file remain untouched.
 
 **During — checkpoints on request** ("review my placement"):
 - Scripted exact audits: decap-to-pin distances from `.kicad_pcb`, courtyard/
@@ -301,6 +363,11 @@ Official KiCad footprints first. Generate only when none exists; always verify
 measured dimensions against datasheet. Generated ones live project/tool-local
 `.pretty`.
 
+`pcbforge check-parts` makes the common case executable: recognized
+two-terminal chip resistors, capacitors, and LEDs may keep exact MPN/LCSC
+supplier metadata but may not reference project-local KiCad symbol, footprint,
+or model files. Its fingerprint is part of the IMPLEMENT evidence gate.
+
 ## Checks become tests
 
 Review items encoded as assertions, run every build — deterministic, free:
@@ -327,21 +394,93 @@ still possible; that's review + assertions.) `verify-stock` is a live JLC
 query — time-dependent, not deterministic; it **reports** availability and
 proposes alternates, never silently changes locked parts.
 
+Step 6 makes those principles executable. `build-test.yaml` schema 1 is the
+board-specific acceptance oracle, written from reviewed intent rather than
+copied blindly from build output. It declares the exact aggregated
+LCSC/MPN/footprint/quantity BOM, expected PCB footprint count, selected atopile
+build, and stable IDs for every required assertion. A
+`# pcbforge-test: <id>` source marker must immediately precede each declared
+assertion; the manifest and source ID sets match exactly.
+
+`pcbforge check-build-test` then requires the pinned frozen build, compiler
+manifest and BOM JSON/CSV, exact BOM agreement, unique designators,
+BOM-to-PCB reference parity, resolved pad-to-net connectivity, and an unchanged
+no-op spatial fingerprint. The preservation fingerprint covers footprint
+position/side/membership, tracks, vias, zones, board outline, graphics, and
+user artwork. Compiler-owned identity/connectivity may change during
+IMPLEMENT, but Step 6 begins only once another identical build is a spatial
+no-op.
+
+A full passing checked write atomically produces tracked
+`docs/build-test.md`: input/tool versions and hashes, resolved BOM, assertion
+locations, connectivity totals/hash, artifact hashes, and preservation
+results. `STATUS.md` stores the same input fingerprint. Either source becoming
+stale reopens the mechanical Step 6 gate. Failure never overwrites the previous
+passing report.
+
+This deterministic gate does not pretend to prove live JLC stock or price,
+visual schematic adequacy, placement/routing quality, KiCad DRC, or fab output.
+Those remain their explicit later or board-1 review gates.
+
+`pcbforge check-policy` cross-checks the exact Step 6 LCSC set against tracked
+offline sourcing evidence without making normal status network-dependent.
+After FAB-OUT, the user confirms a newly researched sourcing snapshot. That
+approval fingerprints the sourcing entries, exact Step 6 contract, and current
+fabrication outputs; ORDER cannot complete while it is absent or stale.
+
+Step 7 makes the pre-layout handoff equally explicit. `placement.yaml` schema
+1 is authoritative and board-specific. It records a qualitative board
+strategy, board-wide rules, ordered placement groups, typed spatial
+constraints, exact-net routing classes, and a review checklist. Every resolved
+PCB reference belongs to exactly one group. Constraint endpoints must resolve
+to current `REF` or `REF.PAD` identities, and every class net must be an exact
+current net; wildcards are not inferred. Manufacturing dimensions must meet
+the pinned conservative JLC profile, including annular width and optional
+differential-pair width/gaps.
+
+`pcbforge brief` requires current Step 6 evidence, then stages `brief.md` and a
+merged KiCad project before committing either. It owns only net classes named
+`pcbforge:<name>` and their exact patterns in `.kicad_pro`; it preserves the
+Default class, user classes/assignments, unknown JSON fields, `.kicad_dru`, and
+all non-owned settings. Conflicting user assignments fail rather than being
+overridden. `.kicad_pcb` is read-only and confirmed byte-identical.
+`pcbforge check-brief` validates those outputs without mutation.
+
+The generated brief contains no coordinates and creates no geometric keepouts.
+It is guidance for the human placer, not spatial source. Step 7 is a combined
+machine/human gate: the checker must pass, then the user must approve
+`brief.md` and confirm `schematic review: adequate` in the explicit STATUS
+completion note. An inadequate circuit presentation invokes the board-1
+pre-layout kill switch: block the phase and do not invest in layout.
+
+Saved Step 6 and Step 7 evidence fingerprints circuit-owned PCB semantics
+(references, selected footprints, pads, and connectivity), not placement,
+side, tracks, vias, zones, outline, graphics, or artwork. Circuit/topology
+changes stale both phases. Spatial edits do not. Step 7 additionally
+fingerprints `placement.yaml`, generated `brief.md`, and PCBForge-owned
+net-class semantics; unrelated user net classes remain outside its ownership
+and staleness boundary.
+
 ## Reproducibility artifacts
 
 "Fab-reproducible years later" is a claim about files, so pin everything:
 
 - `.pcbforge`: exact compiler + KiCad versions; dependency lockfile w/ hashes.
+- `.pcbforge`: exact policy profile and hash; baseline approval mode.
+- `policy.yaml`: project declarations, assurance/sourcing evidence, and
+  exception requests; approval stays in STATUS.
 - Resolved selections recorded per refdes (MPN/LCSC#); generated-footprint
   hashes.
-- `build` emits a manifest: input hashes + tool versions.
+- Step 6 emits `docs/build-test.md`: input/tool versions and hashes, exact BOM,
+  assertion evidence, connectivity summary, artifact hashes, and preservation.
 - `fab-out` archives the set: final `.kicad_pcb`, BOM, CPL, Gerbers, DRC
   report.
 
 ## Architecture — Tool vs Projects
 
 - **The Tool** = one repo (`~/Projects/pcbforge`): module library, assertion/
-  rule library, JLC rules profiles, scripts, agent manuals. Versioned, grows.
+  rule library, JLC rule and manufacturing-policy profiles, scripts, agent
+  manuals. Versioned, grows.
 - **A Project** = one board. Self-contained, consumes the tool, pins versions.
 
 `pcbforge` installed globally, on PATH. Projects call `pcbforge <verb>`.
@@ -349,6 +488,7 @@ proposes alternates, never silently changes locked parts.
 ```
 pcbforge/                    ← THE TOOL
   rules/jlc-2layer.json  jlc-4layer.json
+  policies/pcbforge-standard-v1.yaml
   modules/                   versioned circuit modules + renders + index.md
   asserts/                   shared rule/assertion library
   toolchain/                 pinned compiler env (uv.lock — atopile 0.15.7)
@@ -365,6 +505,7 @@ pcbforge/                    ← THE TOOL
 
 my-stm32-thing/              ← A PROJECT
   spec.md                    living design doc (the spine)
+  policy.yaml                manufacturing declarations, evidence, exceptions
   STATUS.md                  tracked generated workflow dashboard + gates
   src/                       circuit code (modules, board top)
   docs/architecture.md       tracked Mermaid architecture review artifact
@@ -399,7 +540,9 @@ shell + file read/write drives them. No plugin binding. Vendor-neutral.
 
 ## Command set
 
-`status`, `init`, `check-ioc`, `build`, `test`, `brief`, `verify`, `verify-stock`,
+`status`, `init`, `check-ioc`, `check-parts`, `check-build-test`, `build`,
+`test`, `brief`, `check-brief`,
+`verify`, `verify-stock`,
 `fab-out`, `publish`, `ioc2code`, `migrate`. Spec is not a verb — chat.
 **`init` is create-only** — refuses to touch an initialized project. Layer
 changes go through `migrate` (backup, rules swap, revalidation) — never
@@ -475,8 +618,9 @@ Gates while building board 1:
   session, scripted on the live board with the pilots' fingerprint tooling:
   no-op rebuild fingerprint check, controlled add / rename / footprint-swap /
   remove, induced build failure — placement and routing must survive all.
-- Board 1 carries scaffolding debt by design: `init` and `check-ioc` are
-  implemented; `brief`/`fab-out` may be manual or rough; the MCU module is
+- Board 1 carries scaffolding debt by design: `init`, `check-ioc`, and the
+  schema-backed `brief` gate are implemented; `fab-out` may be manual or
+  rough; the MCU module is
   AI-transcribed from the checked `.ioc` with the one-to-one audit in
   `agent/mcu.md` while ioc2code matures.
 
@@ -487,8 +631,11 @@ Gates while building board 1:
 2. `agent/spec-interview.md` (reuse B's design — unchanged).
 3. `README.md` + `agent/operating-manual.md`.
 4. `init` + AI-led MCU playbook + `check-ioc` (implemented); then `ioc2code`.
-5. Assertion library + `build`/`test` wrappers.
-6. Layout copilot: `brief` + `verify` scripts + `agent/layout-copilot.md`.
+5. Per-board assertion IDs + exact `build-test.yaml`,
+   `check-build-test`, tracked evidence report, and STATUS gate (implemented);
+   shared assertion library grows from board postmortems.
+6. Layout copilot: `brief` gate implemented; add `verify` scripts +
+   `agent/layout-copilot.md`.
 7. `fab-out`, `verify-stock`.
 8. Module library grows per board; `publish` when first board proves modules.
 

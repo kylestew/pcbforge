@@ -6,18 +6,44 @@ import argparse
 import sys
 from pathlib import Path
 
+from pcbforge.build_test import (
+    BuildTestError,
+    BuildTestInputError,
+    check_build_test,
+)
 from pcbforge.initialize import InitError, InitInputError, initialize_project
 from pcbforge.ioc import (
     IocProjectError,
     IocValidationError,
     check_ioc,
 )
+from pcbforge.parts import (
+    PartsAuditError,
+    PartsAuditInputError,
+    check_parts,
+    render_parts_audit,
+)
+from pcbforge.policy import (
+    PolicyError,
+    PolicyInputError,
+    check_policy,
+    migrate_policy,
+    render_policy_result,
+)
+from pcbforge.placement import (
+    PlacementError,
+    PlacementInputError,
+    check_brief,
+    generate_brief,
+)
 from pcbforge.status import (
     StatusCheckError,
     StatusError,
     StatusInputError,
     inspect_status,
+    mark_policy,
     mark_status,
+    policy_approval_context,
     read_status_document,
     render_terminal,
     run_status_checks,
@@ -65,6 +91,151 @@ def _parser() -> argparse.ArgumentParser:
         help="initialized pcbforge project (default: current directory)",
     )
 
+    check_parts_parser = subcommands.add_parser(
+        "check-parts",
+        help="block project-local KiCad assets for commodity parts",
+        description=(
+            "Audit src/parts and reject generated project-local symbols, "
+            "footprints, or models for standard chip resistors, capacitors, "
+            "and LEDs that have canonical KiCad library assets."
+        ),
+    )
+    check_parts_parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+        help="initialized pcbforge project (default: current directory)",
+    )
+
+    check_build_test_parser = subcommands.add_parser(
+        "check-build-test",
+        help="run the deterministic Step 6 acceptance gate",
+        description=(
+            "Run a pinned frozen build, then validate build-test.yaml against "
+            "the exact BOM, source assertions, resolved PCB, and no-op spatial "
+            "preservation contract."
+        ),
+    )
+    check_build_test_parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+        help="initialized pcbforge project (default: current directory)",
+    )
+    check_build_test_parser.add_argument(
+        "--write-report",
+        action="store_true",
+        help="atomically write docs/build-test.md after a full pass",
+    )
+
+    brief_parser = subcommands.add_parser(
+        "brief",
+        help="generate the Step 7 placement brief and KiCad net classes",
+        description=(
+            "Validate placement.yaml against the current Step 6 PCB topology, "
+            "generate brief.md, and merge only PCBForge-owned net classes into "
+            "the KiCad project. Never changes the PCB."
+        ),
+    )
+    brief_parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+        help="initialized pcbforge project (default: current directory)",
+    )
+
+    check_brief_parser = subcommands.add_parser(
+        "check-brief",
+        help="validate the current Step 7 placement outputs without writing",
+        description=(
+            "Read-only validation of placement.yaml, brief.md, the current "
+            "non-spatial PCB topology, and PCBForge-owned KiCad net classes."
+        ),
+    )
+    check_brief_parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+        help="initialized pcbforge project (default: current directory)",
+    )
+
+    check_policy_parser = subcommands.add_parser(
+        "check-policy",
+        help="validate manufacturing and technology policy",
+        description=(
+            "Read-only validation of the pinned schema-10 platform policy, "
+            "project declarations, sourcing evidence, and approved exceptions."
+        ),
+    )
+    check_policy_parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+        help="pcbforge project (default: current directory)",
+    )
+
+    policy_parser = subcommands.add_parser(
+        "policy",
+        help="record explicit project-policy approvals",
+    )
+    policy_commands = policy_parser.add_subparsers(
+        dest="policy_command",
+        required=True,
+    )
+    baseline_parser = policy_commands.add_parser(
+        "approve-baseline",
+        help="record explicit approval of a migrated policy baseline",
+    )
+    baseline_parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+    )
+    baseline_parser.add_argument("--note", required=True)
+
+    exception_parser = policy_commands.add_parser(
+        "approve-exception",
+        help="record explicit approval of one declared policy exception",
+    )
+    exception_parser.add_argument("exception_id", metavar="EXCEPTION_ID")
+    exception_parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+    )
+    exception_parser.add_argument("--note", required=True)
+
+    sourcing_parser = policy_commands.add_parser(
+        "confirm-sourcing",
+        help="record the post-FAB pre-order sourcing review",
+    )
+    sourcing_parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+    )
+    sourcing_parser.add_argument("--note", required=True)
+
+    migrate_parser = subcommands.add_parser(
+        "migrate-policy",
+        help="explicitly migrate a schema-7-through-9 project to schema 10",
+    )
+    migrate_parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+        help="initialized schema-7-through-9 project (default: current directory)",
+    )
+
     status_parser = subcommands.add_parser(
         "status",
         help="show or update the project's tracked workflow dashboard",
@@ -105,7 +276,10 @@ def _status_show_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--check",
         action="store_true",
-        help="run stage-appropriate compiler, IOC, and DRC checks",
+        help=(
+            "run stage-appropriate compiler, policy, build-test, parts, "
+            "placement-brief, IOC, and DRC checks"
+        ),
     )
     return parser
 
@@ -121,7 +295,7 @@ def _status_mark_parser() -> argparse.ArgumentParser:
     parser.add_argument("phase", help="workflow phase key, such as layout or order")
     parser.add_argument(
         "action",
-        help="complete, blocked, reopened, or skipped",
+        help="complete, proposal-approved, blocked, reopened, or skipped",
     )
     parser.add_argument(
         "project_dir",
@@ -164,10 +338,7 @@ def _run_status_cli(argv: list[str]) -> int:
             )
             report = result.report
             print(render_terminal(report))
-            print(
-                "pcbforge: "
-                f"{'updated' if result.wrote else 'unchanged'} STATUS.md"
-            )
+            print(f"pcbforge: {'updated' if result.wrote else 'unchanged'} STATUS.md")
         else:
             project_dir = Path(status_args.project_dir)
             document = read_status_document(project_dir.expanduser().resolve())
@@ -222,8 +393,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
         print(
-            f"pcbforge: valid {result.part_number} "
-            f"({result.family}, {result.package})"
+            f"pcbforge: valid {result.part_number} ({result.family}, {result.package})"
         )
         print("pin\tlabel\tsignal\tmode")
         for pin in result.pins:
@@ -238,6 +408,139 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
         print("pcbforge: CubeMX 6.18 semantic round-trip passed")
+        return 0
+
+    if args.command == "check-parts":
+        try:
+            result = check_parts(Path(args.project_dir))
+        except PartsAuditInputError as exc:
+            print(f"pcbforge check-parts: {exc}", file=sys.stderr)
+            return 2
+        except PartsAuditError as exc:
+            print(f"pcbforge check-parts: {exc}", file=sys.stderr)
+            return 1
+
+        print(render_parts_audit(result))
+        return 0 if result.ok else 1
+
+    if args.command == "check-policy":
+        try:
+            project_dir = Path(args.project_dir)
+            document = read_status_document(project_dir.expanduser().resolve())
+            report = inspect_status(project_dir, document=document)
+            through_phase = (
+                report.current.phase.key
+                if report.current is not None
+                else "verify"
+            )
+            baseline, exceptions, _ = policy_approval_context(document)
+            result = check_policy(
+                project_dir,
+                through_phase=through_phase,
+                baseline_approval=baseline,
+                exception_approvals=exceptions,
+            )
+        except PolicyInputError as exc:
+            print(f"pcbforge check-policy: {exc}", file=sys.stderr)
+            return 2
+        except PolicyError as exc:
+            print(f"pcbforge check-policy: {exc}", file=sys.stderr)
+            return 1
+
+        print(render_policy_result(result))
+        return 0 if result.ok else 1
+
+    if args.command == "policy":
+        action = {
+            "approve-baseline": "baseline-approved",
+            "approve-exception": "exception-approved",
+            "confirm-sourcing": "sourcing-confirmed",
+        }[args.policy_command]
+        try:
+            result = mark_policy(
+                Path(args.project_dir),
+                action,
+                args.note,
+                subject=getattr(args, "exception_id", ""),
+            )
+        except (StatusInputError, PolicyInputError) as exc:
+            print(f"pcbforge policy: {exc}", file=sys.stderr)
+            return 2
+        except (StatusError, PolicyError) as exc:
+            print(f"pcbforge policy: {exc}", file=sys.stderr)
+            return 1
+        print(render_terminal(result.report))
+        print(
+            f"pcbforge: recorded policy {action}; "
+            f"{'updated' if result.wrote else 'unchanged'} STATUS.md"
+        )
+        return 0
+
+    if args.command == "migrate-policy":
+        try:
+            migration = migrate_policy(Path(args.project_dir))
+            if migration.wrote:
+                write_status(Path(args.project_dir))
+        except PolicyInputError as exc:
+            print(f"pcbforge migrate-policy: {exc}", file=sys.stderr)
+            return 2
+        except (PolicyError, StatusError) as exc:
+            print(f"pcbforge migrate-policy: {exc}", file=sys.stderr)
+            return 1
+        state = "migrated" if migration.wrote else "already migrated"
+        print(f"pcbforge: {state} policy in {migration.project_dir}")
+        if migration.review_items:
+            print(
+                "pcbforge: review required for "
+                + ", ".join(migration.review_items)
+            )
+        if migration.wrote:
+            print(
+                "pcbforge: explicit policy baseline approval is still required"
+            )
+        return 0
+
+    if args.command == "check-build-test":
+        try:
+            result = check_build_test(
+                Path(args.project_dir),
+                write_report=args.write_report,
+            )
+        except BuildTestInputError as exc:
+            print(f"pcbforge check-build-test: {exc}", file=sys.stderr)
+            return 2
+        except BuildTestError as exc:
+            print(f"pcbforge check-build-test: {exc}", file=sys.stderr)
+            return 1
+
+        print(f"pcbforge: build + test passed — {result.summary}")
+        if args.write_report:
+            state = "updated" if result.wrote_report else "unchanged"
+            print(f"pcbforge: {state} {result.report_path.as_posix()}")
+        return 0
+
+    if args.command in {"brief", "check-brief"}:
+        try:
+            result = (
+                generate_brief(Path(args.project_dir))
+                if args.command == "brief"
+                else check_brief(Path(args.project_dir))
+            )
+        except PlacementInputError as exc:
+            print(f"pcbforge {args.command}: {exc}", file=sys.stderr)
+            return 2
+        except PlacementError as exc:
+            print(f"pcbforge {args.command}: {exc}", file=sys.stderr)
+            return 1
+
+        print(f"pcbforge: placement brief passed — {result.summary}")
+        if args.command == "brief":
+            brief_state = "updated" if result.wrote_brief else "unchanged"
+            project_state = "updated" if result.wrote_project else "unchanged"
+            print(
+                f"pcbforge: {brief_state} {result.brief_path.as_posix()}; "
+                f"{project_state} {result.project_path.as_posix()}; PCB unchanged"
+            )
         return 0
 
     raise AssertionError(f"unhandled command: {args.command}")

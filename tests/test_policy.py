@@ -1,0 +1,664 @@
+from __future__ import annotations
+
+import hashlib
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+import yaml
+
+from pcbforge.cli import main
+from pcbforge.policy import (
+    PolicyInputError,
+    check_policy,
+    load_policy_profile,
+    migrate_policy,
+    policy_exception_fingerprints,
+    render_default_policy,
+)
+from pcbforge.status import (
+    StatusDocument,
+    StatusEvent,
+    StatusInputError,
+    _approval_fingerprint,
+    inspect_status,
+    mark_policy,
+    mark_status,
+    write_status,
+)
+
+TOOL_ROOT = Path(__file__).resolve().parents[1]
+TOOLCHAIN_LOCK_HASH = hashlib.sha256(
+    (TOOL_ROOT / "toolchain" / "uv.lock").read_bytes()
+).hexdigest()
+RULES_2L_HASH = hashlib.sha256(
+    (TOOL_ROOT / "rules" / "jlc-2layer.json").read_bytes()
+).hexdigest()
+
+SPEC = """---
+spec_schema: 1
+name: garden-logger
+layers: 2
+stm32_family: G0
+power_in: usb-c
+rails: [+3V3]
+peripherals: [i2c]
+board_mm: [50, 40]
+---
+# Garden logger
+"""
+
+BOARD_0603 = """(kicad_pcb
+  (version 20241229)
+  (layers
+    (0 "F.Cu" signal)
+    (31 "B.Cu" signal)
+  )
+  (footprint "Resistor_SMD:R_0603_1608Metric"
+    (layer "F.Cu")
+    (at 110 120)
+    (property "Reference" "R1")
+    (pad "1" smd rect (at -0.8 0) (net 1 "GND"))
+    (pad "2" smd rect (at 0.8 0) (net 2 "+3V3"))
+  )
+)
+"""
+
+BUILD_TEST = """build_test_schema: 1
+build: default
+bom:
+  - lcsc: C25804
+    mpn: 0603WAF1002T5E
+    footprint: Resistor_SMD:R_0603_1608Metric
+    quantity: 1
+board_footprints: 1
+assertions: [rail-test]
+"""
+
+
+class PolicyFixture(unittest.TestCase):
+    def project(
+        self,
+        root: Path,
+        *,
+        schema: int = 10,
+        board: str = BOARD_0603,
+        complete_evidence: bool = True,
+        include_build_test: bool = True,
+    ) -> Path:
+        project = root / "garden-logger"
+        project.mkdir()
+        (project / "spec.md").write_text(SPEC, encoding="utf-8")
+        policy = yaml.safe_load(render_default_policy())
+        if complete_evidence:
+            for assurance in policy["assurances"].values():
+                assurance["evidence"] = ["fixture evidence"]
+        if include_build_test:
+            policy["sourcing"] = [
+                {
+                    "lcsc": "C25804",
+                    "jlc_class": "basic",
+                    "assembly_status": "available",
+                    "lifecycle": "active",
+                    "checked_on": "2026-07-27",
+                    "second_source": "C25803",
+                }
+            ]
+        (project / "policy.yaml").write_text(
+            yaml.safe_dump(policy, sort_keys=False),
+            encoding="utf-8",
+        )
+        _, _, policy_hash = load_policy_profile(TOOL_ROOT)
+        policy_pin = (
+            f"""policy:
+  profile: pcbforge-standard-v1
+  profile_sha256: {policy_hash}
+  baseline_approval: spec
+"""
+            if schema == 10
+            else ""
+        )
+        (project / ".pcbforge").write_text(
+            f"""schema: {schema}
+project: garden-logger
+toolchain:
+  atopile: "0.15.7"
+  kicad: "9.0.9"
+  uv_lock_sha256: {TOOLCHAIN_LOCK_HASH}
+rules:
+  profile: jlc-2layer-conservative-v1
+  profile_sha256: {RULES_2L_HASH}
+{policy_pin}\
+guidance:
+  agents_schema: {schema}
+  policy_schema: 1
+  build_test_schema: 1
+  brief_schema: 1
+  approval_schema: 1
+""",
+            encoding="utf-8",
+        )
+        (project / "ato.yaml").write_text(
+            "builds:\n  default:\n    entry: src/main.ato:App\n",
+            encoding="utf-8",
+        )
+        (project / "src").mkdir()
+        (project / "src" / "main.ato").write_text(
+            "module App:\n    pass\n",
+            encoding="utf-8",
+        )
+        (project / "garden-logger.kicad_pcb").write_text(
+            board,
+            encoding="utf-8",
+        )
+        (project / "fab").mkdir()
+        if include_build_test:
+            (project / "build-test.yaml").write_text(
+                BUILD_TEST,
+                encoding="utf-8",
+            )
+        return project
+
+
+class PolicyCheckerTests(PolicyFixture):
+    def test_standard_policy_passes_offline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            result = check_policy(
+                project,
+                tool_root=TOOL_ROOT,
+                through_phase="implement",
+            )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.violations, ())
+        self.assertTrue(result.baseline_fingerprint)
+
+    def test_future_assurance_evidence_does_not_block_spec(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(
+                Path(temporary),
+                complete_evidence=False,
+                include_build_test=False,
+            )
+            spec_result = check_policy(
+                project,
+                tool_root=TOOL_ROOT,
+                through_phase="spec",
+            )
+            implement_result = check_policy(
+                project,
+                tool_root=TOOL_ROOT,
+                through_phase="implement",
+            )
+
+        self.assertTrue(spec_result.ok)
+        self.assertFalse(implement_result.ok)
+        self.assertIn(
+            "assurance.reverse-polarity",
+            {violation.rule for violation in implement_result.violations},
+        )
+
+    def test_hard_fabricator_constraint_cannot_be_excepted(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            policy_path = project / "policy.yaml"
+            policy = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
+            policy["manufacturing"]["fabricator"] = "other"
+            policy_path.write_text(
+                yaml.safe_dump(policy, sort_keys=False),
+                encoding="utf-8",
+            )
+
+            result = check_policy(
+                project,
+                tool_root=TOOL_ROOT,
+                through_phase="spec",
+            )
+
+        self.assertFalse(result.ok)
+        violation = next(
+            item for item in result.violations if item.rule == "hard.fabricator"
+        )
+        self.assertTrue(violation.hard)
+
+    def test_0402_requires_a_current_scoped_exception(self) -> None:
+        board = BOARD_0603.replace(
+            "R_0603_1608Metric",
+            "R_0402_1005Metric",
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(
+                Path(temporary),
+                board=board,
+                include_build_test=False,
+            )
+            policy_path = project / "policy.yaml"
+            policy = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
+            policy["exceptions"] = [
+                {
+                    "id": "allow-r1-0402",
+                    "rule": "components.commodity-package",
+                    "scope": "R1",
+                    "rationale": "Required for the approved density constraint.",
+                }
+            ]
+            policy_path.write_text(
+                yaml.safe_dump(policy, sort_keys=False),
+                encoding="utf-8",
+            )
+
+            blocked = check_policy(
+                project,
+                tool_root=TOOL_ROOT,
+                through_phase="implement",
+            )
+            fingerprint = policy_exception_fingerprints(
+                project,
+                tool_root=TOOL_ROOT,
+            )["allow-r1-0402"]
+            approved = check_policy(
+                project,
+                tool_root=TOOL_ROOT,
+                through_phase="implement",
+                exception_approvals={"allow-r1-0402": fingerprint},
+            )
+
+        self.assertFalse(blocked.ok)
+        self.assertIn("lacks current explicit approval", blocked.violations[0].message)
+        self.assertTrue(approved.ok)
+
+    def test_schema_nine_requires_explicit_migration(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), schema=9)
+            with self.assertRaisesRegex(PolicyInputError, "migrate-policy"):
+                check_policy(project, tool_root=TOOL_ROOT)
+
+    def test_tampered_toolchain_and_rules_pins_are_hard_failures(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            pins_path = project / ".pcbforge"
+            pins = yaml.safe_load(pins_path.read_text(encoding="utf-8"))
+            pins["toolchain"]["atopile"] = "unreviewed"
+            pins["rules"]["profile_sha256"] = "unreviewed"
+            pins_path.write_text(
+                yaml.safe_dump(pins, sort_keys=False),
+                encoding="utf-8",
+            )
+
+            result = check_policy(
+                project,
+                tool_root=TOOL_ROOT,
+                through_phase="init",
+            )
+
+        violations = {
+            violation.rule: violation for violation in result.violations
+        }
+        self.assertTrue(violations["hard.toolchain"].hard)
+        self.assertTrue(violations["hard.fabricator-rules"].hard)
+
+
+class PolicyApprovalAndMigrationTests(PolicyFixture):
+    def test_new_project_spec_approval_is_bound_to_policy_baseline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary) / "garden-logger"
+            project.mkdir()
+            (project / "spec.md").write_text(SPEC, encoding="utf-8")
+            (project / "policy.yaml").write_text(
+                render_default_policy(),
+                encoding="utf-8",
+            )
+            mark_status(
+                project,
+                "spec",
+                "complete",
+                "User approved requirements and initial policy",
+            )
+            policy_path = project / "policy.yaml"
+            policy = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
+            policy["manufacturing"]["thickness_mm"] = 2.0
+            policy_path.write_text(
+                yaml.safe_dump(policy, sort_keys=False),
+                encoding="utf-8",
+            )
+
+            stale = inspect_status(project)
+            reopened = write_status(project)
+
+        self.assertEqual(stale.phases[0].state, "Blocked")
+        self.assertIn("approval is stale", stale.phases[0].detail)
+        self.assertEqual(reopened.report.document.events[-1].action, "reopened")
+
+    def test_exception_approval_reopens_affected_completed_phase(self) -> None:
+        board = BOARD_0603.replace(
+            "R_0603_1608Metric",
+            "R_0402_1005Metric",
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(
+                Path(temporary),
+                board=board,
+                include_build_test=False,
+            )
+            policy_path = project / "policy.yaml"
+            policy = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
+            policy["exceptions"] = [
+                {
+                    "id": "allow-r1-0402",
+                    "rule": "components.commodity-package",
+                    "scope": "R1",
+                    "rationale": "Approved density tradeoff.",
+                }
+            ]
+            policy_path.write_text(
+                yaml.safe_dump(policy, sort_keys=False),
+                encoding="utf-8",
+            )
+            phases = ("spec", "architect", "mcu", "implement")
+            events = tuple(
+                StatusEvent(
+                    f"2026-07-27T10:0{index}:00+00:00",
+                    phase,
+                    "complete",
+                    f"{phase} complete",
+                    (
+                        _approval_fingerprint(project, phase)
+                        if phase in {"spec", "architect"}
+                        else ""
+                    ),
+                )
+                for index, phase in enumerate(phases)
+            )
+            with mock.patch(
+                "pcbforge.status._static_evidence",
+                return_value=(True, "fixture evidence", True),
+            ):
+                write_status(project, document=StatusDocument("", events, {}))
+                marked = mark_policy(
+                    project,
+                    "exception-approved",
+                    "User approved 0402 for R1",
+                    subject="allow-r1-0402",
+                    tool_root=TOOL_ROOT,
+                    now="2026-07-27T12:00:00+00:00",
+                )
+
+        self.assertEqual(marked.report.document.events[-1].phase, "implement")
+        self.assertEqual(marked.report.document.events[-1].action, "reopened")
+        self.assertEqual(
+            marked.report.document.policy_events[-1].action,
+            "exception-approved",
+        )
+
+    def test_schema_nine_migration_requires_separate_baseline_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(
+                Path(temporary),
+                schema=9,
+                include_build_test=False,
+            )
+            (project / "policy.yaml").unlink()
+            (project / "AGENTS.md").write_text(
+                "<!-- pcbforge-agents-schema: 9 -->\n# generated\n",
+                encoding="utf-8",
+            )
+            mark_status(project, "spec", "complete", "User approved spec")
+
+            migration = migrate_policy(project, tool_root=TOOL_ROOT)
+            pins = yaml.safe_load(
+                (project / ".pcbforge").read_text(encoding="utf-8")
+            )
+            blocked = check_policy(
+                project,
+                tool_root=TOOL_ROOT,
+                through_phase="spec",
+            )
+            dashboard_before_approval = inspect_status(project)
+            approved = mark_policy(
+                project,
+                "baseline-approved",
+                "User approved migrated policy baseline",
+                tool_root=TOOL_ROOT,
+            )
+            second = migrate_policy(project, tool_root=TOOL_ROOT)
+            migrated_agents = (project / "AGENTS.md").read_text(encoding="utf-8")
+
+        self.assertTrue(migration.wrote)
+        self.assertEqual(pins["schema"], 10)
+        self.assertEqual(pins["policy"]["baseline_approval"], "policy-event")
+        self.assertFalse(blocked.ok)
+        self.assertIn(
+            "policy baseline requires explicit user approval",
+            dashboard_before_approval.current.detail,
+        )
+        self.assertEqual(
+            approved.report.document.policy_events[-1].action,
+            "baseline-approved",
+        )
+        self.assertFalse(second.wrote)
+        self.assertIn("pcbforge-agents-schema: 10", migrated_agents)
+
+    def test_schema_seven_migrates_directly_and_reopens_unbound_spec(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(
+                Path(temporary),
+                schema=7,
+                include_build_test=False,
+            )
+            (project / "policy.yaml").unlink()
+            (project / "AGENTS.md").write_text(
+                "<!-- pcbforge-agents-schema: 7 -->\n# generated\n",
+                encoding="utf-8",
+            )
+            write_status(
+                project,
+                document=StatusDocument(
+                    "",
+                    (
+                        StatusEvent(
+                            "2026-07-27T09:00:00+00:00",
+                            "spec",
+                            "complete",
+                            "Legacy unbound user approval",
+                        ),
+                    ),
+                    {},
+                ),
+            )
+
+            migration = migrate_policy(project, tool_root=TOOL_ROOT)
+            refreshed = write_status(project)
+            pins = yaml.safe_load(
+                (project / ".pcbforge").read_text(encoding="utf-8")
+            )
+
+        self.assertTrue(migration.wrote)
+        self.assertEqual(pins["schema"], 10)
+        self.assertEqual(
+            pins["guidance"],
+            {
+                "agents_schema": 10,
+                "policy_schema": 1,
+                "build_test_schema": 1,
+                "brief_schema": 1,
+                "approval_schema": 1,
+                "architect_schema": 4,
+                "architecture_diagram_schema": 1,
+                "mcu_schema": 1,
+                "implement_schema": 1,
+                "status_schema": 1,
+            },
+        )
+        self.assertEqual(refreshed.report.document.events[-1].phase, "spec")
+        self.assertEqual(refreshed.report.document.events[-1].action, "reopened")
+
+    def test_policy_change_durably_reopens_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), include_build_test=False)
+            policy_path = project / "policy.yaml"
+            policy = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
+            policy["exceptions"] = [
+                {
+                    "id": "unused-for-test",
+                    "rule": "manufacturing.thickness",
+                    "scope": "project",
+                    "rationale": "Fixture exception.",
+                }
+            ]
+            policy["manufacturing"]["thickness_mm"] = 2.0
+            policy_path.write_text(
+                yaml.safe_dump(policy, sort_keys=False),
+                encoding="utf-8",
+            )
+            marked = mark_policy(
+                project,
+                "exception-approved",
+                "User approved 2 mm construction",
+                subject="unused-for-test",
+                tool_root=TOOL_ROOT,
+            )
+            policy["exceptions"][0]["rationale"] = "Changed rationale and tradeoff."
+            policy_path.write_text(
+                yaml.safe_dump(policy, sort_keys=False),
+                encoding="utf-8",
+            )
+            invalidated = write_status(project)
+
+        self.assertEqual(
+            marked.report.document.policy_events[-1].action,
+            "exception-approved",
+        )
+        self.assertEqual(
+            invalidated.report.document.policy_events[-1].action,
+            "reopened",
+        )
+
+    def test_post_fab_sourcing_confirmation_gates_order_and_reopens_stale(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            (project / "fab" / "board.zip").write_bytes(b"fabrication package")
+            manual_phases = (
+                "spec",
+                "architect",
+                "mcu",
+                "implement",
+                "brief",
+                "layout",
+                "route",
+                "verify",
+                "fab-out",
+            )
+            events = tuple(
+                StatusEvent(
+                    f"2026-07-27T11:{index:02d}:00+00:00",
+                    phase,
+                    "complete",
+                    f"{phase} complete",
+                    (
+                        _approval_fingerprint(project, phase)
+                        if phase in {"spec", "architect", "brief"}
+                        else ""
+                    ),
+                )
+                for index, phase in enumerate(manual_phases)
+            )
+            from pcbforge import status as status_module
+
+            original_evidence = status_module._static_evidence
+
+            def evidence(project_dir, spec, document, phase):
+                if phase == "order":
+                    return original_evidence(
+                        project_dir,
+                        spec,
+                        document,
+                        phase,
+                    )
+                return True, "fixture evidence", True
+
+            with mock.patch(
+                "pcbforge.status._static_evidence",
+                side_effect=evidence,
+            ):
+                write_status(project, document=StatusDocument("", events, {}))
+                with self.assertRaisesRegex(
+                    StatusInputError,
+                    "post-FAB sourcing confirmation",
+                ):
+                    mark_status(
+                        project,
+                        "order",
+                        "complete",
+                        "User placed order",
+                    )
+                mark_policy(
+                    project,
+                    "sourcing-confirmed",
+                    "User confirmed current JLC availability and lifecycle",
+                    tool_root=TOOL_ROOT,
+                )
+                ordered = mark_status(
+                    project,
+                    "order",
+                    "complete",
+                    "User reviewed files and placed order",
+                    tool_root=TOOL_ROOT,
+                )
+                (project / "build-test.yaml").write_text(
+                    BUILD_TEST.replace("quantity: 1", "quantity: 2"),
+                    encoding="utf-8",
+                )
+                invalidated = write_status(project)
+
+            restored = inspect_status(project)
+
+        self.assertTrue(ordered.report.phases[11].complete)
+        self.assertEqual(
+            invalidated.report.document.policy_events[-1].action,
+            "reopened",
+        )
+        self.assertEqual(
+            invalidated.report.document.events[-1].phase,
+            "order",
+        )
+        self.assertEqual(
+            invalidated.report.document.events[-1].action,
+            "reopened",
+        )
+        self.assertFalse(restored.phases[11].complete)
+
+
+class PolicyCliTests(PolicyFixture):
+    def test_check_policy_exit_categories(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            with mock.patch("builtins.print"):
+                self.assertEqual(main(["check-policy", str(project)]), 0)
+
+            policy_path = project / "policy.yaml"
+            policy = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
+            policy["manufacturing"]["fabricator"] = "other"
+            policy_path.write_text(
+                yaml.safe_dump(policy, sort_keys=False),
+                encoding="utf-8",
+            )
+            with mock.patch("builtins.print"):
+                self.assertEqual(main(["check-policy", str(project)]), 1)
+
+            pins = project / ".pcbforge"
+            pins.write_text(
+                pins.read_text(encoding="utf-8").replace(
+                    "schema: 10",
+                    "schema: 9",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            with mock.patch("builtins.print"):
+                self.assertEqual(main(["check-policy", str(project)]), 2)
+
+
+if __name__ == "__main__":
+    unittest.main()

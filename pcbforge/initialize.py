@@ -17,14 +17,28 @@ from typing import Any, Callable, Mapping, Sequence
 
 import yaml
 
+from pcbforge.policy import (
+    POLICY_PROFILE_ID,
+    POLICY_SCHEMA,
+    PolicyError,
+    PolicyInputError,
+    check_policy,
+    load_policy_profile,
+)
+
 ATO_VERSION = "0.15.7"
 KICAD_VERSION = "9.0.9"
 SPEC_SCHEMA = 1
-PIN_SCHEMA = 5
-AGENTS_SCHEMA = 5
-ARCHITECT_GUIDE_SCHEMA = 3
+PIN_SCHEMA = 10
+AGENTS_SCHEMA = 10
+ARCHITECT_GUIDE_SCHEMA = 4
 ARCHITECTURE_DIAGRAM_SCHEMA = 1
 MCU_GUIDE_SCHEMA = 1
+IMPLEMENT_GUIDE_SCHEMA = 1
+BUILD_TEST_GUIDE_SCHEMA = 1
+BRIEF_GUIDE_SCHEMA = 1
+APPROVAL_GUIDE_SCHEMA = 1
+POLICY_GUIDE_SCHEMA = POLICY_SCHEMA
 STATUS_SCHEMA = 1
 BOARD_ORIGIN_MM = 100.0
 
@@ -651,16 +665,19 @@ def _render_agents(spec: ProjectSpec, tool_root: Path) -> str:
     return f"""<!-- pcbforge-agents-schema: {AGENTS_SCHEMA} -->
 # pcbforge project: {spec.name}
 
-This is a pcbforge circuit-as-code board project. Read `spec.md` first on every
-cold start, then refresh `STATUS.md` from source, saved workflow gates, compiler
-output, and the KiCad board.
+This is a pcbforge circuit-as-code board project. Read `spec.md` and
+`policy.yaml` first on every cold start, then refresh `STATUS.md` from source,
+saved workflow gates, compiler output, and the KiCad board.
 
 ## Required reading
 
-1. This file, `spec.md`, and `STATUS.md`.
+1. This file, `spec.md`, `policy.yaml`, and `STATUS.md`.
 2. `{tool_root}/agent/operating-manual.md`.
 3. `{tool_root}/agent/architect.md` before doing ARCHITECT work.
 4. `{tool_root}/agent/mcu.md` before doing MCU work.
+5. `{tool_root}/agent/implement.md` before doing IMPLEMENT work.
+6. `{tool_root}/agent/build-test.md` before doing build + test work.
+7. `{tool_root}/agent/brief.md` before doing placement-brief work.
 
 ## Ownership
 
@@ -672,6 +689,25 @@ output, and the KiCad board.
 - Circuit source owns identity, footprints, fields, and connectivity.
 - `{spec.name}.kicad_pcb` owns all spatial work.
 
+## Decision authority
+
+- Derive consequences of approved requirements, but never silently choose
+  between materially different reasonable designs.
+- A choice is material when alternatives affect topology, public interfaces,
+  connectors, resource allocation, cost, risk, reversibility, or user
+  experience. Present options, recommendation, tradeoffs, and consequences,
+  then stop before changing the affected artifact.
+- Silence, general permission to continue, and a broad implementation request
+  are not approval.
+- You may record approval already expressed by the user; never originate,
+  infer, self-approve, or reuse it.
+- Proposal approval precedes implementation. Final approval follows artifact
+  presentation and validation.
+- Approvals are bound to artifact fingerprints. A changed approved artifact
+  requires renewed approval; rerunning checks cannot revive an old gate.
+- Only local, reversible details that do not alter an approved contract may be
+  chosen autonomously, and their assumptions must be stated.
+
 ## Toolchain
 
 - KiCad 9 only; KiCad 10 is incompatible with the pinned compiler.
@@ -680,9 +716,26 @@ output, and the KiCad board.
 - Use `{tool_root}/scripts/cubemx` for command-line CubeMX 6.18 validation.
 - Ordering and spending remain human actions.
 
+## Manufacturing and technology policy
+
+- `{tool_root}/policies/{POLICY_PROFILE_ID}.yaml` is the tool-owned profile;
+  `.pcbforge` pins its identity and hash. `policy.yaml` records this project's
+  declarations, sourcing evidence, and requested exceptions.
+- JLCPCB fabrication and assembly, STM32, 2/4 layers, SWD, pinned tools, exact
+  part identity, official commodity libraries, spatial ownership, and human
+  ordering authority are hard constraints. They cannot be excepted.
+- FR4 1.6 mm / 1 oz, conventional vias, no controlled impedance, 0603 minimum
+  commodity packages, and avoidance of BGA/WLCSP/sub-0.5-mm QFN are defaults.
+  Deviations require a declared exception and explicit user approval.
+- Record protection, ESD, test-point, polarity, and pin-1 applicability and
+  evidence in `policy.yaml`. Record sourcing evidence for every selected LCSC
+  item. Do not infer approval or current availability.
+- Run `{tool_root}/scripts/pcbforge check-policy`. Approval commands persist
+  decisions already made in conversation; they never constitute approval.
+
 ## Resume
 
-1. Read this file, `spec.md`, and `STATUS.md`.
+1. Read this file, `spec.md`, `policy.yaml`, and `STATUS.md`.
 2. Run `{tool_root}/scripts/pcbforge status --check --write` from this directory.
 3. Inspect any dashboard blocker and the evidence for the reported current phase.
 4. Report the current focus and next actions, then wait for user approval where
@@ -694,12 +747,18 @@ output, and the KiCad board.
   frontmatter contains append-only workflow events and check fingerprints; its
   Markdown body is generated. Never edit the body manually.
 - Use `{tool_root}/scripts/pcbforge status --write` after meaningful project
-  changes. Use `--check` when compiler, IOC, or DRC evidence must be refreshed.
+  changes. Use `--check` when compiler, build-test, parts-policy,
+  placement-brief, IOC, or DRC evidence must be refreshed.
 - Record human gates only after an explicit declaration:
   `{tool_root}/scripts/pcbforge status mark <phase> complete --note "<reason>"`.
+  The command persists approval but never constitutes it.
 - Use `blocked` with a concrete reason, `reopened` when an approved phase
   changes, and `skipped` only for optional publish. Never infer user approval,
   layout completion, routing completion, or ordering.
+- Record a migrated baseline with `pcbforge policy approve-baseline`, a
+  declared exception with `pcbforge policy approve-exception <id>`, and the
+  final post-FAB review with `pcbforge policy confirm-sourcing`, always after
+  the user explicitly approves or confirms it.
 
 ## ARCHITECT gate
 
@@ -717,19 +776,26 @@ implementation:
    `src/modules/*.ato`; reserve `src/mcu.ato` for the per-project MCU boundary.
 4. Prefer `ElectricPower`, `I2C`, `SPI`, `UART`, `USB2_0_IF`, `CAN`, `SWD`,
    and `ElectricSignal`/`Electrical` over raw nets. Clarify `other` interfaces.
-5. Create and maintain `docs/architecture.md` with marker
+5. Draft `docs/architecture.md` with marker
    `pcbforge-architecture-diagram-schema: {ARCHITECTURE_DIAGRAM_SCHEMA}` and a
-   Mermaid `flowchart LR`. Draft it with the module graph, then keep it
-   synchronized with every source revision.
-6. Do not choose parts, footprints, LCSC numbers, resistor values, exact MCU
+   Mermaid `flowchart LR` before writing the skeleton. Present material
+   alternatives and the proposed graph, then stop for explicit user approval.
+6. After approval, record
+   `{tool_root}/scripts/pcbforge status mark architect proposal-approved --note "<approved choices>; diagram: docs/architecture.md"`.
+   A diagram or spec change invalidates this approval and stops coding until
+   the changed proposal is approved again. The dashboard treats architecture
+   source created before this current gate as a blocker.
+7. Only after current proposal approval, write the module skeleton and keep it
+   synchronized with the approved diagram.
+8. Do not choose parts, footprints, LCSC numbers, resistor values, exact MCU
    pins, or layout geometry. Do not begin the MCU or implementation phase.
-7. Build with the pinned compiler and require the PCB bytes/spatial content to
+9. Build with the pinned compiler and require the PCB bytes/spatial content to
    remain unchanged because an architecture skeleton has no physical parts.
-8. Audit every functional `App` instance, typed top-level connection, and
+10. Audit every functional `App` instance, typed top-level connection, and
    external boundary against the diagram. Present the tracked Mermaid diagram
    with the interface table, spec coverage, reuse status, risks, source diff,
-   and build result. Stop for explicit user approval.
-9. After explicit approval, run
+   and build result. Stop for separate explicit final user approval.
+11. After final approval, run
    `{tool_root}/scripts/pcbforge status mark architect complete --note "<summary>; diagram: docs/architecture.md"`,
    optionally retain the design rationale in the `spec.md` Decisions log, then
    stop at the MCU handoff. The STATUS event is the durable workflow gate.
@@ -751,6 +817,61 @@ After explicit ARCHITECT approval and a new MCU request, follow
 5. Until `ioc2code` exists, manually derive `src/mcu.ato` from the checked
    `.ioc` and perform an explicit one-to-one audit. Never let it silently
    diverge from the `.ioc`.
+
+## IMPLEMENT gate
+
+Before adding physical parts, follow `{tool_root}/agent/implement.md`:
+
+1. Reuse canonical KiCad symbols and footprints for commodity packages. A
+   selected MPN or LCSC number is supplier metadata, not a reason to generate
+   another 0603 resistor, capacitor, or LED library asset.
+2. Generate project-local KiCad assets only when the exact required package or
+   pin mapping is absent from the official libraries, then verify the generated
+   geometry against the datasheet.
+3. Run `{tool_root}/scripts/pcbforge check-parts` during part selection and
+   before presenting IMPLEMENT for completion.
+4. Complete protection/testability evidence and sourcing entries in
+   `policy.yaml`; run `{tool_root}/scripts/pcbforge check-policy` and stop for
+   explicit user approval of every required exception.
+5. `status --check` records these audits as required evidence. IMPLEMENT
+   cannot complete while parts or policy evidence is failed or stale.
+
+## Build + test gate
+
+After IMPLEMENT completes, follow `{tool_root}/agent/build-test.md`:
+
+1. Create the exact, tracked `build-test.yaml` acceptance contract.
+2. Give every required atopile assertion a unique `pcbforge-test` marker and
+   list the same IDs in the contract.
+3. Run
+   `{tool_root}/scripts/pcbforge status --check --write`.
+4. Build + test completes automatically only when the frozen build, exact BOM,
+   BOM-to-board parity, assertions, connectivity evidence, no-op spatial
+   preservation, and tracked `docs/build-test.md` report are all current.
+
+## Placement brief gate
+
+After build + test completes, follow `{tool_root}/agent/brief.md`:
+
+1. Write the exact qualitative placement contract in `placement.yaml`.
+2. Assign every PCB footprint to exactly one group and reference only current
+   PCB references, pads, and exact net names.
+3. Run `{tool_root}/scripts/pcbforge brief`; it generates `brief.md` and merges
+   only `pcbforge:` net classes into the KiCad project. It never edits the PCB.
+4. Run `{tool_root}/scripts/pcbforge check-brief` and present `brief.md` plus
+   the available schematic presentation for explicit user review.
+5. Mark BRIEF complete only after the user approves both. The status note must
+   contain `brief.md` and `schematic review: adequate`. If the presentation is
+   inadequate, block BRIEF and do not begin layout.
+
+## FAB-OUT and order policy
+
+- After FAB-OUT is complete, refresh live JLC availability and lifecycle
+  evidence for the exact BOM.
+- Present the result to the user and, only after explicit confirmation, record
+  `{tool_root}/scripts/pcbforge policy confirm-sourcing --note "<review>"`.
+- ORDER cannot complete unless that confirmation fingerprints the current
+  policy sourcing records, exact build-test BOM, and fabrication outputs.
 """
 
 
@@ -772,6 +893,7 @@ def _render_pins(
     metadata: Mapping[str, Any],
     profile: Mapping[str, Any],
     profile_path: Path,
+    policy_profile_hash: str,
 ) -> str:
     pins = {
         "schema": PIN_SCHEMA,
@@ -789,11 +911,21 @@ def _render_pins(
             "profile": profile["name"],
             "profile_sha256": _sha256(profile_path),
         },
+        "policy": {
+            "profile": POLICY_PROFILE_ID,
+            "profile_sha256": policy_profile_hash,
+            "baseline_approval": "spec",
+        },
         "guidance": {
             "agents_schema": AGENTS_SCHEMA,
             "architect_schema": ARCHITECT_GUIDE_SCHEMA,
             "architecture_diagram_schema": ARCHITECTURE_DIAGRAM_SCHEMA,
             "mcu_schema": MCU_GUIDE_SCHEMA,
+            "implement_schema": IMPLEMENT_GUIDE_SCHEMA,
+            "build_test_schema": BUILD_TEST_GUIDE_SCHEMA,
+            "brief_schema": BRIEF_GUIDE_SCHEMA,
+            "approval_schema": APPROVAL_GUIDE_SCHEMA,
+            "policy_schema": POLICY_GUIDE_SCHEMA,
             "status_schema": STATUS_SCHEMA,
         },
     }
@@ -812,6 +944,7 @@ def _render_scaffold(
     profile: Mapping[str, Any],
     metadata: Mapping[str, Any],
     profile_path: Path,
+    policy_profile_hash: str,
 ) -> None:
     _write(stage / "ato.yaml", _render_ato_yaml(spec))
     _write(stage / "src" / "main.ato", _render_main_ato(spec))
@@ -826,7 +959,13 @@ def _render_scaffold(
     _write(stage / "firmware" / ".gitkeep", "")
     _write(
         stage / ".pcbforge",
-        _render_pins(spec, metadata, profile, profile_path),
+        _render_pins(
+            spec,
+            metadata,
+            profile,
+            profile_path,
+            policy_profile_hash,
+        ),
     )
 
 
@@ -933,14 +1072,54 @@ def initialize_project(
     from pcbforge.status import (
         StatusError,
         StatusInputError as DashboardInputError,
+        inspect_status,
         read_status_document,
         write_status,
     )
 
     try:
         status_document = read_status_document(project_dir)
+        status_report = inspect_status(project_dir, document=status_document)
     except DashboardInputError as exc:
         raise InitInputError(str(exc)) from exc
+    spec_phase = status_report.phases[0]
+    spec_approval = next(
+        (
+            event
+            for event in reversed(status_document.events)
+            if event.phase == "spec"
+        ),
+        None,
+    )
+    if (
+        not spec_phase.complete
+        or spec_approval is None
+        or spec_approval.action != "complete"
+        or not spec_approval.approval_fingerprint
+    ):
+        raise InitInputError(
+            "cannot initialize: SPEC does not have current artifact-bound explicit "
+            "user approval "
+            f"({spec_phase.detail})"
+        )
+
+    try:
+        policy_result = check_policy(
+            project_dir,
+            tool_root=tool_root,
+            through_phase="spec",
+        )
+        _, _, policy_profile_hash = load_policy_profile(tool_root)
+    except (PolicyInputError, PolicyError) as exc:
+        raise InitInputError(f"cannot initialize: {exc}") from exc
+    if not policy_result.ok:
+        detail = "\n  - ".join(
+            f"[{violation.rule}] {violation.message}"
+            for violation in policy_result.violations
+        )
+        raise InitInputError(
+            "cannot initialize: project policy failed:\n  - " + detail
+        )
 
     profile, profile_path = _load_profile(tool_root, spec.layers)
     metadata = _tool_metadata(tool_root, runner)
@@ -960,6 +1139,7 @@ def initialize_project(
             profile,
             metadata,
             profile_path,
+            policy_profile_hash,
         )
         if smoke_build:
             _smoke_build(stage, tool_root, runner)
@@ -974,6 +1154,8 @@ def initialize_project(
     try:
         write_status(project_dir, document=status_document)
     except StatusError as exc:
-        raise InitError(f"project initialized but STATUS.md refresh failed: {exc}") from exc
+        raise InitError(
+            f"project initialized but STATUS.md refresh failed: {exc}"
+        ) from exc
 
     return InitResult(name=spec.name, project_dir=project_dir)

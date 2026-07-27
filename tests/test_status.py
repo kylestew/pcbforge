@@ -3,10 +3,13 @@ from __future__ import annotations
 import subprocess
 import tempfile
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 from unittest import mock
 
+from pcbforge.build_test import fingerprint_inputs
 from pcbforge.cli import main
+from pcbforge.policy import render_default_policy
 from pcbforge.status import (
     CheckRecord,
     StatusCheckError,
@@ -81,6 +84,11 @@ class StatusFixture(unittest.TestCase):
         (project / "spec.md").write_text(spec_text(), encoding="utf-8")
         if initialized:
             self.add_scaffold(project)
+        else:
+            (project / "policy.yaml").write_text(
+                render_default_policy(),
+                encoding="utf-8",
+            )
         return project
 
     def add_scaffold(self, project: Path) -> None:
@@ -149,6 +157,43 @@ class DashboardTests(StatusFixture):
             self.assertEqual(document.events[-1].phase, "spec")
             self.assertEqual(document.events[-1].action, "complete")
 
+    def test_changed_approved_spec_is_durably_reopened_before_init(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            spec = project / "spec.md"
+            approved_contents = spec.read_text(encoding="utf-8")
+            marked = mark_status(
+                project,
+                "spec",
+                "complete",
+                "User approved requirements",
+            )
+            self.assertTrue(
+                marked.report.document.events[-1].approval_fingerprint
+            )
+
+            spec.write_text(
+                approved_contents + "\nMaterial requirement changed.\n",
+                encoding="utf-8",
+            )
+            inspected = inspect_status(project)
+            self.assertEqual(inspected.phases[0].state, "Blocked")
+            self.assertIn("approval is stale", inspected.phases[0].detail)
+
+            invalidated = write_status(
+                project,
+                now="2026-07-27T09:00:00+00:00",
+            )
+            self.assertEqual(
+                invalidated.report.document.events[-1].action,
+                "reopened",
+            )
+            spec.write_text(approved_contents, encoding="utf-8")
+            restored = inspect_status(project)
+
+        self.assertFalse(restored.phases[0].complete)
+        self.assertEqual(restored.phases[0].state, "In progress")
+
     def test_dashboard_renders_every_phase_and_core_sections(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))
@@ -212,6 +257,185 @@ class DashboardTests(StatusFixture):
             self.assertEqual(architect.state, "Blocked")
             self.assertIn("stale", architect.detail)
 
+    def test_schema_nine_architect_requires_proposal_and_final_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            (project / ".pcbforge").write_text("schema: 9\n", encoding="utf-8")
+            self.add_architecture(project)
+            spec_gate = mark_status(project, "spec", "complete", "User approved spec")
+            self.assertTrue(
+                spec_gate.report.document.events[-1].approval_fingerprint
+            )
+
+            with self.assertRaisesRegex(
+                StatusInputError,
+                "proposal has not received explicit user approval",
+            ):
+                mark_status(
+                    project,
+                    "architect",
+                    "complete",
+                    "Final architecture approved",
+                    tool_root=TOOL_ROOT,
+                    runner=FakeRunner(),
+                )
+
+            proposed = mark_status(
+                project,
+                "architect",
+                "proposal-approved",
+                "User approved module graph and interfaces",
+            )
+            proposal_event = proposed.report.document.events[-1]
+            self.assertEqual(proposal_event.action, "proposal-approved")
+            self.assertTrue(proposal_event.approval_fingerprint)
+            self.assertEqual(proposed.report.phases[2].state, "In progress")
+
+            diagram = project / "docs" / "architecture.md"
+            diagram.write_text(
+                diagram.read_text(encoding="utf-8").replace(
+                    "# architecture",
+                    "# revised architecture",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                StatusInputError,
+                "proposal has not received explicit user approval",
+            ):
+                mark_status(
+                    project,
+                    "architect",
+                    "complete",
+                    "Final architecture approved",
+                    tool_root=TOOL_ROOT,
+                    runner=FakeRunner(),
+                )
+            mark_status(
+                project,
+                "architect",
+                "proposal-approved",
+                "User approved revised module graph and interfaces",
+            )
+            completed = mark_status(
+                project,
+                "architect",
+                "complete",
+                "User approved compiled architecture and final audit",
+                tool_root=TOOL_ROOT,
+                runner=FakeRunner(),
+            )
+
+        self.assertTrue(completed.report.phases[2].complete)
+        self.assertTrue(
+            completed.report.document.events[-1].approval_fingerprint
+        )
+
+    def test_schema_nine_flags_architecture_source_created_before_proposal(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            (project / ".pcbforge").write_text("schema: 9\n", encoding="utf-8")
+            mark_status(project, "spec", "complete", "User approved spec")
+            self.add_architecture(project)
+
+            report = inspect_status(project)
+
+        self.assertEqual(report.phases[2].state, "Blocked")
+        self.assertIn(
+            "source exists without current proposal approval",
+            report.phases[2].detail,
+        )
+
+    def test_changed_approved_architecture_reopens_and_cannot_revive(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            (project / ".pcbforge").write_text("schema: 9\n", encoding="utf-8")
+            self.add_architecture(project)
+            mark_status(project, "spec", "complete", "User approved spec")
+            mark_status(
+                project,
+                "architect",
+                "proposal-approved",
+                "User approved proposed graph",
+            )
+            completed = mark_status(
+                project,
+                "architect",
+                "complete",
+                "User approved compiled graph and audit",
+                tool_root=TOOL_ROOT,
+                runner=FakeRunner(),
+            )
+            self.assertTrue(completed.report.phases[2].complete)
+
+            diagram = project / "docs" / "architecture.md"
+            approved_contents = diagram.read_text(encoding="utf-8")
+            diagram.write_text(
+                approved_contents.replace(
+                    "# architecture",
+                    "# changed architecture",
+                ),
+                encoding="utf-8",
+            )
+            inspected = inspect_status(project)
+            self.assertEqual(inspected.phases[2].state, "Blocked")
+            self.assertIn("approval is stale", inspected.phases[2].detail)
+
+            invalidated = write_status(
+                project,
+                now="2026-07-27T12:00:00+00:00",
+            )
+            self.assertEqual(
+                invalidated.report.document.events[-1].action,
+                "reopened",
+            )
+            self.assertIn(
+                "fingerprint changed",
+                invalidated.report.document.events[-1].note,
+            )
+
+            diagram.write_text(approved_contents, encoding="utf-8")
+            restored = inspect_status(project)
+
+        self.assertFalse(restored.phases[2].complete)
+        self.assertEqual(restored.phases[2].state, "In progress")
+
+    def test_spatial_board_edit_does_not_stale_saved_build_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            self.add_architecture(project)
+            mark_status(project, "spec", "complete", "Approved")
+            marked = mark_status(
+                project,
+                "architect",
+                "complete",
+                "Graph approved",
+                tool_root=TOOL_ROOT,
+                runner=FakeRunner(),
+            )
+            board = project / "garden-logger.kicad_pcb"
+            board.write_text(
+                """(kicad_pcb
+  (gr_line
+    (start 100 100)
+    (end 150 100)
+    (stroke (width 0.05) (type default))
+    (layer "Edge.Cuts")
+  )
+)
+""",
+                encoding="utf-8",
+            )
+            project_file = project / "garden-logger.kicad_pro"
+            project_file.write_text(
+                '{"user_layout_setting": true}\n',
+                encoding="utf-8",
+            )
+            refreshed = inspect_status(project)
+
+        self.assertTrue(marked.report.phases[2].complete)
+        self.assertTrue(refreshed.phases[2].complete)
+
     def test_reopen_is_append_only_and_reactivates_phase(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))
@@ -233,6 +457,7 @@ class DashboardTests(StatusFixture):
                 "architect",
                 "mcu",
                 "implement",
+                "brief",
                 "layout",
                 "route",
                 "verify",
@@ -282,6 +507,7 @@ class DashboardTests(StatusFixture):
                 "architect",
                 "mcu",
                 "implement",
+                "brief",
                 "layout",
                 "route",
                 "verify",
@@ -412,6 +638,99 @@ class CheckTests(StatusFixture):
         self.assertEqual(report.current.phase.key, "architect")
         self.assertEqual(report.current.state, "Blocked")
 
+    def test_commodity_part_policy_failure_is_recorded(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            part_dir = project / "src" / "parts" / "R_10K_0603"
+            part_dir.mkdir(parents=True)
+            (part_dir / "R_10K_0603.ato").write_text(
+                """#pragma experiment("TRAITS")
+import has_designator_prefix
+import is_atomic_part
+
+component R_10K_0603:
+    trait is_atomic_part<manufacturer="Example", partnumber="R10K", footprint="R0603.kicad_mod", symbol="R_10K_0603.kicad_sym">
+    trait has_designator_prefix<prefix="R">
+    pin 1
+    pin 2
+""",
+                encoding="utf-8",
+            )
+            checked = run_status_checks(
+                project,
+                StatusDocument(updated_at="", events=(), checks={}),
+                tool_root=TOOL_ROOT,
+                runner=FakeRunner(),
+            )
+
+        self.assertEqual(checked.checks["parts"].outcome, "fail")
+        self.assertIn("commodity part", checked.checks["parts"].summary)
+
+    def test_implement_completion_is_blocked_by_parts_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            self.add_architecture(project)
+            (project / "src" / "modules").mkdir()
+            (project / "src" / "modules" / "power.ato").write_text(
+                "module Power:\n    pass\n",
+                encoding="utf-8",
+            )
+            (project / "firmware" / "garden-logger.ioc").write_text(
+                "Mcu.Name=STM32G0\n",
+                encoding="utf-8",
+            )
+            part_dir = project / "src" / "parts" / "R_10K_0603"
+            part_dir.mkdir(parents=True)
+            (part_dir / "R_10K_0603.ato").write_text(
+                """#pragma experiment("TRAITS")
+import has_designator_prefix
+import is_atomic_part
+
+component R_10K_0603:
+    trait is_atomic_part<manufacturer="Example", partnumber="R10K", footprint="R0603.kicad_mod", symbol="R_10K_0603.kicad_sym">
+    trait has_designator_prefix<prefix="R">
+    pin 1
+    pin 2
+""",
+                encoding="utf-8",
+            )
+            events = tuple(
+                StatusEvent(
+                    f"2026-07-26T10:0{index}:00+00:00",
+                    phase,
+                    "complete",
+                    f"{phase} complete",
+                )
+                for index, phase in enumerate(("spec", "architect", "mcu"))
+            )
+            with mock.patch(
+                "pcbforge.status.check_ioc",
+                return_value=mock.Mock(part_number="STM32G071KBT6"),
+            ):
+                checked = run_status_checks(
+                    project,
+                    StatusDocument(updated_at="", events=events, checks={}),
+                    tool_root=TOOL_ROOT,
+                    runner=FakeRunner(),
+                )
+                write_status(
+                    project,
+                    document=checked,
+                    now="2026-07-26T10:10:00+00:00",
+                )
+                with self.assertRaisesRegex(
+                    StatusCheckError,
+                    "parts failed: 1 commodity part uses",
+                ):
+                    mark_status(
+                        project,
+                        "implement",
+                        "complete",
+                        "Physical circuit complete",
+                        tool_root=TOOL_ROOT,
+                        runner=FakeRunner(),
+                    )
+
     def test_route_gate_enables_drc_check(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary), initialized=True)
@@ -453,6 +772,140 @@ class CheckTests(StatusFixture):
         self.assertIn("drc", checked.checks)
         self.assertEqual(checked.checks["drc"].outcome, "pass")
         self.assertEqual(len(runner.calls), 2)
+
+    def test_step_six_requires_current_build_test_report(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            self.add_architecture(project)
+            (project / "src" / "modules").mkdir()
+            (project / "src" / "modules" / "power.ato").write_text(
+                "module Power:\n    pass\n",
+                encoding="utf-8",
+            )
+            (project / "firmware" / "garden-logger.ioc").write_text(
+                "Mcu.Name=STM32G0\n",
+                encoding="utf-8",
+            )
+            (project / "build-test.yaml").write_text(
+                """build_test_schema: 1
+build: default
+bom:
+  - lcsc: C25804
+    mpn: R10K
+    footprint: Resistor_SMD:R_0603_1608Metric
+    quantity: 1
+board_footprints: 1
+assertions: [rail-test]
+""",
+                encoding="utf-8",
+            )
+            events = tuple(
+                StatusEvent(
+                    f"2026-07-26T10:0{index}:00+00:00",
+                    phase,
+                    "complete",
+                    f"{phase} complete",
+                )
+                for index, phase in enumerate(("spec", "architect", "mcu", "implement"))
+            )
+            document = StatusDocument(updated_at="", events=events, checks={})
+
+            def fake_build_test(
+                project_dir,
+                *,
+                write_report=False,
+                **_kwargs,
+            ):
+                fingerprint = fingerprint_inputs(Path(project_dir))
+                if write_report:
+                    report = Path(project_dir) / "docs" / "build-test.md"
+                    report.parent.mkdir(exist_ok=True)
+                    report.write_text(
+                        f"""---
+pcbforge_build_test_report_schema: 1
+result: pass
+build: default
+fingerprint: {fingerprint}
+---
+# pass
+""",
+                        encoding="utf-8",
+                    )
+                return SimpleNamespace(
+                    summary="exact build-test evidence passed",
+                    fingerprint=fingerprint,
+                )
+
+            with (
+                mock.patch(
+                    "pcbforge.status.check_ioc",
+                    return_value=mock.Mock(part_number="STM32G071KBT6"),
+                ),
+                mock.patch(
+                    "pcbforge.status.check_build_test",
+                    side_effect=fake_build_test,
+                ),
+            ):
+                checked_only = run_status_checks(
+                    project,
+                    document,
+                    tool_root=TOOL_ROOT,
+                    runner=FakeRunner(),
+                )
+                checked_report = inspect_status(
+                    project,
+                    document=checked_only,
+                )
+                written = write_status(
+                    project,
+                    check=True,
+                    document=document,
+                    tool_root=TOOL_ROOT,
+                    runner=FakeRunner(),
+                )
+
+        self.assertEqual(checked_only.checks["build-test"].outcome, "pass")
+        self.assertEqual(checked_report.current.phase.key, "build")
+        self.assertFalse(checked_report.phases[5].complete)
+        self.assertIn("missing docs/build-test.md", checked_report.phases[5].detail)
+        self.assertTrue(
+            written.report.phases[5].complete,
+            [
+                (phase.phase.key, phase.state, phase.detail)
+                for phase in written.report.phases
+            ],
+        )
+        self.assertEqual(written.report.current.phase.key, "brief")
+
+    def test_completed_implement_without_manifest_records_migration_failure(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            document = StatusDocument(
+                updated_at="",
+                events=(
+                    StatusEvent(
+                        "2026-07-26T10:00:00+00:00",
+                        "implement",
+                        "complete",
+                        "legacy implementation",
+                    ),
+                ),
+                checks={},
+            )
+            checked = run_status_checks(
+                project,
+                document,
+                tool_root=TOOL_ROOT,
+                runner=FakeRunner(),
+            )
+
+        self.assertEqual(checked.checks["build-test"].outcome, "fail")
+        self.assertIn(
+            "missing build-test.yaml",
+            checked.checks["build-test"].summary,
+        )
 
 
 class StatusCliTests(StatusFixture):

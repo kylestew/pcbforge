@@ -1,0 +1,57 @@
+policy_profile_schema: 1
+id: pcbforge-standard-v1
+
+hard:
+  fabricator: jlcpcb
+  assembler: jlcpcb
+  allowed_layers: [2, 4]
+  mcu_vendor: STMicroelectronics
+  debug_interface: swd
+  eda: kicad-9
+  circuit_language: atopile
+
+defaults:
+  material: FR4
+  thickness_mm: 1.6
+  copper_oz: 1
+  controlled_impedance: false
+  advanced_vias: false
+  commodity_min_package: "0603"
+  qfn_min_pitch_mm: 0.5
+  prefer_jlc_class: basic
+  prefer_active_lifecycle: true
+  prefer_second_source: true
+
+exception_rules:
+  manufacturing.material:
+    earliest_phase: spec
+  manufacturing.thickness:
+    earliest_phase: spec
+  manufacturing.copper:
+    earliest_phase: spec
+  manufacturing.controlled-impedance:
+    earliest_phase: spec
+  manufacturing.advanced-vias:
+    earliest_phase: spec
+  components.commodity-package:
+    earliest_phase: implement
+  components.advanced-package:
+    earliest_phase: implement
+  assurance.reverse-polarity:
+    earliest_phase: implement
+  assurance.overcurrent:
+    earliest_phase: implement
+  assurance.connector-esd:
+    earliest_phase: implement
+  assurance.test-points:
+    earliest_phase: implement
+  assurance.polarity-marking:
+    earliest_phase: brief
+  assurance.pin1-marking:
+    earliest_phase: brief
+  sourcing.unavailable:
+    earliest_phase: implement
+  sourcing.lifecycle:
+    earliest_phase: implement
+  sourcing.unknown:
+    earliest_phase: implement

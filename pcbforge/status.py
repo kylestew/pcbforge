@@ -14,18 +14,66 @@ from typing import Any, Callable, Mapping, Sequence
 
 import yaml
 
+from pcbforge.build_test import (
+    BUILD_TEST_FILENAME,
+    BuildTestError,
+    BuildTestInputError,
+    board_topology_bytes,
+    build_test_inputs,
+    check_build_test,
+    read_board_evidence,
+    saved_report_status,
+)
 from pcbforge.initialize import InitInputError, ProjectSpec, STATUS_SCHEMA, read_spec
 from pcbforge.ioc import IocProjectError, IocValidationError, check_ioc
+from pcbforge.parts import PartsAuditError, check_parts
+from pcbforge.policy import (
+    POLICY_FILENAME,
+    PolicyError,
+    PolicyInputError,
+    check_policy,
+    load_policy_profile,
+    policy_baseline_fingerprint,
+    policy_exception_fingerprints,
+    policy_inputs,
+    policy_sourcing_fingerprint,
+    policy_status_fingerprint,
+    read_policy_contract,
+)
+from pcbforge.placement import (
+    PLACEMENT_FILENAME,
+    PlacementError,
+    PlacementInputError,
+    brief_inputs,
+    brief_status_fingerprint,
+    check_brief,
+)
 
 STATUS_FILENAME = "STATUS.md"
 ARCHITECTURE_MARKER = "pcbforge-architecture-diagram-schema: 1"
 
-EVENT_ACTIONS = {"complete", "blocked", "reopened", "skipped"}
+EVENT_ACTIONS = {
+    "complete",
+    "blocked",
+    "reopened",
+    "skipped",
+    "proposal-approved",
+}
+APPROVAL_BOUND_PHASES = {"spec", "architect", "brief"}
+APPROVAL_ENFORCEMENT_PIN_SCHEMA = 9
+POLICY_ENFORCEMENT_PIN_SCHEMA = 10
+POLICY_EVENT_ACTIONS = {
+    "baseline-approved",
+    "exception-approved",
+    "sourcing-confirmed",
+    "reopened",
+}
 MANUAL_PHASES = {
     "spec",
     "architect",
     "mcu",
     "implement",
+    "brief",
     "layout",
     "route",
     "verify",
@@ -36,15 +84,17 @@ MANUAL_PHASES = {
 CHECK_PHASES = {
     "architect": ("build",),
     "mcu": ("build", "ioc"),
-    "implement": ("build", "ioc"),
-    "verify": ("build", "ioc", "drc"),
+    "implement": ("build", "parts", "policy", "ioc"),
+    "brief": ("build-test", "brief"),
+    "verify": ("build", "policy", "ioc", "drc"),
 }
 PHASE_EVIDENCE_CHECKS = {
     "architect": ("build",),
     "mcu": ("build", "ioc"),
-    "implement": ("build",),
-    "build": ("build",),
-    "verify": ("drc",),
+    "implement": ("build", "parts", "policy"),
+    "build": ("build-test",),
+    "brief": ("brief",),
+    "verify": ("policy", "drc"),
 }
 
 CommandRunner = Callable[..., subprocess.CompletedProcess[str]]
@@ -117,9 +167,9 @@ PHASES = (
     Phase(
         "brief",
         "brief",
-        "AI + tool",
+        "AI + tool + user",
         True,
-        "Prepare the placement brief and board-rule guidance.",
+        "Validate and approve placement guidance before layout.",
     ),
     Phase("layout", "LAYOUT", "User", True, "Complete component placement in KiCad."),
     Phase("route", "ROUTE", "User", True, "Complete routing in KiCad."),
@@ -156,6 +206,7 @@ class StatusEvent:
     phase: str
     action: str
     note: str
+    approval_fingerprint: str = ""
 
 
 @dataclass(frozen=True)
@@ -167,10 +218,20 @@ class CheckRecord:
 
 
 @dataclass(frozen=True)
+class PolicyEvent:
+    at: str
+    action: str
+    subject: str
+    note: str
+    approval_fingerprint: str = ""
+
+
+@dataclass(frozen=True)
 class StatusDocument:
     updated_at: str
     events: tuple[StatusEvent, ...]
     checks: Mapping[str, CheckRecord]
+    policy_events: tuple[PolicyEvent, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -278,7 +339,13 @@ def read_status_document(project_dir: Path) -> StatusDocument:
         return StatusDocument(updated_at="", events=(), checks={})
 
     errors: list[str] = []
-    allowed = {"pcbforge_status_schema", "updated_at", "events", "checks"}
+    allowed = {
+        "pcbforge_status_schema",
+        "updated_at",
+        "events",
+        "policy_events",
+        "checks",
+    }
     unknown = sorted(set(data) - allowed)
     if unknown:
         errors.append("unknown keys: " + ", ".join(map(str, unknown)))
@@ -296,17 +363,77 @@ def read_status_document(project_dir: Path) -> StatusDocument:
             if not isinstance(raw, dict):
                 errors.append(f"{prefix}: expected a mapping")
                 continue
-            if set(raw) - {"at", "phase", "action", "note"}:
+            if set(raw) - {
+                "at",
+                "phase",
+                "action",
+                "note",
+                "approval_fingerprint",
+            }:
                 errors.append(f"{prefix}: contains unknown keys")
             at = _text(raw.get("at"), f"{prefix}.at", errors)
             phase = _text(raw.get("phase"), f"{prefix}.phase", errors)
             action = _text(raw.get("action"), f"{prefix}.action", errors)
             note = _text(raw.get("note"), f"{prefix}.note", errors)
+            approval_fingerprint = _text(
+                raw.get("approval_fingerprint"),
+                f"{prefix}.approval_fingerprint",
+                errors,
+                required=False,
+            )
             if phase and phase not in PHASE_BY_KEY:
                 errors.append(f"{prefix}.phase: unknown phase {phase!r}")
             if action and action not in EVENT_ACTIONS:
                 errors.append(f"{prefix}.action: unknown action {action!r}")
-            events.append(StatusEvent(at=at, phase=phase, action=action, note=note))
+            events.append(
+                StatusEvent(
+                    at=at,
+                    phase=phase,
+                    action=action,
+                    note=note,
+                    approval_fingerprint=approval_fingerprint,
+                )
+            )
+
+    policy_events_raw = data.get("policy_events", [])
+    policy_events: list[PolicyEvent] = []
+    if not isinstance(policy_events_raw, list):
+        errors.append("policy_events: expected a list")
+    else:
+        for index, raw in enumerate(policy_events_raw):
+            prefix = f"policy_events[{index}]"
+            if not isinstance(raw, dict):
+                errors.append(f"{prefix}: expected a mapping")
+                continue
+            if set(raw) - {
+                "at",
+                "action",
+                "subject",
+                "note",
+                "approval_fingerprint",
+            }:
+                errors.append(f"{prefix}: contains unknown keys")
+            at = _text(raw.get("at"), f"{prefix}.at", errors)
+            action = _text(raw.get("action"), f"{prefix}.action", errors)
+            subject = _text(raw.get("subject"), f"{prefix}.subject", errors)
+            note = _text(raw.get("note"), f"{prefix}.note", errors)
+            approval_fingerprint = _text(
+                raw.get("approval_fingerprint"),
+                f"{prefix}.approval_fingerprint",
+                errors,
+                required=False,
+            )
+            if action and action not in POLICY_EVENT_ACTIONS:
+                errors.append(f"{prefix}.action: unknown action {action!r}")
+            policy_events.append(
+                PolicyEvent(
+                    at,
+                    action,
+                    subject,
+                    note,
+                    approval_fingerprint,
+                )
+            )
 
     checks_raw = data.get("checks", {})
     checks: dict[str, CheckRecord] = {}
@@ -315,7 +442,15 @@ def read_status_document(project_dir: Path) -> StatusDocument:
     else:
         for name, raw in checks_raw.items():
             prefix = f"checks.{name}"
-            if name not in {"build", "ioc", "drc"}:
+            if name not in {
+                "build",
+                "build-test",
+                "parts",
+                "ioc",
+                "brief",
+                "policy",
+                "drc",
+            }:
                 errors.append(f"{prefix}: unknown check")
                 continue
             if not isinstance(raw, dict):
@@ -324,9 +459,7 @@ def read_status_document(project_dir: Path) -> StatusDocument:
             if set(raw) - {"at", "fingerprint", "outcome", "summary"}:
                 errors.append(f"{prefix}: contains unknown keys")
             at = _text(raw.get("at"), f"{prefix}.at", errors)
-            fingerprint = _text(
-                raw.get("fingerprint"), f"{prefix}.fingerprint", errors
-            )
+            fingerprint = _text(raw.get("fingerprint"), f"{prefix}.fingerprint", errors)
             outcome = _text(raw.get("outcome"), f"{prefix}.outcome", errors)
             summary = _text(raw.get("summary"), f"{prefix}.summary", errors)
             if outcome and outcome not in {"pass", "fail"}:
@@ -337,7 +470,12 @@ def read_status_document(project_dir: Path) -> StatusDocument:
         raise StatusInputError(
             f"invalid {STATUS_FILENAME} frontmatter:\n  - " + "\n  - ".join(errors)
         )
-    return StatusDocument(updated_at=updated_at, events=tuple(events), checks=checks)
+    return StatusDocument(
+        updated_at=updated_at,
+        events=tuple(events),
+        checks=checks,
+        policy_events=tuple(policy_events),
+    )
 
 
 def _project_dir(path: Path) -> Path:
@@ -379,6 +517,226 @@ def _fingerprint(project_dir: Path, paths: Sequence[Path]) -> str:
     return digest.hexdigest()
 
 
+def _approval_constraints_enabled(project_dir: Path) -> bool:
+    path = project_dir / ".pcbforge"
+    try:
+        data = yaml.load(path.read_text(encoding="utf-8"), Loader=_UniqueStatusLoader)
+    except (FileNotFoundError, OSError, UnicodeError, yaml.YAMLError):
+        return False
+    return (
+        isinstance(data, dict)
+        and type(data.get("schema")) is int
+        and data["schema"] >= APPROVAL_ENFORCEMENT_PIN_SCHEMA
+    )
+
+
+def _project_pins(project_dir: Path) -> Mapping[str, Any]:
+    path = project_dir / ".pcbforge"
+    try:
+        data = yaml.load(path.read_text(encoding="utf-8"), Loader=_UniqueStatusLoader)
+    except (FileNotFoundError, OSError, UnicodeError, yaml.YAMLError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _policy_constraints_enabled(project_dir: Path) -> bool:
+    data = _project_pins(project_dir)
+    return (
+        type(data.get("schema")) is int
+        and data["schema"] >= POLICY_ENFORCEMENT_PIN_SCHEMA
+    )
+
+
+def _spec_binds_policy(project_dir: Path) -> bool:
+    pins = _project_pins(project_dir)
+    if not pins:
+        return (project_dir / POLICY_FILENAME).is_file()
+    policy = pins.get("policy")
+    return (
+        isinstance(policy, dict)
+        and policy.get("baseline_approval") == "spec"
+    )
+
+
+def _approval_fingerprint(
+    project_dir: Path,
+    phase: str,
+    action: str = "complete",
+) -> str:
+    if phase == "brief":
+        return brief_status_fingerprint(project_dir)
+    paths = {
+        "spec": (project_dir / "spec.md",),
+        "architect": (
+            project_dir / "spec.md",
+            project_dir / "docs" / "architecture.md",
+            *(
+                (project_dir / "src" / "main.ato",)
+                if action == "complete"
+                else ()
+            ),
+        ),
+    }.get(phase)
+    if paths is None:
+        raise AssertionError(f"{phase} has no approval fingerprint")
+    digest = hashlib.sha256()
+    for path in paths:
+        digest.update(path.relative_to(project_dir).as_posix().encode())
+        digest.update(b"\0")
+        try:
+            digest.update(hashlib.sha256(path.read_bytes()).digest())
+        except OSError:
+            digest.update(b"<missing>")
+    if phase == "spec" and _spec_binds_policy(project_dir):
+        digest.update(b"policy-baseline\0")
+        try:
+            digest.update(
+                policy_baseline_fingerprint(project_dir).encode()
+            )
+        except PolicyError as exc:
+            digest.update(f"<invalid:{exc}>".encode())
+    return digest.hexdigest()
+
+
+def _approval_is_current(
+    project_dir: Path,
+    phase: str,
+    event: StatusEvent | None,
+) -> bool:
+    if phase not in APPROVAL_BOUND_PHASES:
+        return True
+    if event is not None and event.approval_fingerprint:
+        return event.approval_fingerprint == _approval_fingerprint(
+            project_dir,
+            phase,
+            event.action,
+        )
+    return not _approval_constraints_enabled(project_dir)
+
+
+def _current_architect_proposal(
+    project_dir: Path,
+    document: StatusDocument,
+) -> StatusEvent | None:
+    for event in reversed(document.events):
+        if event.phase != "architect":
+            continue
+        if event.action == "reopened":
+            return None
+        if event.action == "proposal-approved":
+            return (
+                event
+                if _approval_is_current(project_dir, "architect", event)
+                else None
+            )
+    return None
+
+
+def _architecture_source_started(project_dir: Path) -> bool:
+    sources = _files(project_dir, ("src/**/*.ato",))
+    main = project_dir / "src" / "main.ato"
+    if any(path != main for path in sources):
+        return True
+    if not main.is_file():
+        return False
+    text = _read_text(main)
+    text = re.sub(r'(?s)""".*?"""', "", text)
+    text = re.sub(r"(?s)'''.*?'''", "", text)
+    code = [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    return code != ["module App:", "pass"]
+
+
+def _latest_policy_events(
+    document: StatusDocument,
+) -> Mapping[str, PolicyEvent]:
+    latest: dict[str, PolicyEvent] = {}
+    for event in document.policy_events:
+        latest[event.subject] = event
+    return latest
+
+
+def _policy_approval_context(
+    document: StatusDocument,
+) -> tuple[str, Mapping[str, str], str]:
+    latest = _latest_policy_events(document)
+    baseline_event = latest.get("baseline")
+    sourcing_event = latest.get("sourcing")
+    baseline = (
+        baseline_event.approval_fingerprint
+        if baseline_event is not None
+        and baseline_event.action == "baseline-approved"
+        else ""
+    )
+    sourcing = (
+        sourcing_event.approval_fingerprint
+        if sourcing_event is not None
+        and sourcing_event.action == "sourcing-confirmed"
+        else ""
+    )
+    exceptions = {
+        subject: event.approval_fingerprint
+        for subject, event in latest.items()
+        if subject not in {"baseline", "sourcing"}
+        and event.action == "exception-approved"
+    }
+    return baseline, exceptions, sourcing
+
+
+def policy_approval_context(
+    document: StatusDocument,
+) -> tuple[str, Mapping[str, str], str]:
+    """Expose current recorded policy approvals to read-only validators."""
+    return _policy_approval_context(document)
+
+
+def _current_sourcing_confirmation(
+    project_dir: Path,
+    document: StatusDocument,
+    *,
+    tool_root: Path | None = None,
+) -> bool:
+    _, _, recorded = _policy_approval_context(document)
+    if not recorded:
+        return False
+    try:
+        expected = policy_sourcing_fingerprint(
+            project_dir,
+            tool_root=tool_root,
+        )
+    except PolicyError:
+        return False
+    return recorded == expected
+
+
+def _current_policy_baseline(
+    project_dir: Path,
+    document: StatusDocument,
+) -> bool:
+    if not _policy_constraints_enabled(project_dir):
+        return True
+    pins = _project_pins(project_dir)
+    policy = pins.get("policy")
+    if not isinstance(policy, dict):
+        return False
+    mode = policy.get("baseline_approval")
+    if mode == "spec":
+        return True
+    if mode != "policy-event":
+        return False
+    recorded, _, _ = _policy_approval_context(document)
+    if not recorded:
+        return False
+    try:
+        expected = policy_baseline_fingerprint(project_dir)
+    except PolicyError:
+        return False
+    return recorded == expected
+
+
 def _check_inputs(project_dir: Path, spec: ProjectSpec, name: str) -> tuple[Path, ...]:
     if name == "build":
         return _files(
@@ -397,6 +755,25 @@ def _check_inputs(project_dir: Path, spec: ProjectSpec, name: str) -> tuple[Path
             project_dir,
             ("spec.md", f"firmware/{spec.name}.ioc"),
         )
+    if name == "parts":
+        return _files(
+            project_dir,
+            (
+                "spec.md",
+                "fp-lib-table",
+                "src/**/*.ato",
+                "src/**/*.kicad_mod",
+                "src/**/*.kicad_sym",
+                "src/**/*.step",
+                "src/**/*.wrl",
+            ),
+        )
+    if name == "build-test":
+        return build_test_inputs(project_dir)
+    if name == "brief":
+        return brief_inputs(project_dir)
+    if name == "policy":
+        return policy_inputs(project_dir)
     if name == "drc":
         return _files(
             project_dir,
@@ -421,11 +798,48 @@ def _current_check(
     inputs = _check_inputs(project_dir, spec, name)
     if not inputs:
         return False, f"{name} inputs are missing"
-    if record.fingerprint != _fingerprint(project_dir, inputs):
+    try:
+        fingerprint = _check_fingerprint(project_dir, name, inputs)
+    except (BuildTestError, PlacementError, PolicyError, OSError) as exc:
+        return False, f"{name} inputs are invalid: {exc}"
+    if record.fingerprint != fingerprint:
         return False, f"{name} result is stale"
     if record.outcome != "pass":
         return False, f"{name} failed: {record.summary}"
     return True, f"{name} passed"
+
+
+def _check_fingerprint(
+    project_dir: Path,
+    name: str,
+    inputs: Sequence[Path],
+) -> str:
+    if name == "build":
+        digest = hashlib.sha256()
+        for path in inputs:
+            if path.suffix in {".kicad_pcb", ".kicad_pro", ".kicad_dru"}:
+                continue
+            digest.update(path.relative_to(project_dir).as_posix().encode())
+            digest.update(b"\0")
+            digest.update(hashlib.sha256(path.read_bytes()).digest())
+        board_paths = [path for path in inputs if path.suffix == ".kicad_pcb"]
+        if board_paths:
+            digest.update(b"pcb-topology\0")
+            try:
+                digest.update(board_topology_bytes(read_board_evidence(board_paths[0])))
+            except BuildTestError:
+                digest.update(b"invalid\0")
+                digest.update(hashlib.sha256(board_paths[0].read_bytes()).digest())
+        return digest.hexdigest()
+    if name == "build-test":
+        from pcbforge.build_test import fingerprint_inputs
+
+        return fingerprint_inputs(project_dir)
+    if name == "brief":
+        return brief_status_fingerprint(project_dir)
+    if name == "policy":
+        return policy_status_fingerprint(project_dir)
+    return _fingerprint(project_dir, inputs)
 
 
 def _static_evidence(
@@ -455,10 +869,7 @@ def _static_evidence(
         )
     if phase == "architect":
         diagram = project_dir / "docs" / "architecture.md"
-        diagram_ok = (
-            diagram.is_file()
-            and ARCHITECTURE_MARKER in _read_text(diagram)
-        )
+        diagram_ok = diagram.is_file() and ARCHITECTURE_MARKER in _read_text(diagram)
         source = _files(project_dir, ("src/**/*.ato",))
         build_ok, build_detail = _current_check(project_dir, spec, document, "build")
         missing = []
@@ -497,37 +908,66 @@ def _static_evidence(
             ioc.is_file() or source.is_file(),
         )
     if phase == "implement":
-        build_ok, detail = _current_check(project_dir, spec, document, "build")
+        build_ok, build_detail = _current_check(project_dir, spec, document, "build")
+        parts_ok, parts_detail = _current_check(project_dir, spec, document, "parts")
         modules = _files(project_dir, ("src/modules/*.ato",))
-        satisfied = build_ok and bool(modules)
+        satisfied = build_ok and parts_ok and bool(modules)
+        missing = []
+        if not modules:
+            missing.append("project module sources")
+        if not build_ok:
+            missing.append(build_detail)
+        if not parts_ok:
+            missing.append(parts_detail)
         return (
             satisfied,
-            "module sources and current build present"
+            "module sources, current build, and parts audit present"
             if satisfied
-            else ("missing project module sources" if not modules else detail),
+            else "missing: " + ", ".join(missing),
             bool(modules),
         )
     if phase == "build":
-        ok, detail = _current_check(project_dir, spec, document, "build")
-        return ok, detail, "build" in document.checks
-    if phase == "brief":
-        brief = project_dir / "brief.md"
-        present = brief.is_file() and bool(_read_text(brief).strip())
+        ok, detail = _current_check(project_dir, spec, document, "build-test")
+        report_ok = False
+        report_detail = "build-test check has not passed"
+        if ok:
+            fingerprint = _check_fingerprint(
+                project_dir,
+                "build-test",
+                _check_inputs(project_dir, spec, "build-test"),
+            )
+            report_ok, report_detail = saved_report_status(
+                project_dir,
+                fingerprint,
+            )
+        satisfied = ok and report_ok
         return (
-            present,
-            "brief.md present" if present else "missing brief.md",
-            brief.exists(),
+            satisfied,
+            "build-test check and [docs/build-test.md](docs/build-test.md) are current"
+            if satisfied
+            else "; ".join(
+                item for item in (detail if not ok else "", report_detail) if item
+            ),
+            "build-test" in document.checks
+            or (project_dir / BUILD_TEST_FILENAME).is_file(),
+        )
+    if phase == "brief":
+        ok, detail = _current_check(project_dir, spec, document, "brief")
+        return (
+            ok,
+            (
+                "placement contract, generated brief, and KiCad net classes are current"
+                if ok
+                else detail
+            ),
+            "brief" in document.checks or (project_dir / PLACEMENT_FILENAME).is_file(),
         )
     if phase in {"layout", "route"}:
         if not board.is_file():
             return False, f"missing {board.name}", False
         text = _read_text(board)
         footprints = text.count("(footprint ")
-        routes = (
-            text.count("(segment ")
-            + text.count("(arc ")
-            + text.count("(via ")
-        )
+        routes = text.count("(segment ") + text.count("(arc ") + text.count("(via ")
         detail = f"board contains {footprints} footprints and {routes} routed objects"
         return True, detail, footprints > 0 or routes > 0
     if phase == "verify":
@@ -550,6 +990,20 @@ def _static_evidence(
             if outputs
             else "fab/ has no manufacturing outputs",
             bool(outputs),
+        )
+    if phase == "order" and _policy_constraints_enabled(project_dir):
+        sourcing_ok = _current_sourcing_confirmation(project_dir, document)
+        return (
+            sourcing_ok,
+            (
+                "post-FAB sourcing confirmation is current"
+                if sourcing_ok
+                else "missing current post-FAB sourcing confirmation"
+            ),
+            any(
+                event.subject == "sourcing"
+                for event in document.policy_events
+            ),
         )
     if phase in {"order", "publish"}:
         return True, "explicit workflow declaration", False
@@ -598,9 +1052,7 @@ def _derive_phases(
         evidence_ok, evidence_detail, partial = _static_evidence(
             project_dir, spec, document, phase.key
         )
-        failed_checks = _failed_checks_for_phase(
-            project_dir, spec, document, phase.key
-        )
+        failed_checks = _failed_checks_for_phase(project_dir, spec, document, phase.key)
         predecessors_complete = all(
             result.complete for result in results if result.phase.required
         )
@@ -612,6 +1064,7 @@ def _derive_phases(
             event is not None
             and event.action == "complete"
             and event_index > predecessor_invalidation
+            and _approval_is_current(project_dir, phase.key, event)
         )
         if phase.key not in MANUAL_PHASES:
             complete = evidence_ok and predecessors_complete
@@ -625,6 +1078,17 @@ def _derive_phases(
         elif complete:
             state = "Complete"
             detail = evidence_detail
+        elif (
+            phase.key != "spec"
+            and predecessors_complete
+            and not _current_policy_baseline(project_dir, document)
+        ):
+            state = "Blocked"
+            detail = (
+                "migrated policy baseline requires explicit user approval; "
+                "record `pcbforge policy approve-baseline --note \"...\"` "
+                "after review"
+            )
         elif event is not None and event.action == "blocked":
             state = "Blocked"
             detail = event.note
@@ -637,12 +1101,43 @@ def _derive_phases(
         elif event is not None and event.action == "complete" and not evidence_ok:
             state = "Blocked"
             detail = f"completion lacks current evidence: {evidence_detail}"
+        elif (
+            event is not None
+            and event.action == "complete"
+            and not _approval_is_current(project_dir, phase.key, event)
+        ):
+            state = "Blocked"
+            detail = (
+                "user approval is stale because its approved artifacts changed; "
+                "renew approval for the current artifacts"
+            )
         elif event is not None and event.action == "complete":
             state = "Blocked"
             detail = "completion is stale after an earlier phase was reopened"
+        elif event is not None and event.action == "proposal-approved":
+            if _approval_is_current(project_dir, phase.key, event):
+                state = "In progress"
+                detail = "architecture proposal approved; build and present final audit"
+            else:
+                state = "Blocked"
+                detail = (
+                    "architecture proposal approval is stale; present the changed "
+                    "proposal for renewed approval before coding"
+                )
         elif event is not None and event.action == "reopened":
             state = "In progress"
             detail = event.note
+        elif (
+            phase.key == "architect"
+            and event is None
+            and _approval_constraints_enabled(project_dir)
+            and _architecture_source_started(project_dir)
+        ):
+            state = "Blocked"
+            detail = (
+                "architecture source exists without current proposal approval; "
+                "stop source changes and present docs/architecture.md for approval"
+            )
         elif partial:
             state = "In progress"
             detail = evidence_detail
@@ -665,13 +1160,13 @@ def _actions_for(result: PhaseResult) -> tuple[str, ...]:
     actions = {
         "spec": (
             "Review and finalize `spec.md`.",
-            "Record approval with `pcbforge status mark spec complete --note \"...\"`.",
+            'Record approval with `pcbforge status mark spec complete --note "..."`.',
         ),
         "init": ("Run `pcbforge init`.",),
         "architect": (
-            "Create the typed module skeleton and `docs/architecture.md`.",
-            "Run `pcbforge status --check --write` and present the review package.",
-            "After approval, mark ARCHITECT complete.",
+            "Draft `docs/architecture.md` without coding the module skeleton.",
+            "Present material options and record explicit proposal approval.",
+            "Then build the skeleton, audit it, and request final approval.",
         ),
         "mcu": (
             "Create the canonical IOC and matching `src/mcu.ato`.",
@@ -680,10 +1175,19 @@ def _actions_for(result: PhaseResult) -> tuple[str, ...]:
         ),
         "implement": (
             "Finish physical module bodies, parts, values, and constraints.",
+            "Run `pcbforge check-parts` and replace forbidden local commodity assets.",
             "Run a checked dashboard refresh, then mark IMPLEMENT complete.",
         ),
-        "build": ("Run `pcbforge status --check --write`.",),
-        "brief": ("Create the root `brief.md` placement and rules brief.",),
+        "build": (
+            "Define the exact acceptance contract in `build-test.yaml`.",
+            "Add stable `pcbforge-test` markers to every required assertion.",
+            "Run `pcbforge status --check --write` to save the passing report.",
+        ),
+        "brief": (
+            "Define every footprint, constraint, and exact net class in `placement.yaml`.",
+            "Run `pcbforge brief`, then present `brief.md` and the schematic view.",
+            "After approval, mark BRIEF complete with `schematic review: adequate`.",
+        ),
         "layout": (
             "Complete placement in KiCad 9.",
             "Mark LAYOUT complete when you consider placement finished.",
@@ -704,9 +1208,7 @@ def _actions_for(result: PhaseResult) -> tuple[str, ...]:
             "Review and upload the fabrication package to JLCPCB.",
             "After authorizing the purchase, mark ORDER complete.",
         ),
-        "publish": (
-            "Publish proven reusable modules, or mark PUBLISH skipped.",
-        ),
+        "publish": ("Publish proven reusable modules, or mark PUBLISH skipped.",),
     }
     return actions[phase]
 
@@ -722,23 +1224,29 @@ def inspect_status(
     document = document if document is not None else read_status_document(project_dir)
     phases = _derive_phases(project_dir, spec, document)
     current = next(
-        (
-            result
-            for result in phases
-            if not result.complete and result.phase.required
-        ),
+        (result for result in phases if not result.complete and result.phase.required),
         None,
     )
     if current is None:
         current = next((result for result in phases if not result.complete), None)
     next_actions = _actions_for(current)[:3] if current is not None else ()
     required = tuple(result for result in phases if result.phase.required)
-    checks_failed = any(
-        record.outcome == "fail"
-        and bool(inputs := _check_inputs(project_dir, spec, name))
-        and record.fingerprint == _fingerprint(project_dir, inputs)
-        for name, record in document.checks.items()
-    )
+    checks_failed = False
+    for name, record in document.checks.items():
+        if record.outcome != "fail":
+            continue
+        inputs = _check_inputs(project_dir, spec, name)
+        if not inputs:
+            continue
+        try:
+            check_is_current = record.fingerprint == _check_fingerprint(
+                project_dir,
+                name,
+                inputs,
+            )
+        except (BuildTestError, PlacementError, PolicyError, OSError):
+            check_is_current = False
+        checks_failed = checks_failed or check_is_current
     return StatusReport(
         project_dir=project_dir,
         spec=spec,
@@ -794,6 +1302,7 @@ def run_status_checks(
     tool_root: Path | None = None,
     runner: CommandRunner = subprocess.run,
     checked_at: str | None = None,
+    write_reports: bool = False,
 ) -> StatusDocument:
     """Run stage-appropriate checks and return a document containing results."""
     project_dir = _project_dir(project_dir)
@@ -805,6 +1314,55 @@ def run_status_checks(
     )
     checked_at = checked_at or _now()
     checks = dict(document.checks)
+
+    if (
+        (project_dir / POLICY_FILENAME).is_file()
+        or _policy_constraints_enabled(project_dir)
+    ):
+        current = next(
+            (
+                result
+                for result in _derive_phases(project_dir, spec, document)
+                if not result.complete and result.phase.required
+            ),
+            None,
+        )
+        through_phase = current.phase.key if current is not None else "verify"
+        baseline_approval, exception_approvals, _ = _policy_approval_context(
+            document
+        )
+        name = "policy"
+        try:
+            result = check_policy(
+                project_dir,
+                tool_root=tool_root,
+                through_phase=through_phase,
+                baseline_approval=baseline_approval,
+                exception_approvals=exception_approvals,
+            )
+        except (PolicyInputError, PolicyError) as exc:
+            ok = False
+            summary = str(exc).splitlines()[0]
+            try:
+                fingerprint = policy_status_fingerprint(
+                    project_dir,
+                    tool_root=tool_root,
+                )
+            except PolicyError:
+                fingerprint = _fingerprint(
+                    project_dir,
+                    policy_inputs(project_dir),
+                )
+        else:
+            ok = result.ok
+            summary = result.summary
+            fingerprint = result.fingerprint
+        checks[name] = CheckRecord(
+            checked_at,
+            fingerprint,
+            "pass" if ok else "fail",
+            summary,
+        )
 
     if (project_dir / ".pcbforge").is_file():
         name = "build"
@@ -821,7 +1379,93 @@ def run_status_checks(
         )
         checks[name] = CheckRecord(
             checked_at,
-            _fingerprint(project_dir, inputs),
+            _check_fingerprint(project_dir, name, inputs),
+            "pass" if ok else "fail",
+            summary,
+        )
+
+        latest, _ = _latest_events(document.events)
+        implement_event = latest.get("implement")
+        should_run_build_test = (project_dir / BUILD_TEST_FILENAME).is_file() or (
+            implement_event is not None and implement_event[1].action == "complete"
+        )
+        if should_run_build_test:
+            name = "build-test"
+            try:
+                result = check_build_test(
+                    project_dir,
+                    tool_root=tool_root,
+                    runner=runner,
+                    write_report=write_reports,
+                )
+            except (BuildTestInputError, BuildTestError) as exc:
+                ok = False
+                summary = str(exc).splitlines()[0]
+                try:
+                    fingerprint = _check_fingerprint(
+                        project_dir,
+                        name,
+                        _check_inputs(project_dir, spec, name),
+                    )
+                except (BuildTestError, OSError):
+                    fingerprint = _fingerprint(
+                        project_dir,
+                        _check_inputs(project_dir, spec, name),
+                    )
+            else:
+                ok = True
+                summary = result.summary
+                fingerprint = result.fingerprint
+            checks[name] = CheckRecord(
+                checked_at,
+                fingerprint,
+                "pass" if ok else "fail",
+                summary,
+            )
+
+        build_test_ok, _ = _current_check(
+            project_dir,
+            spec,
+            replace(document, checks=checks),
+            "build-test",
+        )
+        should_run_brief = (
+            project_dir / PLACEMENT_FILENAME
+        ).is_file() and build_test_ok
+        if should_run_brief:
+            name = "brief"
+            try:
+                result = check_brief(project_dir, tool_root=tool_root)
+            except (PlacementInputError, PlacementError) as exc:
+                ok = False
+                summary = str(exc).splitlines()[0]
+                fingerprint = brief_status_fingerprint(
+                    project_dir,
+                    tool_root=tool_root,
+                )
+            else:
+                ok = True
+                summary = result.summary
+                fingerprint = result.fingerprint
+            checks[name] = CheckRecord(
+                checked_at,
+                fingerprint,
+                "pass" if ok else "fail",
+                summary,
+            )
+
+        name = "parts"
+        try:
+            result = check_parts(project_dir)
+        except PartsAuditError as exc:
+            ok = False
+            summary = str(exc).splitlines()[0]
+        else:
+            ok = result.ok
+            summary = result.summary
+        checks[name] = CheckRecord(
+            checked_at,
+            _fingerprint(project_dir, _check_inputs(project_dir, spec, name)),
             "pass" if ok else "fail",
             summary,
         )
@@ -881,18 +1525,33 @@ def run_status_checks(
 
 
 def _metadata(document: StatusDocument) -> dict[str, Any]:
+    events = []
+    for event in document.events:
+        item = {
+            "at": event.at,
+            "phase": event.phase,
+            "action": event.action,
+            "note": event.note,
+        }
+        if event.approval_fingerprint:
+            item["approval_fingerprint"] = event.approval_fingerprint
+        events.append(item)
+    policy_events = []
+    for event in document.policy_events:
+        item = {
+            "at": event.at,
+            "action": event.action,
+            "subject": event.subject,
+            "note": event.note,
+        }
+        if event.approval_fingerprint:
+            item["approval_fingerprint"] = event.approval_fingerprint
+        policy_events.append(item)
     return {
         "pcbforge_status_schema": STATUS_SCHEMA,
         "updated_at": document.updated_at,
-        "events": [
-            {
-                "at": event.at,
-                "phase": event.phase,
-                "action": event.action,
-                "note": event.note,
-            }
-            for event in document.events
-        ],
+        "events": events,
+        "policy_events": policy_events,
         "checks": {
             name: {
                 "at": record.at,
@@ -924,7 +1583,8 @@ def render_dashboard(report: StatusReport) -> str:
     )
     health = (
         "🔴 Blocked"
-        if current is not None and current.state == "Blocked"
+        if report.checks_failed
+        or (current is not None and current.state == "Blocked")
         else "🟢 On track"
     )
     focus = current.phase.focus if current is not None else "Workflow complete."
@@ -942,12 +1602,38 @@ def render_dashboard(report: StatusReport) -> str:
         for result in report.phases
         if result.state == "Blocked"
     ]
+    for name, record in sorted(report.document.checks.items()):
+        if record.outcome != "fail":
+            continue
+        _, detail = _current_check(
+            report.project_dir,
+            report.spec,
+            report.document,
+            name,
+        )
+        if detail.startswith(f"{name} failed:"):
+            blockers.append(f"- **{name} check:** {record.summary}")
     if not blockers:
         blockers = ["- None."]
 
+    recent_items = [
+        (
+            event.at,
+            f"- **{event.at}:** {event.phase} {event.action} — {event.note}",
+        )
+        for event in report.document.events
+    ]
+    recent_items.extend(
+        (
+            event.at,
+            f"- **{event.at}:** policy {event.action} "
+            f"({event.subject}) — {event.note}",
+        )
+        for event in report.document.policy_events
+    )
     recent = [
-        f"- **{event.at}:** {event.phase} {event.action} — {event.note}"
-        for event in reversed(report.document.events[-5:])
+        rendered
+        for _, rendered in sorted(recent_items, reverse=True)[:5]
     ]
     if not recent:
         recent = ["- No milestone events recorded yet."]
@@ -1071,6 +1757,94 @@ def _atomic_write(path: Path, contents: str) -> None:
             raise StatusError(f"cannot write {path}: {exc}") from exc
 
 
+def _invalidate_stale_approvals(
+    project_dir: Path,
+    document: StatusDocument,
+    *,
+    at: str | None,
+) -> StatusDocument:
+    latest, _ = _latest_events(document.events)
+    invalidations: list[StatusEvent] = []
+    for phase in PHASES:
+        if phase.key not in APPROVAL_BOUND_PHASES:
+            continue
+        event_info = latest.get(phase.key)
+        if event_info is None:
+            continue
+        event = event_info[1]
+        if event.action not in {"complete", "proposal-approved"}:
+            continue
+        if (
+            not event.approval_fingerprint
+            and not _approval_constraints_enabled(project_dir)
+        ):
+            continue
+        if _approval_is_current(project_dir, phase.key, event):
+            continue
+        invalidations.append(
+            StatusEvent(
+                at or _now(),
+                phase.key,
+                "reopened",
+                (
+                    "Approval invalidated automatically because the approved "
+                    "artifact fingerprint changed"
+                ),
+            )
+        )
+    policy_invalidations: list[PolicyEvent] = []
+    if _policy_constraints_enabled(project_dir):
+        latest_policy = _latest_policy_events(document)
+        try:
+            baseline_expected = policy_baseline_fingerprint(project_dir)
+            exception_expected = policy_exception_fingerprints(project_dir)
+            sourcing_expected = policy_sourcing_fingerprint(project_dir)
+        except PolicyError:
+            baseline_expected = ""
+            exception_expected = {}
+            sourcing_expected = ""
+        for subject, event in latest_policy.items():
+            if event.action == "baseline-approved":
+                expected = baseline_expected
+            elif event.action == "exception-approved":
+                expected = exception_expected.get(subject, "")
+            elif event.action == "sourcing-confirmed":
+                expected = sourcing_expected
+            else:
+                continue
+            if expected and event.approval_fingerprint == expected:
+                continue
+            policy_invalidations.append(
+                PolicyEvent(
+                    at or _now(),
+                    "reopened",
+                    subject,
+                    (
+                        "Policy approval invalidated automatically because its "
+                        "approved fingerprint changed"
+                    ),
+                )
+            )
+            if subject == "sourcing":
+                order_info = latest.get("order")
+                if order_info is not None and order_info[1].action == "complete":
+                    invalidations.append(
+                        StatusEvent(
+                            at or _now(),
+                            "order",
+                            "reopened",
+                            "Order reopened because sourcing confirmation is stale",
+                        )
+                    )
+    if not invalidations and not policy_invalidations:
+        return document
+    return replace(
+        document,
+        events=(*document.events, *invalidations),
+        policy_events=(*document.policy_events, *policy_invalidations),
+    )
+
+
 def write_status(
     project_dir: Path,
     *,
@@ -1091,7 +1865,13 @@ def write_status(
             tool_root=tool_root,
             runner=runner,
             checked_at=now,
+            write_reports=True,
         )
+    document = _invalidate_stale_approvals(
+        project_dir,
+        document,
+        at=now,
+    )
 
     old_report = inspect_status(project_dir, document=document)
     old_rendered = render_dashboard(old_report)
@@ -1130,23 +1910,31 @@ def _validate_transition(
         )
     if action == "skipped" and phase_key != "publish":
         raise StatusInputError("only the optional publish phase may be skipped")
+    if action == "proposal-approved" and phase_key != "architect":
+        raise StatusInputError(
+            "proposal-approved is only valid for the architect phase"
+        )
     if action == "complete" and phase_key not in MANUAL_PHASES:
         raise StatusInputError(f"{phase_key} is completed automatically from evidence")
 
     target_index = PHASE_NUMBER[phase_key] - 1
     predecessors = [
-        result
-        for result in report.phases[:target_index]
-        if result.phase.required
+        result for result in report.phases[:target_index] if result.phase.required
     ]
-    if action in {"complete", "skipped"} and not all(
+    if action in {"complete", "skipped", "proposal-approved"} and not all(
         result.complete for result in predecessors
     ):
-        waiting = next(result.phase.label for result in predecessors if not result.complete)
+        waiting = next(
+            result.phase.label for result in predecessors if not result.complete
+        )
         raise StatusInputError(
             f"cannot mark {phase_key} {action}: {waiting} is not complete"
         )
     target = report.phases[target_index]
+    if action == "proposal-approved" and target.complete:
+        raise StatusInputError(
+            "cannot approve an architect proposal after ARCHITECT is complete"
+        )
     if action == "reopened" and not target.complete:
         raise StatusInputError(f"cannot reopen {phase_key}: it is not complete")
     if action == "blocked" and target.complete:
@@ -1155,6 +1943,190 @@ def _validate_transition(
         raise StatusInputError(
             f"cannot mark {phase_key} {action}: it is already complete"
         )
+
+
+def mark_policy(
+    project_dir: Path,
+    action: str,
+    note: str,
+    *,
+    subject: str = "",
+    tool_root: Path | None = None,
+    now: str | None = None,
+) -> StatusResult:
+    """Persist an explicit policy approval already supplied by the user."""
+    project_dir = _project_dir(project_dir)
+    note = note.strip()
+    if not note:
+        raise StatusInputError("--note must be a non-empty explanation")
+    if action not in {
+        "baseline-approved",
+        "exception-approved",
+        "sourcing-confirmed",
+    }:
+        raise StatusInputError(f"unknown policy action {action!r}")
+    if not _policy_constraints_enabled(project_dir):
+        raise StatusInputError(
+            "project policy is not migrated: run `pcbforge migrate-policy`"
+        )
+
+    document = read_status_document(project_dir)
+    report = inspect_status(project_dir, document=document)
+    baseline_approval, exception_approvals, _ = _policy_approval_context(document)
+    event_time = now or _now()
+    phase_reopen: StatusEvent | None = None
+
+    if action == "baseline-approved":
+        pins = _project_pins(project_dir)
+        policy_pin = pins.get("policy")
+        if (
+            not isinstance(policy_pin, dict)
+            or policy_pin.get("baseline_approval") != "policy-event"
+        ):
+            raise StatusInputError(
+                "this project's policy baseline is approved with SPEC, not a "
+                "separate migration gate"
+            )
+        subject = "baseline"
+        fingerprint = policy_baseline_fingerprint(
+            project_dir,
+            tool_root=tool_root,
+        )
+        checked = check_policy(
+            project_dir,
+            tool_root=tool_root,
+            through_phase="spec",
+            baseline_approval=fingerprint,
+            exception_approvals=exception_approvals,
+        )
+        if not checked.ok:
+            raise StatusInputError(
+                "cannot approve policy baseline:\n  - "
+                + "\n  - ".join(
+                    f"[{violation.rule}] {violation.message}"
+                    for violation in checked.violations
+                )
+            )
+    elif action == "exception-approved":
+        if not _current_policy_baseline(project_dir, document):
+            raise StatusInputError(
+                "approve the migrated policy baseline before any exception"
+            )
+        if not subject:
+            raise StatusInputError("exception approval requires an exception ID")
+        fingerprints = policy_exception_fingerprints(
+            project_dir,
+            tool_root=tool_root,
+        )
+        if subject not in fingerprints:
+            raise StatusInputError(
+                f"policy.yaml has no exception with ID {subject!r}"
+            )
+        contract = read_policy_contract(project_dir)
+        exception = next(
+            item for item in contract.exceptions if item.identifier == subject
+        )
+        profile, _, _ = load_policy_profile(tool_root)
+        phase = str(
+            profile["exception_rules"][exception.rule]["earliest_phase"]
+        )
+        fingerprint = fingerprints[subject]
+        provisional = dict(exception_approvals)
+        provisional[subject] = fingerprint
+        checked = check_policy(
+            project_dir,
+            tool_root=tool_root,
+            through_phase=phase,
+            baseline_approval=baseline_approval,
+            exception_approvals=provisional,
+        )
+        unused = any(
+            warning.rule == "policy.unused-exception"
+            and warning.scope == subject
+            for warning in checked.warnings
+        )
+        if unused:
+            raise StatusInputError(
+                f"cannot approve exception {subject!r}: it is not currently needed"
+            )
+        target = report.phases[PHASE_NUMBER[phase] - 1]
+        if target.complete:
+            phase_reopen = StatusEvent(
+                event_time,
+                phase,
+                "reopened",
+                (
+                    f"Policy exception {subject!r} changed the approved "
+                    f"{target.phase.label} contract"
+                ),
+            )
+    else:
+        if not _current_policy_baseline(project_dir, document):
+            raise StatusInputError(
+                "approve the migrated policy baseline before sourcing confirmation"
+            )
+        subject = "sourcing"
+        fab_result = report.phases[PHASE_NUMBER["fab-out"] - 1]
+        if not fab_result.complete:
+            raise StatusInputError(
+                "cannot confirm sourcing before FAB-OUT is complete"
+            )
+        if not (project_dir / BUILD_TEST_FILENAME).is_file():
+            raise StatusInputError(
+                "cannot confirm sourcing without current build-test.yaml"
+            )
+        fab_outputs = tuple(
+            path
+            for path in (project_dir / "fab").rglob("*")
+            if path.is_file() and path.name != ".gitkeep"
+        )
+        if not fab_outputs:
+            raise StatusInputError(
+                "cannot confirm sourcing without current fabrication outputs"
+            )
+        checked = check_policy(
+            project_dir,
+            tool_root=tool_root,
+            through_phase="verify",
+            baseline_approval=baseline_approval,
+            exception_approvals=exception_approvals,
+        )
+        if not checked.ok:
+            raise StatusInputError(
+                "cannot confirm sourcing while policy violations remain:\n  - "
+                + "\n  - ".join(
+                    f"[{violation.rule}] {violation.message}"
+                    for violation in checked.violations
+                )
+            )
+        fingerprint = policy_sourcing_fingerprint(
+            project_dir,
+            tool_root=tool_root,
+        )
+
+    event = PolicyEvent(
+        event_time,
+        action,
+        subject,
+        note,
+        fingerprint,
+    )
+    events = (
+        (*document.events, phase_reopen)
+        if phase_reopen is not None
+        else document.events
+    )
+    document = replace(
+        document,
+        events=events,
+        policy_events=(*document.policy_events, event),
+    )
+    return write_status(
+        project_dir,
+        tool_root=tool_root,
+        now=event_time,
+        document=document,
+    )
 
 
 def mark_status(
@@ -1178,6 +2150,67 @@ def mark_status(
     document = read_status_document(project_dir)
     initial = inspect_status(project_dir, document=document)
     _validate_transition(initial, phase, action)
+    if action == "complete" and (
+        _policy_constraints_enabled(project_dir)
+        or (
+            phase == "spec"
+            and not (project_dir / ".pcbforge").exists()
+        )
+    ):
+        baseline_approval, exception_approvals, _ = _policy_approval_context(
+            document
+        )
+        try:
+            policy_result = check_policy(
+                project_dir,
+                tool_root=tool_root,
+                through_phase=phase,
+                baseline_approval=baseline_approval,
+                exception_approvals=exception_approvals,
+            )
+        except (PolicyInputError, PolicyError) as exc:
+            raise StatusInputError(
+                f"cannot mark {phase} complete: {exc}"
+            ) from exc
+        if not policy_result.ok:
+            raise StatusInputError(
+                f"cannot mark {phase} complete: policy failed:\n  - "
+                + "\n  - ".join(
+                    f"[{violation.rule}] {violation.message}"
+                    for violation in policy_result.violations
+                )
+            )
+    if (
+        action == "complete"
+        and phase == "architect"
+        and _approval_constraints_enabled(project_dir)
+        and _current_architect_proposal(project_dir, document) is None
+    ):
+        raise StatusInputError(
+            "cannot mark architect complete: the current docs/architecture.md "
+            "proposal has not received explicit user approval; record "
+            "`status mark architect proposal-approved` before coding"
+        )
+    if action == "proposal-approved":
+        diagram = project_dir / "docs" / "architecture.md"
+        if (
+            not diagram.is_file()
+            or ARCHITECTURE_MARKER not in _read_text(diagram)
+        ):
+            raise StatusInputError(
+                "cannot approve architect proposal: missing current "
+                "docs/architecture.md"
+            )
+    if action == "complete" and phase == "brief":
+        note_lower = note.lower()
+        if "brief.md" not in note_lower or not re.search(
+            r"schematic\s+review\s*:\s*adequate",
+            note_lower,
+        ):
+            raise StatusInputError(
+                "cannot mark brief complete: --note must reference brief.md and "
+                "contain `schematic review: adequate`"
+            )
 
     event_time = now or _now()
     if action == "complete" and phase in CHECK_PHASES:
@@ -1208,11 +2241,21 @@ def mark_status(
         phase,
     )
     if action == "complete" and not evidence_ok:
-        raise StatusInputError(
-            f"cannot mark {phase} complete: {evidence_detail}"
-        )
+        raise StatusInputError(f"cannot mark {phase} complete: {evidence_detail}")
 
-    event = StatusEvent(event_time, phase, action, note)
+    approval_fingerprint = (
+        _approval_fingerprint(project_dir, phase, action)
+        if phase in APPROVAL_BOUND_PHASES
+        and action in {"complete", "proposal-approved"}
+        else ""
+    )
+    event = StatusEvent(
+        event_time,
+        phase,
+        action,
+        note,
+        approval_fingerprint,
+    )
     document = replace(document, events=(*document.events, event))
     return write_status(
         project_dir,
