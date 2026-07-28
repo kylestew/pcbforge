@@ -61,7 +61,7 @@ exact `status review` packet and may record its fingerprint with
 
 ### Manufacturing-policy invariant
 
-Schema-11 projects consume the hash-pinned
+Schema-12 projects consume the hash-pinned
 `policies/pcbforge-standard-v1.yaml` profile and track their declarations,
 evidence, sourcing, and exception requests in `policy.yaml`. The profile—not
 the editable project contract—defines hard rules, exception-capable defaults,
@@ -82,6 +82,16 @@ exception approval reopens the profile-mapped completed phase.
 
 ## Decision record
 
+- **2026-07-28 — schema-12 native Step 5 schematic review adopted.** IMPLEMENT
+  now has a proposal gate before physical Atopile source edits and a separate
+  final gate. The AI authors a review-only native KiCad schematic, PCBForge
+  runs pinned KiCad ERC and SVG export, and proposal approval fingerprints the
+  electrical view, narrative, upstream contract, and pre-IMPLEMENT source
+  baseline. Final approval requires exact reference/value/footprint/MPN/LCSC
+  and physical-pin/net parity with the compiled BOM/PCB. Electrical or
+  part-identity differences return to proposal approval. Atopile remains the
+  authority and the review project is forbidden from owning a PCB. Step 7
+  consumes this approved evidence rather than introducing the circuit view.
 - **2026-07-28 — schema-11 universal phase approval adopted.** Every phase,
   including init, MCU, IMPLEMENT, build + test, LAYOUT, ROUTE, verify,
   fab-out, order, and publish, now needs explicit final user approval.
@@ -221,16 +231,17 @@ for whichever compiler wins:
 4. MCU        AI selects exact STM32 + pins → creates .ioc → T: check-ioc;
               U may review/edit in CubeMX. AI derives the MCU module manually
               with a one-to-one audit until ioc2code is implemented.
-5. IMPLEMENT  AI follows agent/implement.md: parts pinned with LCSC#, values,
-              pullups, decoupling; official KiCad assets first; sourcing and
-              assurance evidence recorded. T: check-parts + check-policy.
+5. IMPLEMENT  AI creates complete review-only native KiCad proposal; T: ERC +
+              SVG; U approves before source. AI implements exact parts; T:
+              compiled identity/pin/net parity + check-parts + check-policy;
+              U gives separate final approval.
 6. build+test T: exact build-test.yaml → frozen compile → resolved
               connectivity + BOM; marked assertions + compiler-native checks;
               no-op spatial-preservation audit → tracked report; fail loud.
 7. brief      AI: exact placement.yaml from reviewed intent; T validates
               complete footprint/ref/pad/net coverage, generates brief.md,
               and seeds PCBForge-owned classes in .kicad_pro without touching
-              .kicad_pcb; U approves brief + schematic presentation.
+              .kicad_pcb; U approves brief beside current Step 5 schematic.
 8. LAYOUT     U — THE ART. AI spotter on request (see Layout copilot).
 9. ROUTE      U — the art continues. AI sanity checks on request.
 10. verify    T: DRC vs JLC rules + scripted layout audits; AI render review.
@@ -245,8 +256,9 @@ Every numbered phase ends with the same final gate: required evidence becomes
 current, the agent presents `pcbforge status review <phase>`, the user
 explicitly approves that fingerprint, and the agent records it with
 `pcbforge status approve`. The phase cannot complete from tool success, file
-presence, or agent judgment alone. ARCHITECT's proposal approval remains an
-additional earlier gate; optional PUBLISH may instead be explicitly skipped.
+presence, or agent judgment alone. ARCHITECT and IMPLEMENT each have an
+additional proposal-stage approval before affected source; optional PUBLISH
+may instead be explicitly skipped.
 
 ### Phase 3 — ARCHITECT
 
@@ -405,9 +417,11 @@ assertion suite is the floor under a hands-off human — but it proves only
 what's encoded. AI netlist review stays as second layer; catches what nobody
 encoded yet.
 
-Electrical validation is **compiler-native** (connectivity/drive checks on
-the resolved graph). KiCad ERC exists only if a real `.kicad_sch` is emitted —
-this flow doesn't promise one. DRC runs for real, on the `.kicad_pcb`.
+Electrical validation is **compiler-native** (connectivity/drive checks on the
+resolved graph) and independently reviewable. Step 5 requires a real,
+review-only `.kicad_sch`; pinned KiCad ERC runs on it and PCBForge compares its
+canonical XML netlist to the compiled BOM/PCB. DRC runs on the product
+`.kicad_pcb`. The review schematic never updates that PCB.
 
 **BOM by construction:** BOM and connectivity derive from the same resolved
 component graph — they cannot diverge from each other. (Wrong part choice
@@ -440,8 +454,8 @@ stale reopens the mechanical Step 6 gate. Failure never overwrites the previous
 passing report.
 
 This deterministic gate does not pretend to prove live JLC stock or price,
-visual schematic adequacy, placement/routing quality, KiCad DRC, or fab output.
-Those remain their explicit later or board-1 review gates.
+placement/routing quality, KiCad PCB DRC, or fab output. Native schematic
+comprehension, ERC, and compiled parity are already mandatory in Step 5.
 
 `pcbforge check-policy` cross-checks the exact Step 6 LCSC set against tracked
 offline sourcing evidence without making normal status network-dependent.
@@ -469,10 +483,9 @@ overridden. `.kicad_pcb` is read-only and confirmed byte-identical.
 
 The generated brief contains no coordinates and creates no geometric keepouts.
 It is guidance for the human placer, not spatial source. Step 7 is a combined
-machine/human gate: the checker must pass, then the user must approve
-`brief.md` and confirm `schematic review: adequate` in the explicit STATUS
-completion note. An inadequate circuit presentation invokes the board-1
-pre-layout kill switch: block the phase and do not invest in layout.
+machine/human gate: the checker must pass, then the user approves `brief.md`
+beside the current Step 5 schematic. Missing, stale, or inadequate schematic
+evidence blocks the phase before layout.
 
 Saved Step 6 and Step 7 evidence fingerprints circuit-owned PCB semantics
 (references, selected footprints, pads, and connectivity), not placement,
@@ -585,14 +598,14 @@ library + publish + renders, assertion/check suite, layout copilot (brief +
 audits + render review), sourcing verify, fab output gen.
 
 **IS NOT (v1):** placement/routing by tool or AI, simulation,
-ordering/payments, hand-drawn schematic capture (moot — capture is code),
-legacy-board adoption (future boards only — decision record).
+ordering/payments, making the KiCad review derivative authoritative, or
+silently treating legacy adoption as pre-source approval.
 
 ## Known costs (accepted 2026-07-24)
 
 | Cost | Mitigation |
 |---|---|
-| Schematic is generated, not drawn — and user reviews it visually **in-loop**, not just at bench | hierarchy makes it tractable: block-diagram top + small per-module sheets (flat full-board render is a non-goal); atopile viewer first, own `.kicad_sch`-emit render path as fallback; pilot criterion 3 |
+| Review schematic duplicates presentation of code-owned connectivity | keep it review-only; hierarchy makes it tractable; pinned ERC plus exact compiled identity/pin/net parity blocks drift |
 | Compiler dependency (atopile young) | SKiDL fallback, then option D; ejection: netlist + `.kicad_pcb` are plain KiCad — boards outlive tool |
 | Board-1 cost (DSL + ioc2code + rules port) | crossover ~board 3–5 — hypothesis; pilot + early boards test it |
 | Pin swap during routing re-coded by hand | KiCad is forward-annotation-dominant anyway |
@@ -618,23 +631,20 @@ order:
 1. MCU slice: AI-authored `.ioc` + `check-ioc` is implemented; remaining gate
    is ioc2code feasibility (parse checked `.ioc` → MCU module).
 2. Typed-interface + assertion expressiveness covers the JLC rule set;
-   compiler-native electrical checks adequate (no KiCad ERC in flow).
-3. **In-loop visual schematic review** (elevated to make-or-break
-   2026-07-24): viewer/renders good enough to eyeball every build — top
-   block diagram + per-module sheets; bench + block presentation included.
-   Miss → build own render path: emit per-module `.kicad_sch` (kiutils +
-   autolayout) → `kicad-cli sch export svg`; side effect: real KiCad ERC
-   returns to the flow.
+   compiler-native electrical checks plus native KiCad ERC are adequate.
+3. **In-loop visual schematic review** (schema-12 implementation ready for
+   Blinky pilot): complete native review-only KiCad proposal before source,
+   hierarchical SVG export, passive-purpose annotations, clean ERC, and exact
+   compiled parity before final IMPLEMENT approval.
 4. **Sync contract holds** (see Handoff): no-op idempotence, intended deltas
    only, atomic failure, component/pad/net identity stability.
 5. Registry/versioning health, breaking-change cadence tolerable.
 
 Gates while building board 1:
 
-- **Week-1 kill switch (criterion 3):** judge viewer/in-loop review before
-  any layout investment. Inadequate + fallback render path unattractive →
-  stop, decision report; SKiDL or option D is an explicit follow-up choice,
-  never a silent medium change.
+- **Step-5 comprehension gate (criterion 3):** the user must be able to explain
+  every major block and passive purpose from the native schematic packet before
+  implementation. Inadequate presentation blocks IMPLEMENT.
 - **Sync drill (criterion 4):** immediately after the first placement
   session, scripted on the live board with the pilots' fingerprint tooling:
   no-op rebuild fingerprint check, controlled add / rename / footprint-swap /

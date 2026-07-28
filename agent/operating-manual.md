@@ -34,7 +34,7 @@ Non-negotiable rules:
 4. **Ordering/money is human.** Generate `fab/` outputs; stop there.
 5. The user reviews capture at their chosen depth — surface meaningful
    diffs; don't bury decisions in bulk edits.
-6. **The schema-11 workflow and its policy are binding.** Read `policy.yaml`; run
+6. **The schema-12 workflow and its policy are binding.** Read `policy.yaml`; run
    `pcbforge check-policy`; never invent or self-approve an exception.
 
 ## Decision authority (global constraint)
@@ -76,10 +76,11 @@ may be selected autonomously, and those assumptions must be stated.
 3. ARCHITECT   USER approves proposed graph; then code skeleton + audit;
                USER gives separate final approval
 4. MCU         follow agent/mcu.md; AI selects pins → checked .ioc → MCU module
-5. IMPLEMENT   follow agent/implement.md; exact parts, canonical libraries, rules
+5. IMPLEMENT   native KiCad proposal + USER approval before source; then exact
+               parts, compiled parity, clean ERC, and separate final approval
 6. build+test  agent/build-test.md; exact contract + frozen build + tracked report
-7. brief       agent/brief.md; exact placement contract + generated brief;
-               USER approves brief and schematic presentation
+7. brief       agent/brief.md; exact placement contract + generated brief beside
+               the already-approved Step 5 schematic
 8. LAYOUT      USER. You spot on request only.
 9. ROUTE       USER. Sanity checks on request.
 10. verify     DRC (scripts/kicad-cli) + audits + render review
@@ -107,9 +108,10 @@ after receiving an unambiguous approval of that packet, record it with
 The command persists approval but never constitutes it. Never use
 `status mark <phase> complete`, and never infer approval for any phase. Use
 `blocked` for an actionable blocker, `reopened` when earlier work changes, and
-`skipped` only for optional publish. ARCHITECT also requires
-`status mark architect proposal-approved` after the user approves the proposed
-diagram and before source coding begins.
+`skipped` only for optional publish. ARCHITECT and IMPLEMENT proposals use
+`status review <phase> --stage proposal` and
+`status approve <phase> --stage proposal --fingerprint ...` before affected
+source coding begins.
 
 `policy.yaml` requests exceptions but never approves them. After the user
 explicitly accepts one, record it with
@@ -128,7 +130,8 @@ Exists today: pinned toolchain (`scripts/ato`, `scripts/kicad-cli`,
 build/test playbooks, `pcbforge check-ioc`, `pcbforge check-parts`,
 `pcbforge check-build-test`, the tracked Step 6 report gate, an explicit empty
 module catalog, `pcbforge brief` / `pcbforge check-brief`, the Step 7
-placement schema and approval gate, schema-11 universal phase approvals,
+placement schema and approval gate, schema-12 native schematic proposal/ERC/
+render/parity gates and universal phase approvals,
 `policy.yaml`,
 `pcbforge check-policy`, explicit policy approval commands, and
 `pcbforge migrate-policy` / `pcbforge migrate-approvals`.
@@ -141,9 +144,9 @@ during IMPLEMENT and again after FAB-OUT, then recorded through the policy
 gate. The module catalog is empty — propose architecture from
 scratch and say so; don't invent library modules.
 
-Board-1 gates you must respect (DESIGN.md → Pilot): Step 7 records
-schematic-viewer adequacy BEFORE the user invests in layout (week-1 kill
-switch); run the
+Board-1 gates you must respect (DESIGN.md → Pilot): Step 5 establishes
+schematic comprehension before circuit implementation and Step 7 confirms the
+same approved evidence before layout; run the
 sync drill after first placement (no-op rebuild + controlled deltas must
 preserve placement — fingerprint scripts in `pilots/*/scripts/`).
 

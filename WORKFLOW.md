@@ -33,8 +33,9 @@ flowchart LR
 Blue phases are primarily AI-led, green phases are deterministic tooling, and
 yellow phases are owned by the user. These colors identify who performs the
 work, not who may accept it: every transition requires explicit final user
-approval of the current phase fingerprint. ARCHITECT additionally has a
-mandatory proposal approval before code. CubeMX review during MCU is optional.
+approval of the current phase fingerprint. ARCHITECT and IMPLEMENT additionally
+have mandatory proposal approval before affected code. CubeMX review during
+MCU is optional.
 
 ## Decision authority
 
@@ -61,7 +62,7 @@ Optional PUBLISH alone may be explicitly skipped.
 
 ## Manufacturing and technology policy
 
-Schema-11 projects pair the requirements in `spec.md` with a tracked
+Schema-12 projects pair the requirements in `spec.md` with a tracked
 `policy.yaml`. The tool-owned `policies/pcbforge-standard-v1.yaml` profile
 defines hard rules, defaults, exception rule IDs, and the earliest phase each
 exception affects. `.pcbforge` pins the profile and hash.
@@ -87,10 +88,10 @@ checks are offline.
 | 1. SPEC | AI interview; user decides intent | Approved `spec.md`, initial `policy.yaml`, and tracked `STATUS.md` | Valid contracts and current policy check, then explicit fingerprint approval |
 | 2. init | Tool | Project scaffold, pinned metadata, policy/rule profiles, KiCad shell, project-local `AGENTS.md` | Scaffold smoke-builds, then explicit fingerprint approval |
 | 3. ARCHITECT | AI proposes; user approves twice | Approved graph in `docs/architecture.md`, then compiling functional skeleton in `src/` | Artifact-bound proposal approval before code and separate final approval after build/audit |
-| 4. MCU | AI; optional user CubeMX review | Checked `firmware/<project>.ioc` and matching `src/mcu.ato` | Pinmux and one-to-one audit pass, then explicit fingerprint approval |
-| 5. IMPLEMENT | AI | Physical module bodies, selected parts, values, footprints, sourcing, assurances, and constraints | Current build, parts, IOC, and policy checks pass, then explicit fingerprint approval |
+| 4. MCU | AI; optional user CubeMX review | Checked `firmware/<project>.ioc`, matching `src/mcu.ato`, and pre-IMPLEMENT baseline | Pinmux and one-to-one audit pass, then explicit fingerprint approval |
+| 5. IMPLEMENT | AI proposes; user approves twice | Native review-only KiCad proposal/SVG, then physical source, final schematic, compiled parity, sourcing, and constraints | Clean proposal ERC and approval before source; then exact compiled identity/pin/net parity, checks, and separate final approval |
 | 6. build + test | Compiler and checks | Exact `build-test.yaml`, resolved BOM/connectivity, assertions, and tracked `docs/build-test.md` | Deterministic acceptance checks pass, then explicit fingerprint approval |
-| 7. brief | Tool and AI; user approves | Exact `placement.yaml`, generated `brief.md`, and PCBForge-owned KiCad net classes | Contract check passes and user approves the brief plus schematic presentation |
+| 7. brief | Tool and AI; user approves | Exact `placement.yaml`, generated `brief.md`, and PCBForge-owned KiCad net classes | Contract check passes and user approves the brief beside the current Step 5 schematic |
 | 8. LAYOUT | User | Component placement in KiCad | Placement semantics reviewed and explicitly fingerprint-approved |
 | 9. ROUTE | User | Routed copper in KiCad | Routing semantics reviewed and explicitly fingerprint-approved |
 | 10. verify | Tools and AI | DRC, scripted audits, and render review | Checks pass, then explicit fingerprint approval |
@@ -170,7 +171,9 @@ AI presents the alternatives and stops. The user explicitly approves the
 proposal before source work begins:
 
 ```bash
-pcbforge status mark architect proposal-approved \
+pcbforge status review architect --stage proposal
+pcbforge status approve architect --stage proposal \
+  --fingerprint <sha256> \
   --note "Approved graph and material choices; diagram: docs/architecture.md"
 ```
 
@@ -205,11 +208,13 @@ results.
 - `pcbforge status --check --write` refreshes applicable pinned validations.
 - `pcbforge status review <phase>` reruns required checks and renders the exact
   phase packet and approval fingerprint without writing approval state.
+- `pcbforge status review <phase> --stage proposal` and matching staged
+  `status approve` implement the pre-code ARCHITECT and IMPLEMENT gates.
 - `pcbforge status approve <phase> --fingerprint <sha256> --note "..."`
   records an explicit user approval only if that exact packet is still ready.
-- `pcbforge status mark <phase> <action> --note "..."` records ARCHITECT
-  proposal approval, blockers, reopen events, or the optional PUBLISH skip; it
-  cannot complete schema-11 phases.
+- `pcbforge status mark <phase> <action> --note "..."` records blockers,
+  reopen events, or the optional PUBLISH skip; it cannot approve schema-12
+  proposals or complete phases.
 - `pcbforge check-policy` validates the current policy scope.
 - `pcbforge policy approve-baseline`, `approve-exception`, and
   `confirm-sourcing` persist explicit user decisions in a separate append-only
@@ -243,8 +248,22 @@ one-to-one audit in the MCU playbook.
 
 ## 5–7. IMPLEMENT, build + test, and brief
 
-During IMPLEMENT, the AI replaces architecture placeholders with physical
-circuit definitions: exact components, values, footprints, LCSC identifiers,
+IMPLEMENT begins with no physical source edits. MCU approval captures a
+source/board baseline. The AI creates `schematic-review.yaml`, a complete
+review-only native KiCad project under `review/implement/proposal/`, and
+`docs/implementation-proposal.md`. The view includes every component, rail,
+external boundary, physical pin, net label, protection direction, and
+passive-purpose annotation, plus exact proposed value/footprint/MPN/LCSC
+fields.
+
+`pcbforge check-schematic --stage proposal --write` runs pinned KiCad ERC,
+exports tracked SVG pages, verifies the product PCB is unchanged, and
+fingerprints the proposal against its narrative and upstream baseline. The user
+approves the exact `status review implement --stage proposal` packet before
+physical source changes.
+
+Only then does the AI replace architecture placeholders with physical circuit
+definitions: exact components, values, footprints, LCSC identifiers,
 decoupling, pull resistors, protection, and electrical constraints.
 
 The AI follows `agent/implement.md`. Commodity resistors, capacitors, and LEDs
@@ -259,6 +278,14 @@ for each LCSC item. `pcbforge check-policy` detects ordinary packages below
 0603, undeclared advanced packages/processes, missing assurance evidence, BOM
 sourcing gaps, and stale or absent exception approval. `build`, `parts`,
 `policy`, and `ioc` must all be current for IMPLEMENT completion.
+
+The AI then creates `review/implement/final/main.kicad_sch` and the final
+narrative. `pcbforge check-schematic --stage final --write` requires clean ERC
+and exact reference, value, footprint, MPN/LCSC, physical-pin, and net parity
+with both the approved proposal and compiled Atopile BOM/PCB. Electrical or
+part-identity differences return to proposal approval. Atopile remains the
+authority; review directories may not contain a PCB. `schematic-final` is
+required current evidence for final IMPLEMENT approval.
 
 Step 6 follows `agent/build-test.md`. The AI writes `build-test.yaml` from the
 reviewed implementation: exact LCSC/MPN/footprint/quantity lines, expected PCB
@@ -279,9 +306,9 @@ When both are current, Step 6 becomes `Awaiting approval`. The user approves
 the exact `status review build` fingerprint before Step 7 begins. A failed run
 never overwrites the last passing report.
 
-This offline gate deliberately excludes live stock/pricing, visual schematic
-adequacy, placement, routing, KiCad DRC, and fabrication output. Those remain
-their documented later or manual reviews.
+This offline gate deliberately excludes live stock/pricing, placement,
+routing, KiCad PCB DRC, and fabrication output. Native schematic comprehension,
+ERC, and compiled parity were already established in Step 5.
 
 Step 7 follows `agent/brief.md`. The AI writes authoritative
 `placement.yaml` schema 1 from reviewed circuit intent, datasheets, mechanics,
@@ -308,11 +335,9 @@ geometry, coordinates, placement, or copper.
 
 `pcbforge check-brief` performs the same validation without writing. Step 7
 stores this check in `STATUS.md`, but passing machine evidence is not approval:
-the user reviews generated `brief.md` and the best available schematic
-presentation. Completion requires an explicit STATUS note referencing
-`brief.md` and containing `schematic review: adequate`. If that presentation
-cannot support confident circuit review, Step 7 is blocked and layout must not
-begin.
+the user reviews generated `brief.md` beside the current approved Step 5
+schematic. If that evidence is missing, stale, or inadequate for placement
+decisions, Step 7 is blocked and layout must not begin.
 
 Step 6 and Step 7 fingerprints use circuit-owned PCB topology—reference,
 footprint, pad, and net membership—not coordinates, sides, tracks, vias, zones,
@@ -368,7 +393,8 @@ Implemented now:
 - `pcbforge init`;
 - `pcbforge check-ioc`;
 - `pcbforge check-parts` and its IMPLEMENT completion gate;
-- schema-11 universal phase approvals plus policy profiles/contracts,
+- schema-12 native schematic review plus universal phase approvals and policy
+  profiles/contracts,
   `pcbforge status review` / `status approve`, `pcbforge check-policy`, explicit
   baseline/exception/sourcing approvals, targeted reopening, and
   `pcbforge migrate-policy` / `pcbforge migrate-approvals`;

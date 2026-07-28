@@ -52,10 +52,17 @@ interfaces, material options, recommendation, and unresolved risks. Do not
 write or revise architecture source until the user explicitly approves this
 proposal.
 
-After explicit proposal approval, record the artifact-bound gate:
+Generate and present the exact proposal packet first:
 
 ```bash
-<pcbforge-root>/scripts/pcbforge status mark architect proposal-approved \
+<pcbforge-root>/scripts/pcbforge status review architect --stage proposal
+```
+
+After explicit proposal approval, record that exact fingerprint:
+
+```bash
+<pcbforge-root>/scripts/pcbforge status approve architect --stage proposal \
+  --fingerprint <sha256> \
   --note "<user-approved graph and material choices>; diagram: docs/architecture.md"
 ```
 
@@ -65,7 +72,7 @@ it and requires another presentation and approval before coding continues. The
 agent may record approval already given by the user, but must never originate,
 infer, or reuse it.
 
-On schema-9 projects, creating architecture source before this event makes the
+On schema-9-or-newer projects, creating architecture source before this event makes the
 dashboard report ARCHITECT blocked. Stop source changes and present the current
 diagram rather than attempting to work through that blocker.
 

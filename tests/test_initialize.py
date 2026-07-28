@@ -326,20 +326,24 @@ class InitializeTests(unittest.TestCase):
             self.assertIn("kicad: 9.0.9", pins)
             self.assertIn("jlc-2layer-conservative-v1", pins)
             pin_data = yaml.safe_load(pins)
-            self.assertEqual(pin_data["schema"], 11)
-            self.assertEqual(pin_data["guidance"]["brief_schema"], 1)
-            self.assertEqual(pin_data["guidance"]["approval_schema"], 2)
-            self.assertEqual(pin_data["guidance"]["agents_schema"], 11)
+            self.assertEqual(pin_data["schema"], 12)
+            self.assertEqual(pin_data["guidance"]["brief_schema"], 2)
+            self.assertEqual(pin_data["guidance"]["approval_schema"], 3)
+            self.assertEqual(pin_data["guidance"]["agents_schema"], 12)
             self.assertEqual(pin_data["guidance"]["policy_schema"], 1)
             self.assertEqual(pin_data["guidance"]["architect_schema"], 4)
             self.assertEqual(
                 pin_data["guidance"]["architecture_diagram_schema"],
                 1,
             )
-            self.assertEqual(pin_data["guidance"]["mcu_schema"], 1)
-            self.assertEqual(pin_data["guidance"]["implement_schema"], 1)
+            self.assertEqual(pin_data["guidance"]["mcu_schema"], 2)
+            self.assertEqual(pin_data["guidance"]["implement_schema"], 2)
             self.assertEqual(pin_data["guidance"]["build_test_schema"], 1)
-            self.assertEqual(pin_data["guidance"]["status_schema"], 1)
+            self.assertEqual(pin_data["guidance"]["status_schema"], 2)
+            self.assertEqual(
+                pin_data["guidance"]["schematic_review_schema"],
+                1,
+            )
             self.assertEqual(
                 pin_data["policy"]["profile"],
                 "pcbforge-standard-v1",
@@ -354,7 +358,7 @@ class InitializeTests(unittest.TestCase):
             )
 
             agents = (project / "AGENTS.md").read_text(encoding="utf-8")
-            self.assertIn("pcbforge-agents-schema: 11", agents)
+            self.assertIn("pcbforge-agents-schema: 12", agents)
             self.assertIn("agent/brief.md", agents)
             self.assertIn("Never place, route, move", agents)
             self.assertIn("ready for\nARCHITECT", agents)
@@ -365,7 +369,7 @@ class InitializeTests(unittest.TestCase):
             self.assertIn("/modules/index.md", agents)
             self.assertIn("## Decision authority", agents)
             self.assertIn("never originate", agents)
-            self.assertIn("status mark architect proposal-approved", agents)
+            self.assertIn("status review architect --stage proposal", agents)
             self.assertIn("source created before this current gate", agents)
             self.assertIn("status approve architect", agents)
             self.assertIn("## Manufacturing and technology policy", agents)
@@ -655,7 +659,7 @@ class GuidanceTests(unittest.TestCase):
             "USB2_0_IF",
             "spec-to-module coverage",
             "board hash",
-            "status mark architect proposal-approved",
+            "status review architect --stage proposal",
             "status approve architect",
             "AI-led MCU workflow",
             "docs/architecture.md",
@@ -667,13 +671,14 @@ class GuidanceTests(unittest.TestCase):
 
         mcu_playbook = (TOOL_ROOT / "agent" / "mcu.md").read_text(encoding="utf-8")
         for required in (
-            "pcbforge-mcu-schema: 1",
+            "pcbforge-mcu-schema: 2",
             "firmware/<project>.ioc",
             "DEBUG_UART_TX",
             "check-ioc",
             "optional and is not an approval gate",
             "one-to-one audit",
             "IMPLEMENT as the next phase",
+            "source-baseline.json",
         ):
             self.assertIn(required, mcu_playbook)
 
@@ -681,13 +686,14 @@ class GuidanceTests(unittest.TestCase):
             encoding="utf-8"
         )
         for required in (
-            "pcbforge-implement-schema: 1",
+            "pcbforge-implement-schema: 2",
             "Device:R",
             "Resistor_SMD:R_0603_1608Metric",
             "supplier/BOM",
             "pcbforge check-parts",
-            "`build`, `parts`, and `policy`",
+            "`schematic-final`",
             "policy approve-exception",
+            "status review implement --stage proposal",
         ):
             self.assertIn(required, implement_playbook)
 

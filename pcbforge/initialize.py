@@ -29,17 +29,18 @@ from pcbforge.policy import (
 ATO_VERSION = "0.15.7"
 KICAD_VERSION = "9.0.9"
 SPEC_SCHEMA = 1
-PIN_SCHEMA = 11
-AGENTS_SCHEMA = 11
+PIN_SCHEMA = 12
+AGENTS_SCHEMA = 12
 ARCHITECT_GUIDE_SCHEMA = 4
 ARCHITECTURE_DIAGRAM_SCHEMA = 1
-MCU_GUIDE_SCHEMA = 1
-IMPLEMENT_GUIDE_SCHEMA = 1
+MCU_GUIDE_SCHEMA = 2
+IMPLEMENT_GUIDE_SCHEMA = 2
 BUILD_TEST_GUIDE_SCHEMA = 1
-BRIEF_GUIDE_SCHEMA = 1
-APPROVAL_GUIDE_SCHEMA = 2
+BRIEF_GUIDE_SCHEMA = 2
+APPROVAL_GUIDE_SCHEMA = 3
+SCHEMATIC_REVIEW_SCHEMA = 1
 POLICY_GUIDE_SCHEMA = POLICY_SCHEMA
-STATUS_SCHEMA = 1
+STATUS_SCHEMA = 2
 BOARD_ORIGIN_MM = 100.0
 
 REQUIRED_KEYS = {
@@ -713,6 +714,9 @@ saved workflow gates, compiler output, and the KiCad board.
 - Approvals are phase-specific and fingerprint-bound. A changed approved
   artifact requires renewed approval; rerunning checks cannot revive an old
   gate.
+- ARCHITECT and IMPLEMENT proposals use
+  `status review <phase> --stage proposal` followed, only after explicit user
+  approval, by `status approve <phase> --stage proposal --fingerprint ...`.
 - Only local, reversible details that do not alter an approved contract may be
   chosen autonomously, and their assumptions must be stated.
 
@@ -790,8 +794,9 @@ implementation:
    `pcbforge-architecture-diagram-schema: {ARCHITECTURE_DIAGRAM_SCHEMA}` and a
    Mermaid `flowchart LR` before writing the skeleton. Present material
    alternatives and the proposed graph, then stop for explicit user approval.
-6. After approval, record
-   `{tool_root}/scripts/pcbforge status mark architect proposal-approved --note "<approved choices>; diagram: docs/architecture.md"`.
+6. Run `pcbforge status review architect --stage proposal`, present the exact
+   packet, and stop. After approval, record
+   `{tool_root}/scripts/pcbforge status approve architect --stage proposal --fingerprint <sha256> --note "<approved choices>; diagram: docs/architecture.md"`.
    A diagram or spec change invalidates this approval and stops coding until
    the changed proposal is approved again. The dashboard treats architecture
    source created before this current gate as a blocker.
@@ -836,20 +841,32 @@ After explicit ARCHITECT approval and a new MCU request, follow
 
 Before adding physical parts, follow `{tool_root}/agent/implement.md`:
 
-1. Reuse canonical KiCad symbols and footprints for commodity packages. A
+1. Do not edit physical Atopile source yet. Create `schematic-review.yaml`,
+   the complete review-only KiCad proposal under
+   `review/implement/proposal/`, and `docs/implementation-proposal.md`.
+2. Run `pcbforge check-schematic --stage proposal --write`, then
+   `pcbforge status review implement --stage proposal`. Present the native
+   schematic and SVG pages and stop. Record the proposal fingerprint only
+   after explicit user approval.
+3. After proposal approval, implement the circuit in Atopile. Reuse canonical
+   KiCad symbols and footprints for commodity packages. A
    selected MPN or LCSC number is supplier metadata, not a reason to generate
    another 0603 resistor, capacitor, or LED library asset.
-2. Generate project-local KiCad assets only when the exact required package or
+4. Generate project-local KiCad assets only when the exact required package or
    pin mapping is absent from the official libraries, then verify the generated
    geometry against the datasheet.
-3. Run `{tool_root}/scripts/pcbforge check-parts` during part selection and
+5. Run `{tool_root}/scripts/pcbforge check-parts` during part selection and
    before presenting IMPLEMENT for completion.
-4. Complete protection/testability evidence and sourcing entries in
+6. Complete protection/testability evidence and sourcing entries in
    `policy.yaml`; run `{tool_root}/scripts/pcbforge check-policy` and stop for
    explicit user approval of every required exception.
-5. `status --check` records these audits as required evidence. IMPLEMENT
+7. Create the final review-only schematic under `review/implement/final/`.
+   Run `pcbforge check-schematic --stage final --write`; ERC, exact part
+   identity, physical pins, and nets must match both the proposal and compiled
+   Atopile design. Electrical differences return to proposal approval.
+8. `status --check` records these audits as required evidence. IMPLEMENT
    cannot become ready while parts or policy evidence is failed or stale.
-6. Present `pcbforge status review implement` and stop. Record approval only
+9. Present `pcbforge status review implement` and stop. Record approval only
    after the user explicitly accepts the exact implementation fingerprint.
 
 ## Build + test gate
@@ -875,12 +892,12 @@ After build + test completes, follow `{tool_root}/agent/brief.md`:
    PCB references, pads, and exact net names.
 3. Run `{tool_root}/scripts/pcbforge brief`; it generates `brief.md` and merges
    only `pcbforge:` net classes into the KiCad project. It never edits the PCB.
-4. Run `{tool_root}/scripts/pcbforge check-brief` and present `brief.md` plus
-   the available schematic presentation for explicit user review.
+4. Run `{tool_root}/scripts/pcbforge check-brief` and present `brief.md` beside
+   the already-approved final Step 5 schematic.
 5. Run `pcbforge status review brief` and present its packet. Record
-   `status approve brief` only after the user approves both; the note must
-   contain `brief.md` and `schematic review: adequate`. If the presentation is
-   inadequate, block BRIEF and do not begin layout.
+   `status approve brief` only after the user approves `brief.md` beside the
+   current Step 5 schematic. If that evidence is missing, stale, or inadequate
+   for placement decisions, block BRIEF and do not begin layout.
 
 ## FAB-OUT and order policy
 
@@ -945,6 +962,7 @@ def _render_pins(
             "build_test_schema": BUILD_TEST_GUIDE_SCHEMA,
             "brief_schema": BRIEF_GUIDE_SCHEMA,
             "approval_schema": APPROVAL_GUIDE_SCHEMA,
+            "schematic_review_schema": SCHEMATIC_REVIEW_SCHEMA,
             "policy_schema": POLICY_GUIDE_SCHEMA,
             "status_schema": STATUS_SCHEMA,
         },

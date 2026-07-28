@@ -36,6 +36,11 @@ from pcbforge.placement import (
     check_brief,
     generate_brief,
 )
+from pcbforge.schematic import (
+    SchematicError,
+    SchematicInputError,
+    check_schematic,
+)
 from pcbforge.status import (
     StatusCheckError,
     StatusError,
@@ -45,6 +50,7 @@ from pcbforge.status import (
     mark_policy,
     mark_status,
     migrate_approvals,
+    migrate_schematic_review,
     policy_approval_context,
     read_status_document,
     render_phase_review,
@@ -110,6 +116,33 @@ def _parser() -> argparse.ArgumentParser:
         default=".",
         metavar="PROJECT_DIR",
         help="initialized pcbforge project (default: current directory)",
+    )
+
+    check_schematic_parser = subcommands.add_parser(
+        "check-schematic",
+        help="run the native KiCad Step 5 schematic review gate",
+        description=(
+            "Run pinned KiCad ERC and SVG export for the proposal or final "
+            "review-only schematic. Final checks also prove compiled "
+            "Atopile-to-schematic identity and connectivity parity."
+        ),
+    )
+    check_schematic_parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+        help="initialized pcbforge project (default: current directory)",
+    )
+    check_schematic_parser.add_argument(
+        "--stage",
+        required=True,
+        choices=("proposal", "final"),
+    )
+    check_schematic_parser.add_argument(
+        "--write",
+        action="store_true",
+        help="atomically write canonical evidence and SVG render pages",
     )
 
     check_build_test_parser = subcommands.add_parser(
@@ -230,7 +263,7 @@ def _parser() -> argparse.ArgumentParser:
 
     migrate_parser = subcommands.add_parser(
         "migrate-policy",
-        help="explicitly migrate a schema-7-through-9 project to schema 11",
+        help="explicitly migrate a schema-7-through-9 project to schema 12",
     )
     migrate_parser.add_argument(
         "project_dir",
@@ -242,7 +275,7 @@ def _parser() -> argparse.ArgumentParser:
 
     migrate_approvals_parser = subcommands.add_parser(
         "migrate-approvals",
-        help="migrate a schema-10 project to universal phase approvals",
+        help="migrate a schema-10 project to schema-12 approvals and schematics",
     )
     migrate_approvals_parser.add_argument(
         "project_dir",
@@ -250,6 +283,26 @@ def _parser() -> argparse.ArgumentParser:
         default=".",
         metavar="PROJECT_DIR",
         help="initialized schema-10 project (default: current directory)",
+    )
+
+    migrate_schematic_parser = subcommands.add_parser(
+        "migrate-schematic-review",
+        help="migrate a schema-11 project to the native schematic workflow",
+    )
+    migrate_schematic_parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+        help="initialized schema-11 project (default: current directory)",
+    )
+    migrate_schematic_parser.add_argument(
+        "--adopt-existing",
+        action="store_true",
+        help=(
+            "explicitly label an already implemented circuit as legacy adoption; "
+            "never claims that pre-source proposal approval occurred"
+        ),
     )
 
     status_parser = subcommands.add_parser(
@@ -338,6 +391,12 @@ def _status_review_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("phase", help="workflow phase key, such as mcu or build")
     parser.add_argument(
+        "--stage",
+        choices=("proposal", "final"),
+        default="final",
+        help="review an ARCHITECT/IMPLEMENT proposal or the final phase packet",
+    )
+    parser.add_argument(
         "project_dir",
         nargs="?",
         default=".",
@@ -356,6 +415,12 @@ def _status_approve_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("phase", help="workflow phase key, such as mcu or build")
+    parser.add_argument(
+        "--stage",
+        choices=("proposal", "final"),
+        default="final",
+        help="approve an ARCHITECT/IMPLEMENT proposal or the final phase packet",
+    )
     parser.add_argument(
         "project_dir",
         nargs="?",
@@ -403,6 +468,7 @@ def _run_status_cli(argv: list[str]) -> int:
             review = review_phase(
                 Path(status_args.project_dir),
                 status_args.phase,
+                stage=status_args.stage,
             )
             print(render_phase_review(review))
             return 0 if review.ready else 1
@@ -412,6 +478,7 @@ def _run_status_cli(argv: list[str]) -> int:
                 status_args.phase,
                 status_args.fingerprint,
                 status_args.note,
+                stage=status_args.stage,
             )
             print(render_terminal(result.report))
             print(
@@ -512,6 +579,25 @@ def main(argv: list[str] | None = None) -> int:
         print(render_parts_audit(result))
         return 0 if result.ok else 1
 
+    if args.command == "check-schematic":
+        try:
+            result = check_schematic(
+                Path(args.project_dir),
+                args.stage,
+                write=args.write,
+            )
+        except SchematicInputError as exc:
+            print(f"pcbforge check-schematic: {exc}", file=sys.stderr)
+            return 2
+        except SchematicError as exc:
+            print(f"pcbforge check-schematic: {exc}", file=sys.stderr)
+            return 1
+        state = "wrote" if args.write and result.wrote else "validated"
+        print(f"pcbforge: {state} {result.stage} schematic evidence")
+        print(f"pcbforge: {result.summary}")
+        print(f"pcbforge: evidence fingerprint {result.fingerprint}")
+        return 0
+
     if args.command == "check-policy":
         try:
             project_dir = Path(args.project_dir)
@@ -600,6 +686,27 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         state = "migrated" if migration.wrote else "already migrated"
         print(f"pcbforge: {state} approvals in {migration.project_dir}")
+        if migration.reopened_phases:
+            print(
+                "pcbforge: explicit reapproval required for "
+                + ", ".join(migration.reopened_phases)
+            )
+        return 0
+
+    if args.command == "migrate-schematic-review":
+        try:
+            migration = migrate_schematic_review(
+                Path(args.project_dir),
+                adopt_existing=args.adopt_existing,
+            )
+        except StatusInputError as exc:
+            print(f"pcbforge migrate-schematic-review: {exc}", file=sys.stderr)
+            return 2
+        except StatusError as exc:
+            print(f"pcbforge migrate-schematic-review: {exc}", file=sys.stderr)
+            return 1
+        state = "migrated" if migration.wrote else "already migrated"
+        print(f"pcbforge: {state} schematic workflow in {migration.project_dir}")
         if migration.reopened_phases:
             print(
                 "pcbforge: explicit reapproval required for "

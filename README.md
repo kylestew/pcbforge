@@ -97,6 +97,8 @@ pcbforge status approve layout --fingerprint <sha256> \
   --note "Placement reviewed and explicitly approved"
 pcbforge check-policy
 pcbforge policy approve-exception <id> --note "Approved tradeoff"
+pcbforge check-schematic --stage proposal --write
+pcbforge status review implement --stage proposal
 pcbforge check-build-test
 pcbforge check-build-test --write-report
 pcbforge brief
@@ -104,17 +106,27 @@ pcbforge check-brief
 ```
 
 Static status is read-only and fast. `--check` runs applicable pinned build,
-Step 6 acceptance, placement-brief, parts-policy, CubeMX, and KiCad DRC
+Step 5 schematic, Step 6 acceptance, placement-brief, parts-policy, CubeMX,
+and KiCad DRC
 validation before rendering the same status model.
 
-Schema 11 combines the versioned manufacturing and technology policy added in
-schema 10 with universal phase approvals. The
+Schema 12 combines native Step 5 KiCad schematic review with the manufacturing
+policy and universal phase approvals. The
 tool-owned `policies/pcbforge-standard-v1.yaml` hard-locks JLCPCB, STM32,
 2/4-layer boards, SWD, pinned tools, exact part identity, spatial ownership,
 and human ordering authority. Project `policy.yaml` records standard
 construction, package/process declarations, protection/testability evidence,
 sourcing evidence, and explicit exception requests. Routine validation is
 offline; approval commands only persist decisions already made by the user.
+
+Before physical implementation, create the review-only native KiCad proposal
+described by `agent/implement.md`. Run
+`pcbforge check-schematic --stage proposal --write`, present its SVG/ERC
+packet, and receive explicit proposal-stage approval before source edits.
+After implementation, the final check requires the schematic to match the
+approved proposal and compiled Atopile references, values, footprints,
+MPN/LCSC identities, pins, and nets. Atopile remains authoritative and the
+review project never owns a PCB.
 
 During physical implementation, run `pcbforge check-parts` directly. It rejects
 project-local KiCad assets for recognized commodity chip resistors, capacitors,
@@ -139,9 +151,9 @@ exact current nets and safe JLC dimensions. `pcbforge brief` generates
 `brief.md` and merges only `pcbforge:` classes into the KiCad project. It
 preserves user classes and verifies the PCB is byte-identical.
 `pcbforge check-brief` is read-only. Step 7 completes only after the user
-approves both `brief.md` and the available schematic presentation; record that
-gate with `pcbforge status approve brief --fingerprint <sha256> --note "..."`
-and a note containing `schematic review: adequate`.
+approves `brief.md` beside the already-approved current Step 5 schematic;
+record that gate with
+`pcbforge status approve brief --fingerprint <sha256> --note "..."`.
 
 After FAB-OUT, refresh live JLC availability and lifecycle evidence for the
 exact BOM. Once the user confirms it, record
@@ -174,7 +186,7 @@ pcbforge policy approve-baseline /path/to/project \
   --note "Approved migrated policy baseline"
 ```
 
-This migrates directly to schema 11. It pins the profile, generates
+This migrates directly to schema 12. It pins the profile, generates
 `policy.yaml` from discoverable facts, updates generated guidance, and leaves
 applicability and sourcing items for review. It never infers approval.
 
@@ -190,3 +202,15 @@ current. Completed phases without a provable sequential approval reopen and
 require `status review` plus explicit approval. Approved policy exceptions
 retain their targeted reopening behavior. Temper is the first schema-11
 universal-approval migration pilot.
+
+For an existing schema-11 project, enable the schematic workflow explicitly:
+
+```bash
+pcbforge migrate-schematic-review /path/to/project
+```
+
+An already completed IMPLEMENT phase must first be rewound, or migrated with
+`--adopt-existing`. Adoption is labelled in STATUS and never claims the
+circuit received pre-source proposal approval. A clean pre-IMPLEMENT migration
+reopens MCU once so its renewed approval captures the schema-12 source
+baseline.

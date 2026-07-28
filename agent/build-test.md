@@ -7,8 +7,9 @@ compiler resolves the intended exact BOM and PCB connectivity, executes the
 declared electrical assertions, emits the required artifacts, and preserves
 all user-owned spatial board data.
 
-Live stock and pricing, visual schematic adequacy, placement, routing, KiCad
-DRC, and fabrication output are separate gates. `pcbforge check-policy`
+Live stock and pricing, placement, routing, KiCad PCB DRC, and fabrication
+output are separate gates. Native schematic review, ERC, and compiled parity
+were completed in Step 5. `pcbforge check-policy`
 cross-checks the exact BOM against the tracked offline sourcing evidence, but
 does not claim that the evidence is still live. Do not claim that Step 6 proves
 these separate facts.

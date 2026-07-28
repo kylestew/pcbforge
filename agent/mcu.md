@@ -1,4 +1,4 @@
-<!-- pcbforge-mcu-schema: 1 -->
+<!-- pcbforge-mcu-schema: 2 -->
 # pcbforge — MCU playbook
 
 This playbook operationalizes the MCU phase in
@@ -102,6 +102,13 @@ Present:
 7. sourcing evidence, assumptions, warnings, and resolved tradeoffs;
 8. the successful `check-ioc` result.
 
+Also present the MCU support circuit in a conventional electrical view when it
+already exists: supplies and grounds, local decoupling, reset, boot, clock,
+SWD, and assigned application pins. If exact support components or topology
+remain undecided, label the view provisional and state clearly that the
+complete native KiCad view and passive-purpose explanations are mandatory at
+the first IMPLEMENT proposal gate before any physical source edits.
+
 Offer to pause while the user opens `firmware/<project>.ioc` in CubeMX 6.18.
 This review is optional and is not an approval gate. If the user saves any
 CubeMX changes, treat them as deliberate overrides: do not overwrite them,
@@ -128,4 +135,7 @@ matches it, and the approved architecture contract is still satisfied. Run
 `pcbforge status review mcu`, present the exact packet and fingerprint, and
 stop. After explicit user approval, record
 `pcbforge status approve mcu --fingerprint <sha256> --note "<part and audit summary>"`,
-then report IMPLEMENT as the next phase.
+then report IMPLEMENT as the next phase. Schema 12 captures
+`review/implement/source-baseline.json` with that approval; the IMPLEMENT
+proposal checker blocks if physical Atopile source or board topology changes
+before proposal approval.

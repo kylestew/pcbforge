@@ -1,4 +1,4 @@
-<!-- pcbforge-brief-schema: 1 -->
+<!-- pcbforge-brief-schema: 2 -->
 # Placement brief playbook
 
 Use this playbook only after Step 6 build + test is complete. Step 7 turns the
@@ -155,13 +155,13 @@ The schema rules are:
    `brief.md`, placement coverage, class dimensions, exact net assignments, and
    the `.kicad_pro` diff. PCBForge may replace its own `pcbforge:` entries; it
    must preserve every non-PCBForge entry.
-5. Present `brief.md` and the best available schematic presentation to the
-   user. This remains a human comprehension gate because PCBForge has no
-   reliable headless schematic renderer.
+5. Present `brief.md` beside the current, approved Step 5 final schematic SVG
+   pages. PCBForge has already run pinned KiCad ERC and compiled-design parity;
+   BRIEF checks that this evidence is still current before layout.
    Confirm the `polarity-marking` and `pin1-marking` policy assurances have
    current evidence or an explicitly approved exception.
-6. If the schematic presentation is inadequate, record a concrete blocker and
-   stop before layout:
+6. If the approved schematic is missing, stale, or no longer adequate for
+   placement decisions, record a concrete blocker and stop before layout:
 
    ```sh
    pcbforge status mark brief blocked \
@@ -170,16 +170,15 @@ The schema rules are:
 
 7. Run `pcbforge status review brief`, present its exact packet and
    fingerprint alongside both visual artifacts, and stop.
-8. After the user explicitly approves that packet and both artifacts, record:
+8. After the user explicitly approves that packet, record:
 
    ```sh
    pcbforge status approve brief --fingerprint <sha256> \
-     --note "Approved brief.md; schematic review: adequate"
+     --note "Approved brief.md beside the current Step 5 schematic"
    ```
 
-The completion note must reference `brief.md` and contain the exact affirmative
-phrase `schematic review: adequate`. Passing generation alone never records
-human approval. The approval event is bound to the current Step 6,
+Passing generation alone never records human approval. The approval event is
+bound to the current Step 5 schematic evidence, Step 6,
 `placement.yaml`, generated brief, rules profile, topology, and PCBForge-owned
 net-class fingerprint. Regeneration after a material change requires renewed
 user review and approval; rerunning the checker cannot revive the old event.

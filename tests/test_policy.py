@@ -434,7 +434,7 @@ class PolicyApprovalAndMigrationTests(PolicyFixture):
             migrated_agents = (project / "AGENTS.md").read_text(encoding="utf-8")
 
         self.assertTrue(migration.wrote)
-        self.assertEqual(pins["schema"], 11)
+        self.assertEqual(pins["schema"], 12)
         self.assertEqual(pins["policy"]["baseline_approval"], "policy-event")
         self.assertFalse(blocked.ok)
         self.assertIn(
@@ -446,7 +446,7 @@ class PolicyApprovalAndMigrationTests(PolicyFixture):
             "baseline-approved",
         )
         self.assertFalse(second.wrote)
-        self.assertIn("pcbforge-agents-schema: 11", migrated_agents)
+        self.assertIn("pcbforge-agents-schema: 12", migrated_agents)
 
     def test_schema_seven_migrates_directly_and_reopens_unbound_spec(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -483,20 +483,21 @@ class PolicyApprovalAndMigrationTests(PolicyFixture):
             )
 
         self.assertTrue(migration.wrote)
-        self.assertEqual(pins["schema"], 11)
+        self.assertEqual(pins["schema"], 12)
         self.assertEqual(
             pins["guidance"],
             {
-                "agents_schema": 11,
+                "agents_schema": 12,
                 "policy_schema": 1,
                 "build_test_schema": 1,
-                "brief_schema": 1,
-                "approval_schema": 2,
+                "brief_schema": 2,
+                "approval_schema": 3,
                 "architect_schema": 4,
                 "architecture_diagram_schema": 1,
-                "mcu_schema": 1,
-                "implement_schema": 1,
-                "status_schema": 1,
+                "mcu_schema": 2,
+                "implement_schema": 2,
+                "status_schema": 2,
+                "schematic_review_schema": 1,
             },
         )
         self.assertEqual(refreshed.report.document.events[-1].phase, "spec")
