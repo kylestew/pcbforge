@@ -14,7 +14,7 @@ LCSC parts, one-offs, 2/4 layer.
 
 | Actor | Owns |
 |---|---|
-| **User** | spec intent, architecture approval, optional CubeMX review, **layout + routing**, ordering |
+| **User** | acceptance of every phase, spec intent, optional CubeMX review, **layout + routing**, ordering |
 | **You (agent)** | spec interview, all capture code, exact MCU/pin selection, part selection, layout spotting/audits, review |
 | **Compiler/scripts** | netlist/BOM emission, assertions, checks, fab outputs |
 
@@ -34,7 +34,7 @@ Non-negotiable rules:
 4. **Ordering/money is human.** Generate `fab/` outputs; stop there.
 5. The user reviews capture at their chosen depth — surface meaningful
    diffs; don't bury decisions in bulk edits.
-6. **The schema-10 policy is binding.** Read `policy.yaml`; run
+6. **The schema-11 workflow and its policy are binding.** Read `policy.yaml`; run
    `pcbforge check-policy`; never invent or self-approve an exception.
 
 ## Decision authority (global constraint)
@@ -58,6 +58,11 @@ User approval is explicit, artifact-specific, and one-time:
 - approval is bound to the approved artifact fingerprint; a material change
   invalidates it, and rerunning checks cannot revive it;
 - checked dashboard writes durably reopen changed approved phases.
+
+Every phase requires final user approval, including SPEC, init, MCU,
+IMPLEMENT, build + test, LAYOUT, ROUTE, verify, fab-out, and order. Tool
+success or agent ownership never grants completion. A phase with current
+technical evidence is `Awaiting approval`, not `Complete`.
 
 When uncertain whether a choice is material, treat it as material and ask. Only
 local, reversible details with no effect outside the already-approved contract
@@ -94,13 +99,15 @@ may be selected autonomously, and those assumptions must be stated.
 3. Report the current focus, blockers, and next actions, then wait for the
    user where the workflow requires a gate.
 
-Refresh `STATUS.md` after meaningful transitions. Users grant approval in
-conversation; after receiving it, record the gate yourself with
-`pcbforge status mark <phase> complete --note "<reason>"`. The command
-persists an approval but never constitutes one. Never infer architecture
-approval, layout/routing completion, or ordering. Use `blocked` for an
-actionable blocker, `reopened` when earlier work changes, and `skipped` only
-for optional publish. ARCHITECT also requires
+Refresh `STATUS.md` after meaningful transitions. When a phase's evidence is
+ready, run `pcbforge status review <phase>` and present its exact artifacts,
+checks, and fingerprint. Stop. Users grant approval in conversation; only
+after receiving an unambiguous approval of that packet, record it with
+`pcbforge status approve <phase> --fingerprint <sha256> --note "<reason>"`.
+The command persists approval but never constitutes it. Never use
+`status mark <phase> complete`, and never infer approval for any phase. Use
+`blocked` for an actionable blocker, `reopened` when earlier work changes, and
+`skipped` only for optional publish. ARCHITECT also requires
 `status mark architect proposal-approved` after the user approves the proposed
 diagram and before source coding begins.
 
@@ -121,9 +128,10 @@ Exists today: pinned toolchain (`scripts/ato`, `scripts/kicad-cli`,
 build/test playbooks, `pcbforge check-ioc`, `pcbforge check-parts`,
 `pcbforge check-build-test`, the tracked Step 6 report gate, an explicit empty
 module catalog, `pcbforge brief` / `pcbforge check-brief`, the Step 7
-placement schema and approval gate, schema-10 `policy.yaml`,
+placement schema and approval gate, schema-11 universal phase approvals,
+`policy.yaml`,
 `pcbforge check-policy`, explicit policy approval commands, and
-`pcbforge migrate-policy`.
+`pcbforge migrate-policy` / `pcbforge migrate-approvals`.
 
 Not built yet (do manually, per DESIGN.md, and say you're doing it manually):
 `ioc2code` (derive `src/mcu.ato` from the checked `.ioc` yourself and perform

@@ -12,7 +12,11 @@ import yaml
 
 from pcbforge.build_test import fingerprint_inputs
 from pcbforge.cli import main
-from pcbforge.policy import load_policy_profile, render_default_policy
+from pcbforge.policy import (
+    load_policy_profile,
+    policy_status_fingerprint,
+    render_default_policy,
+)
 from pcbforge.placement import (
     BRIEF_FILENAME,
     BriefResult,
@@ -29,7 +33,8 @@ from pcbforge.status import (
     StatusEvent,
     StatusInputError,
     _approval_fingerprint,
-    mark_status,
+    approve_phase,
+    review_phase,
     write_status,
 )
 
@@ -203,7 +208,7 @@ class PlacementFixture(unittest.TestCase):
         )
         _, _, policy_hash = load_policy_profile(TOOL_ROOT)
         (project / ".pcbforge").write_text(
-            f"""schema: 10
+            f"""schema: 11
 toolchain:
   atopile: 0.15.7
   kicad: 9.0.9
@@ -211,7 +216,7 @@ toolchain:
 guidance:
   build_test_schema: 1
   brief_schema: 1
-  approval_schema: 1
+  approval_schema: 2
   policy_schema: 1
 policy:
   profile: pcbforge-standard-v1
@@ -339,7 +344,7 @@ class SchemaTests(PlacementFixture):
             project = self.project(Path(temporary))
             pins = project / ".pcbforge"
             pins.write_text(
-                pins.read_text(encoding="utf-8").replace("schema: 10", "schema: 9"),
+                pins.read_text(encoding="utf-8").replace("schema: 11", "schema: 9"),
                 encoding="utf-8",
             )
             report = project / "docs" / "build-test.md"
@@ -597,13 +602,11 @@ class StatusAndCliTests(PlacementFixture):
                 phase,
                 "complete",
                 f"{phase} complete",
-                (
-                    _approval_fingerprint(project, phase)
-                    if phase in {"spec", "architect"}
-                    else ""
-                ),
+                _approval_fingerprint(project, phase),
             )
-            for index, phase in enumerate(("spec", "architect", "mcu", "implement"))
+            for index, phase in enumerate(
+                ("spec", "init", "architect", "mcu", "implement", "build")
+            )
         )
 
     def test_brief_completion_requires_machine_evidence_and_approval_note(self) -> None:
@@ -616,18 +619,6 @@ class StatusAndCliTests(PlacementFixture):
                 return_value=(True, "current evidence", True),
             ):
                 write_status(project, document=document)
-                with self.assertRaisesRegex(
-                    StatusInputError,
-                    "schematic review: adequate",
-                ):
-                    mark_status(
-                        project,
-                        "brief",
-                        "complete",
-                        "Approved brief.md only",
-                        tool_root=TOOL_ROOT,
-                    )
-
                 fingerprint = brief_status_fingerprint(project)
                 checked = StatusDocument(
                     "",
@@ -645,16 +636,41 @@ class StatusAndCliTests(PlacementFixture):
                             "pass",
                             "placement brief passed",
                         ),
+                        "policy": CheckRecord(
+                            "2026-07-27T11:00:00+00:00",
+                            policy_status_fingerprint(
+                                project,
+                                tool_root=TOOL_ROOT,
+                            ),
+                            "pass",
+                            "policy passed",
+                        ),
                     },
                 )
                 with mock.patch(
                     "pcbforge.status.run_status_checks",
                     return_value=checked,
                 ):
-                    marked = mark_status(
+                    review = review_phase(
                         project,
                         "brief",
-                        "complete",
+                        tool_root=TOOL_ROOT,
+                    )
+                    with self.assertRaisesRegex(
+                        StatusInputError,
+                        "schematic review: adequate",
+                    ):
+                        approve_phase(
+                            project,
+                            "brief",
+                            review.fingerprint,
+                            "Approved brief.md only",
+                            tool_root=TOOL_ROOT,
+                        )
+                    marked = approve_phase(
+                        project,
+                        "brief",
+                        review.fingerprint,
                         "Approved brief.md; schematic review: adequate",
                         tool_root=TOOL_ROOT,
                     )

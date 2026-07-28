@@ -23,8 +23,9 @@ from pcbforge.initialize import (
 from pcbforge.policy import render_default_policy
 from pcbforge.status import (
     StatusInputError,
-    mark_status,
+    approve_phase,
     read_status_document,
+    review_phase,
     write_status,
 )
 
@@ -271,11 +272,13 @@ class InitializeTests(unittest.TestCase):
             encoding="utf-8",
         )
         if approved:
-            mark_status(
+            review = review_phase(project, "spec", tool_root=TOOL_ROOT)
+            approve_phase(
                 project,
                 "spec",
-                "complete",
+                review.fingerprint,
                 "Requirements explicitly approved by user",
+                tool_root=TOOL_ROOT,
             )
         return project
 
@@ -323,10 +326,10 @@ class InitializeTests(unittest.TestCase):
             self.assertIn("kicad: 9.0.9", pins)
             self.assertIn("jlc-2layer-conservative-v1", pins)
             pin_data = yaml.safe_load(pins)
-            self.assertEqual(pin_data["schema"], 10)
+            self.assertEqual(pin_data["schema"], 11)
             self.assertEqual(pin_data["guidance"]["brief_schema"], 1)
-            self.assertEqual(pin_data["guidance"]["approval_schema"], 1)
-            self.assertEqual(pin_data["guidance"]["agents_schema"], 10)
+            self.assertEqual(pin_data["guidance"]["approval_schema"], 2)
+            self.assertEqual(pin_data["guidance"]["agents_schema"], 11)
             self.assertEqual(pin_data["guidance"]["policy_schema"], 1)
             self.assertEqual(pin_data["guidance"]["architect_schema"], 4)
             self.assertEqual(
@@ -351,7 +354,7 @@ class InitializeTests(unittest.TestCase):
             )
 
             agents = (project / "AGENTS.md").read_text(encoding="utf-8")
-            self.assertIn("pcbforge-agents-schema: 10", agents)
+            self.assertIn("pcbforge-agents-schema: 11", agents)
             self.assertIn("agent/brief.md", agents)
             self.assertIn("Never place, route, move", agents)
             self.assertIn("ready for\nARCHITECT", agents)
@@ -364,7 +367,7 @@ class InitializeTests(unittest.TestCase):
             self.assertIn("never originate", agents)
             self.assertIn("status mark architect proposal-approved", agents)
             self.assertIn("source created before this current gate", agents)
-            self.assertIn("status mark architect complete", agents)
+            self.assertIn("status approve architect", agents)
             self.assertIn("## Manufacturing and technology policy", agents)
             self.assertIn("pcbforge check-policy", agents)
             self.assertIn("policy confirm-sourcing", agents)
@@ -465,11 +468,13 @@ class InitializeTests(unittest.TestCase):
                 StatusInputError,
                 "missing policy.yaml",
             ):
-                mark_status(
+                review = review_phase(project, "spec", tool_root=TOOL_ROOT)
+                approve_phase(
                     project,
                     "spec",
-                    "complete",
+                    review.fingerprint,
                     "User approved requirements",
+                    tool_root=TOOL_ROOT,
                 )
             with self.assertRaisesRegex(
                 InitInputError,
@@ -525,11 +530,13 @@ class InitializeTests(unittest.TestCase):
                 approved=False,
             )
             write_status(project, now="2026-07-26T10:00:00+00:00")
-            mark_status(
+            review = review_phase(project, "spec", tool_root=TOOL_ROOT)
+            approve_phase(
                 project,
                 "spec",
-                "complete",
+                review.fingerprint,
                 "Requirements approved",
+                tool_root=TOOL_ROOT,
                 now="2026-07-26T11:00:00+00:00",
             )
 
@@ -543,7 +550,26 @@ class InitializeTests(unittest.TestCase):
             self.assertEqual(len(report.events), 1)
             self.assertEqual(report.events[0].phase, "spec")
             dashboard = (project / "STATUS.md").read_text(encoding="utf-8")
-            self.assertIn("2 of 12 required phases complete", dashboard)
+            self.assertIn("1 of 12 required phases complete", dashboard)
+            self.assertIn("2. init — In progress", dashboard)
+
+            init_review = review_phase(
+                project,
+                "init",
+                tool_root=TOOL_ROOT,
+                runner=FakeRunner(),
+            )
+            self.assertTrue(init_review.ready)
+            approved = approve_phase(
+                project,
+                "init",
+                init_review.fingerprint,
+                "User explicitly approved the generated scaffold",
+                tool_root=TOOL_ROOT,
+                runner=FakeRunner(),
+            )
+            self.assertEqual(approved.report.completed_required, 2)
+            self.assertEqual(approved.report.current.phase.key, "architect")
 
     def test_failed_init_does_not_mutate_pre_init_dashboard(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -630,7 +656,7 @@ class GuidanceTests(unittest.TestCase):
             "spec-to-module coverage",
             "board hash",
             "status mark architect proposal-approved",
-            "status mark architect complete",
+            "status approve architect",
             "AI-led MCU workflow",
             "docs/architecture.md",
             "pcbforge-architecture-diagram-schema: 1",
@@ -762,13 +788,37 @@ class RealToolchainIntegrationTests(unittest.TestCase):
                     0,
                     status_draft.stdout + status_draft.stderr,
                 )
+                spec_review = subprocess.run(
+                    [
+                        str(TOOL_ROOT / "scripts" / "pcbforge"),
+                        "status",
+                        "review",
+                        "spec",
+                        str(project),
+                    ],
+                    cwd=TOOL_ROOT,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(
+                    spec_review.returncode,
+                    0,
+                    spec_review.stdout + spec_review.stderr,
+                )
+                spec_fingerprint = re.search(
+                    r"approval fingerprint: ([0-9a-f]{64})",
+                    spec_review.stdout,
+                )
+                self.assertIsNotNone(spec_fingerprint)
                 spec_gate = subprocess.run(
                     [
                         str(TOOL_ROOT / "scripts" / "pcbforge"),
                         "status",
-                        "mark",
+                        "approve",
                         "spec",
-                        "complete",
+                        "--fingerprint",
+                        spec_fingerprint.group(1),
                         "--note",
                         "Integration requirements approved",
                         str(project),
@@ -801,6 +851,52 @@ class RealToolchainIntegrationTests(unittest.TestCase):
                     initialized.stdout + initialized.stderr,
                 )
                 self.assertIn("compiler smoke test passed", initialized.stdout)
+
+                init_review = subprocess.run(
+                    [
+                        str(TOOL_ROOT / "scripts" / "pcbforge"),
+                        "status",
+                        "review",
+                        "init",
+                        str(project),
+                    ],
+                    cwd=TOOL_ROOT,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(
+                    init_review.returncode,
+                    0,
+                    init_review.stdout + init_review.stderr,
+                )
+                init_fingerprint = re.search(
+                    r"approval fingerprint: ([0-9a-f]{64})",
+                    init_review.stdout,
+                )
+                self.assertIsNotNone(init_fingerprint)
+                init_gate = subprocess.run(
+                    [
+                        str(TOOL_ROOT / "scripts" / "pcbforge"),
+                        "status",
+                        "approve",
+                        "init",
+                        "--fingerprint",
+                        init_fingerprint.group(1),
+                        "--note",
+                        "Integration scaffold approved",
+                        str(project),
+                    ],
+                    cwd=TOOL_ROOT,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(
+                    init_gate.returncode,
+                    0,
+                    init_gate.stdout + init_gate.stderr,
+                )
 
                 board = project / f"{name}.kicad_pcb"
                 board_text = board.read_text(encoding="utf-8")
@@ -868,13 +964,37 @@ class RealToolchainIntegrationTests(unittest.TestCase):
                 self.assertEqual(board_hash_after, board_hash_before)
                 self.assertNotIn("(footprint ", board.read_text(encoding="utf-8"))
 
+                architecture_review = subprocess.run(
+                    [
+                        str(TOOL_ROOT / "scripts" / "pcbforge"),
+                        "status",
+                        "review",
+                        "architect",
+                        str(project),
+                    ],
+                    cwd=TOOL_ROOT,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(
+                    architecture_review.returncode,
+                    0,
+                    architecture_review.stdout + architecture_review.stderr,
+                )
+                architecture_fingerprint = re.search(
+                    r"approval fingerprint: ([0-9a-f]{64})",
+                    architecture_review.stdout,
+                )
+                self.assertIsNotNone(architecture_fingerprint)
                 architecture_gate = subprocess.run(
                     [
                         str(TOOL_ROOT / "scripts" / "pcbforge"),
                         "status",
-                        "mark",
+                        "approve",
                         "architect",
-                        "complete",
+                        "--fingerprint",
+                        architecture_fingerprint.group(1),
                         "--note",
                         "Integration graph approved; diagram: docs/architecture.md",
                         str(project),

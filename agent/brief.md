@@ -168,10 +168,12 @@ The schema rules are:
      --note "Schematic presentation is inadequate: <reason>"
    ```
 
-7. After the user explicitly approves both artifacts, record:
+7. Run `pcbforge status review brief`, present its exact packet and
+   fingerprint alongside both visual artifacts, and stop.
+8. After the user explicitly approves that packet and both artifacts, record:
 
    ```sh
-   pcbforge status mark brief complete \
+   pcbforge status approve brief --fingerprint <sha256> \
      --note "Approved brief.md; schematic review: adequate"
    ```
 

@@ -182,10 +182,18 @@ and source-to-diagram audit implement the approved proposal. Rejection means
 revise the proposal first, obtain renewed proposal approval, then revise and
 reaudit the skeleton.
 
-After approval, record the durable workflow gate:
+Before requesting final approval, create the exact review packet:
 
 ```bash
-<pcbforge-root>/scripts/pcbforge status mark architect complete \
+<pcbforge-root>/scripts/pcbforge status review architect
+```
+
+Present the packet and stop. After the user explicitly approves its
+fingerprint, record the durable workflow gate:
+
+```bash
+<pcbforge-root>/scripts/pcbforge status approve architect \
+  --fingerprint <sha256> \
   --note "<one-line module graph summary and key choice>; diagram: docs/architecture.md"
 ```
 

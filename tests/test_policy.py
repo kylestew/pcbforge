@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
@@ -20,11 +21,12 @@ from pcbforge.policy import (
 from pcbforge.status import (
     StatusDocument,
     StatusEvent,
-    StatusInputError,
     _approval_fingerprint,
+    approve_phase,
     inspect_status,
     mark_policy,
     mark_status,
+    review_phase,
     write_status,
 )
 
@@ -82,7 +84,7 @@ class PolicyFixture(unittest.TestCase):
         self,
         root: Path,
         *,
-        schema: int = 10,
+        schema: int = 11,
         board: str = BOARD_0603,
         complete_evidence: bool = True,
         include_build_test: bool = True,
@@ -116,7 +118,7 @@ class PolicyFixture(unittest.TestCase):
   profile_sha256: {policy_hash}
   baseline_approval: spec
 """
-            if schema == 10
+            if schema in {10, 11}
             else ""
         )
         (project / ".pcbforge").write_text(
@@ -135,7 +137,7 @@ guidance:
   policy_schema: 1
   build_test_schema: 1
   brief_schema: 1
-  approval_schema: 1
+  approval_schema: {2 if schema == 11 else 1}
 """,
             encoding="utf-8",
         )
@@ -310,11 +312,17 @@ class PolicyApprovalAndMigrationTests(PolicyFixture):
                 render_default_policy(),
                 encoding="utf-8",
             )
-            mark_status(
+            review = review_phase(
                 project,
                 "spec",
-                "complete",
+                tool_root=TOOL_ROOT,
+            )
+            approve_phase(
+                project,
+                "spec",
+                review.fingerprint,
                 "User approved requirements and initial policy",
+                tool_root=TOOL_ROOT,
             )
             policy_path = project / "policy.yaml"
             policy = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
@@ -426,7 +434,7 @@ class PolicyApprovalAndMigrationTests(PolicyFixture):
             migrated_agents = (project / "AGENTS.md").read_text(encoding="utf-8")
 
         self.assertTrue(migration.wrote)
-        self.assertEqual(pins["schema"], 10)
+        self.assertEqual(pins["schema"], 11)
         self.assertEqual(pins["policy"]["baseline_approval"], "policy-event")
         self.assertFalse(blocked.ok)
         self.assertIn(
@@ -438,7 +446,7 @@ class PolicyApprovalAndMigrationTests(PolicyFixture):
             "baseline-approved",
         )
         self.assertFalse(second.wrote)
-        self.assertIn("pcbforge-agents-schema: 10", migrated_agents)
+        self.assertIn("pcbforge-agents-schema: 11", migrated_agents)
 
     def test_schema_seven_migrates_directly_and_reopens_unbound_spec(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -475,15 +483,15 @@ class PolicyApprovalAndMigrationTests(PolicyFixture):
             )
 
         self.assertTrue(migration.wrote)
-        self.assertEqual(pins["schema"], 10)
+        self.assertEqual(pins["schema"], 11)
         self.assertEqual(
             pins["guidance"],
             {
-                "agents_schema": 10,
+                "agents_schema": 11,
                 "policy_schema": 1,
                 "build_test_schema": 1,
                 "brief_schema": 1,
-                "approval_schema": 1,
+                "approval_schema": 2,
                 "architect_schema": 4,
                 "architecture_diagram_schema": 1,
                 "mcu_schema": 1,
@@ -541,9 +549,11 @@ class PolicyApprovalAndMigrationTests(PolicyFixture):
             (project / "fab" / "board.zip").write_bytes(b"fabrication package")
             manual_phases = (
                 "spec",
+                "init",
                 "architect",
                 "mcu",
                 "implement",
+                "build",
                 "brief",
                 "layout",
                 "route",
@@ -556,11 +566,7 @@ class PolicyApprovalAndMigrationTests(PolicyFixture):
                     phase,
                     "complete",
                     f"{phase} complete",
-                    (
-                        _approval_fingerprint(project, phase)
-                        if phase in {"spec", "architect", "brief"}
-                        else ""
-                    ),
+                    _approval_fingerprint(project, phase),
                 )
                 for index, phase in enumerate(manual_phases)
             )
@@ -582,29 +588,35 @@ class PolicyApprovalAndMigrationTests(PolicyFixture):
                 "pcbforge.status._static_evidence",
                 side_effect=evidence,
             ):
-                write_status(project, document=StatusDocument("", events, {}))
-                with self.assertRaisesRegex(
-                    StatusInputError,
-                    "post-FAB sourcing confirmation",
-                ):
-                    mark_status(
-                        project,
-                        "order",
-                        "complete",
-                        "User placed order",
-                    )
-                mark_policy(
+                written = write_status(
+                    project,
+                    document=StatusDocument("", events, {}),
+                )
+                blocked = inspect_status(project)
+                confirmed = mark_policy(
                     project,
                     "sourcing-confirmed",
                     "User confirmed current JLC availability and lifecycle",
                     tool_root=TOOL_ROOT,
                 )
-                ordered = mark_status(
-                    project,
+                order_event = StatusEvent(
+                    "2026-07-27T12:30:00+00:00",
                     "order",
                     "complete",
                     "User reviewed files and placed order",
+                    _approval_fingerprint(
+                        project,
+                        "order",
+                        document=confirmed.report.document,
+                    ),
+                )
+                ordered = write_status(
+                    project,
                     tool_root=TOOL_ROOT,
+                    document=replace(
+                        confirmed.report.document,
+                        events=(*confirmed.report.document.events, order_event),
+                    ),
                 )
                 (project / "build-test.yaml").write_text(
                     BUILD_TEST.replace("quantity: 1", "quantity: 2"),
@@ -614,6 +626,8 @@ class PolicyApprovalAndMigrationTests(PolicyFixture):
 
             restored = inspect_status(project)
 
+        self.assertIn("post-FAB sourcing confirmation", blocked.current.detail)
+        self.assertTrue(written.report.phases[10].complete)
         self.assertTrue(ordered.report.phases[11].complete)
         self.assertEqual(
             invalidated.report.document.policy_events[-1].action,
@@ -650,7 +664,7 @@ class PolicyCliTests(PolicyFixture):
             pins = project / ".pcbforge"
             pins.write_text(
                 pins.read_text(encoding="utf-8").replace(
-                    "schema: 10",
+                    "schema: 11",
                     "schema: 9",
                     1,
                 ),

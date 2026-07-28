@@ -106,7 +106,7 @@ class BuildTestFixture(unittest.TestCase):
         project.mkdir()
         (project / "spec.md").write_text(SPEC, encoding="utf-8")
         (project / ".pcbforge").write_text(
-            """schema: 10
+            """schema: 11
 toolchain:
   atopile: 0.15.7
   kicad: 9.0.9
@@ -114,7 +114,7 @@ toolchain:
 guidance:
   build_test_schema: 1
   brief_schema: 1
-  approval_schema: 1
+  approval_schema: 2
   policy_schema: 1
 """,
             encoding="utf-8",
@@ -212,7 +212,7 @@ board_footprints: 1""",
             pins = project / ".pcbforge"
             pins.write_text(
                 pins.read_text(encoding="utf-8").replace(
-                    "schema: 10",
+                    "schema: 11",
                     "schema: 9",
                 ),
                 encoding="utf-8",

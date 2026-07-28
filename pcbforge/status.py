@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import subprocess
@@ -59,8 +60,9 @@ EVENT_ACTIONS = {
     "skipped",
     "proposal-approved",
 }
-APPROVAL_BOUND_PHASES = {"spec", "architect", "brief"}
+LEGACY_APPROVAL_BOUND_PHASES = {"spec", "architect", "brief"}
 APPROVAL_ENFORCEMENT_PIN_SCHEMA = 9
+UNIVERSAL_APPROVAL_PIN_SCHEMA = 11
 POLICY_ENFORCEMENT_PIN_SCHEMA = 10
 POLICY_EVENT_ACTIONS = {
     "baseline-approved",
@@ -68,7 +70,7 @@ POLICY_EVENT_ACTIONS = {
     "sourcing-confirmed",
     "reopened",
 }
-MANUAL_PHASES = {
+LEGACY_MANUAL_PHASES = {
     "spec",
     "architect",
     "mcu",
@@ -198,6 +200,18 @@ PHASES = (
 )
 PHASE_BY_KEY = {phase.key: phase for phase in PHASES}
 PHASE_NUMBER = {phase.key: index for index, phase in enumerate(PHASES, start=1)}
+APPROVAL_BOUND_PHASES = set(PHASE_BY_KEY)
+
+APPROVAL_CHECKS = {
+    "spec": ("policy",),
+    "init": ("build", "policy"),
+    "architect": ("build",),
+    "mcu": ("build", "ioc"),
+    "implement": ("build", "parts", "policy", "ioc"),
+    "build": ("build-test", "policy"),
+    "brief": ("build-test", "brief", "policy"),
+    "verify": ("build", "policy", "ioc", "drc"),
+}
 
 
 @dataclass(frozen=True)
@@ -259,6 +273,32 @@ class StatusReport:
 class StatusResult:
     report: StatusReport
     wrote: bool
+
+
+@dataclass(frozen=True)
+class PhaseReviewCheck:
+    name: str
+    outcome: str
+    summary: str
+    fingerprint: str
+
+
+@dataclass(frozen=True)
+class PhaseReview:
+    project_dir: Path
+    phase: Phase
+    ready: bool
+    detail: str
+    fingerprint: str
+    artifacts: tuple[str, ...]
+    checks: tuple[PhaseReviewCheck, ...]
+
+
+@dataclass(frozen=True)
+class ApprovalMigrationResult:
+    project_dir: Path
+    wrote: bool
+    reopened_phases: tuple[str, ...]
 
 
 class _UniqueStatusLoader(yaml.SafeLoader):
@@ -530,6 +570,31 @@ def _approval_constraints_enabled(project_dir: Path) -> bool:
     )
 
 
+def _universal_approval_enabled(project_dir: Path) -> bool:
+    pins = _project_pins(project_dir)
+    if not pins:
+        return True
+    return (
+        type(pins.get("schema")) is int
+        and pins["schema"] >= UNIVERSAL_APPROVAL_PIN_SCHEMA
+    )
+
+
+def _phase_requires_approval(project_dir: Path, phase: str) -> bool:
+    pins = _project_pins(project_dir)
+    if not pins:
+        return phase == "spec"
+    schema = pins.get("schema")
+    if type(schema) is not int:
+        return False
+    if schema >= UNIVERSAL_APPROVAL_PIN_SCHEMA:
+        return True
+    return (
+        schema >= APPROVAL_ENFORCEMENT_PIN_SCHEMA
+        and phase in LEGACY_APPROVAL_BOUND_PHASES
+    )
+
+
 def _project_pins(project_dir: Path) -> Mapping[str, Any]:
     path = project_dir / ".pcbforge"
     try:
@@ -562,7 +627,19 @@ def _approval_fingerprint(
     project_dir: Path,
     phase: str,
     action: str = "complete",
+    document: StatusDocument | None = None,
 ) -> str:
+    project_dir = _project_dir(project_dir)
+    if (
+        action == "complete"
+        and phase not in LEGACY_APPROVAL_BOUND_PHASES
+    ):
+        document = (
+            document
+            if document is not None
+            else read_status_document(project_dir)
+        )
+        return _phase_approval_fingerprint(project_dir, phase, document)
     if phase == "brief":
         return brief_status_fingerprint(project_dir)
     paths = {
@@ -602,16 +679,18 @@ def _approval_is_current(
     project_dir: Path,
     phase: str,
     event: StatusEvent | None,
+    document: StatusDocument | None = None,
 ) -> bool:
-    if phase not in APPROVAL_BOUND_PHASES:
+    if not _phase_requires_approval(project_dir, phase):
         return True
     if event is not None and event.approval_fingerprint:
         return event.approval_fingerprint == _approval_fingerprint(
             project_dir,
             phase,
             event.action,
+            document,
         )
-    return not _approval_constraints_enabled(project_dir)
+    return False
 
 
 def _current_architect_proposal(
@@ -626,7 +705,12 @@ def _current_architect_proposal(
         if event.action == "proposal-approved":
             return (
                 event
-                if _approval_is_current(project_dir, "architect", event)
+                if _approval_is_current(
+                    project_dir,
+                    "architect",
+                    event,
+                    document,
+                )
                 else None
             )
     return None
@@ -842,6 +926,239 @@ def _check_fingerprint(
     return _fingerprint(project_dir, inputs)
 
 
+def _phase_artifact_paths(
+    project_dir: Path,
+    spec: ProjectSpec,
+    phase: str,
+) -> tuple[Path, ...]:
+    board = project_dir / f"{spec.name}.kicad_pcb"
+    project = project_dir / f"{spec.name}.kicad_pro"
+    rules = project_dir / f"{spec.name}.kicad_dru"
+    if phase == "spec":
+        candidates = (project_dir / "spec.md", project_dir / POLICY_FILENAME)
+    elif phase == "init":
+        candidates = (
+            project_dir / ".pcbforge",
+            project_dir / "ato.yaml",
+            rules,
+            project_dir / "AGENTS.md",
+        )
+    elif phase == "architect":
+        candidates = (
+            project_dir / "spec.md",
+            project_dir / "docs" / "architecture.md",
+            project_dir / "src" / "main.ato",
+        )
+    elif phase == "mcu":
+        candidates = (
+            project_dir / "firmware" / f"{spec.name}.ioc",
+            project_dir / "src" / "mcu.ato",
+            project_dir / "docs" / "mcu.md",
+        )
+    elif phase == "implement":
+        candidates = (
+            project_dir / "spec.md",
+            project_dir / "ato.yaml",
+            project_dir / "fp-lib-table",
+            *_files(
+                project_dir,
+                (
+                    "src/**/*.ato",
+                    "src/**/*.kicad_mod",
+                    "src/**/*.kicad_sym",
+                    "src/**/*.step",
+                    "src/**/*.wrl",
+                    "firmware/*.ioc",
+                ),
+            ),
+            project_dir / POLICY_FILENAME,
+            project_dir / "docs" / "implementation.md",
+            board,
+        )
+    elif phase == "build":
+        candidates = (
+            *build_test_inputs(project_dir),
+            project_dir / "docs" / "build-test.md",
+        )
+    elif phase == "brief":
+        candidates = (
+            *brief_inputs(project_dir),
+            project_dir / "build-test.yaml",
+            project_dir / "docs" / "build-test.md",
+        )
+    elif phase in {"layout", "route"}:
+        candidates = (board,)
+    elif phase == "verify":
+        candidates = (board, project, rules)
+    elif phase == "fab-out":
+        candidates = tuple(
+            sorted(
+                path
+                for path in (project_dir / "fab").rglob("*")
+                if path.is_file() and path.name != ".gitkeep"
+            )
+        )
+    elif phase == "order":
+        candidates = (
+            project_dir / POLICY_FILENAME,
+            project_dir / "build-test.yaml",
+            *tuple(
+                sorted(
+                    path
+                    for path in (project_dir / "fab").rglob("*")
+                    if path.is_file() and path.name != ".gitkeep"
+                )
+            ),
+        )
+    elif phase == "publish":
+        candidates = (
+            *_files(
+                project_dir,
+                (
+                    "src/**/*.ato",
+                    "src/**/*.kicad_mod",
+                    "src/**/*.kicad_sym",
+                    "src/**/*.step",
+                    "src/**/*.wrl",
+                    "docs/**/*.md",
+                ),
+            ),
+        )
+    else:
+        raise AssertionError(f"unknown phase: {phase}")
+    return tuple(
+        sorted({path for path in candidates if path.is_file()})
+    )
+
+
+def _file_semantics(project_dir: Path, paths: Sequence[Path]) -> list[dict[str, str]]:
+    semantics = []
+    for path in sorted(set(paths)):
+        semantics.append(
+            {
+                "path": path.relative_to(project_dir).as_posix(),
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+        )
+    return semantics
+
+
+def _implementation_source_semantics(
+    project_dir: Path,
+) -> list[dict[str, str]]:
+    """Bind IMPLEMENT source while allowing Step-6 traceability comments."""
+    semantics = []
+    for path in _files(project_dir, ("src/**/*.ato",)):
+        lines = [
+            line
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if re.match(r"^\s*#\s*pcbforge-test\s*:", line) is None
+        ]
+        contents = ("\n".join(lines) + "\n").encode()
+        semantics.append(
+            {
+                "path": path.relative_to(project_dir).as_posix(),
+                "sha256": hashlib.sha256(contents).hexdigest(),
+            }
+        )
+    return semantics
+
+
+def _board_phase_semantics(path: Path, phase: str) -> Mapping[str, Any]:
+    try:
+        from pcbforge.build_test import _canonical_tokens, _top_level_blocks
+
+        text = path.read_text(encoding="utf-8")
+        board = read_board_evidence(path)
+        blocks = _top_level_blocks(text)
+        mechanical = sorted(
+            _canonical_tokens(block)
+            for head, block in blocks
+            if head.startswith("gr_")
+            or head in {"dimension", "image", "target"}
+        )
+        layout = {
+            "footprint_placements": board.footprint_placements,
+            "mechanical": mechanical,
+        }
+        if phase == "layout":
+            return layout
+        routing = sorted(
+            _canonical_tokens(block)
+            for head, block in blocks
+            if head in {"segment", "arc", "via", "zone"}
+        )
+        if phase == "route":
+            return {"layout": layout, "routing": routing}
+        if phase == "verify":
+            return {"canonical_board": _canonical_tokens(text)}
+    except (BuildTestError, OSError, UnicodeError, ValueError):
+        return {
+            "invalid_board_sha256": (
+                hashlib.sha256(path.read_bytes()).hexdigest()
+                if path.is_file()
+                else "<missing>"
+            )
+        }
+    raise AssertionError(f"unknown board approval phase: {phase}")
+
+
+def _approval_check_semantics(
+    phase: str,
+) -> list[dict[str, str]]:
+    return [
+        {"name": name, "required_outcome": "pass"}
+        for name in APPROVAL_CHECKS.get(phase, ())
+    ]
+
+
+def _phase_approval_fingerprint(
+    project_dir: Path,
+    phase: str,
+    document: StatusDocument,
+) -> str:
+    spec = read_spec(project_dir / "spec.md")
+    artifacts = _phase_artifact_paths(project_dir, spec, phase)
+    payload: dict[str, Any] = {
+        "approval_schema": 2,
+        "phase": phase,
+        "artifacts": _file_semantics(project_dir, artifacts),
+        "checks": _approval_check_semantics(phase),
+    }
+    board = project_dir / f"{spec.name}.kicad_pcb"
+    if phase == "implement":
+        payload["sources"] = _implementation_source_semantics(project_dir)
+        try:
+            payload["board_topology_sha256"] = hashlib.sha256(
+                board_topology_bytes(read_board_evidence(board))
+            ).hexdigest()
+        except BuildTestError as exc:
+            payload["board_topology_sha256"] = f"<invalid:{exc}>"
+        payload["artifacts"] = [
+            item
+            for item in payload["artifacts"]
+            if item["path"] != board.name
+            and not item["path"].endswith(".ato")
+        ]
+    if phase in {"layout", "route", "verify"}:
+        payload["board"] = _board_phase_semantics(board, phase)
+        payload["artifacts"] = [
+            item for item in payload["artifacts"] if item["path"] != board.name
+        ]
+    if phase == "order":
+        try:
+            payload["sourcing"] = policy_sourcing_fingerprint(project_dir)
+        except PolicyError as exc:
+            payload["sourcing"] = f"<invalid:{exc}>"
+    return hashlib.sha256(
+        json.dumps(
+            payload,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+    ).hexdigest()
+
+
 def _static_evidence(
     project_dir: Path,
     spec: ProjectSpec,
@@ -1053,6 +1370,10 @@ def _derive_phases(
             project_dir, spec, document, phase.key
         )
         failed_checks = _failed_checks_for_phase(project_dir, spec, document, phase.key)
+        approval_checks_ok = all(
+            _current_check(project_dir, spec, document, name)[0]
+            for name in APPROVAL_CHECKS.get(phase.key, ())
+        )
         predecessors_complete = all(
             result.complete for result in results if result.phase.required
         )
@@ -1064,9 +1385,18 @@ def _derive_phases(
             event is not None
             and event.action == "complete"
             and event_index > predecessor_invalidation
-            and _approval_is_current(project_dir, phase.key, event)
+            and _approval_is_current(
+                project_dir,
+                phase.key,
+                event,
+                document,
+            )
         )
-        if phase.key not in MANUAL_PHASES:
+        manual_phase = (
+            _universal_approval_enabled(project_dir)
+            or phase.key in LEGACY_MANUAL_PHASES
+        )
+        if not manual_phase:
             complete = evidence_ok and predecessors_complete
         else:
             complete = evidence_ok and manual_complete and predecessors_complete
@@ -1104,7 +1434,12 @@ def _derive_phases(
         elif (
             event is not None
             and event.action == "complete"
-            and not _approval_is_current(project_dir, phase.key, event)
+            and not _approval_is_current(
+                project_dir,
+                phase.key,
+                event,
+                document,
+            )
         ):
             state = "Blocked"
             detail = (
@@ -1115,9 +1450,30 @@ def _derive_phases(
             state = "Blocked"
             detail = "completion is stale after an earlier phase was reopened"
         elif event is not None and event.action == "proposal-approved":
-            if _approval_is_current(project_dir, phase.key, event):
-                state = "In progress"
-                detail = "architecture proposal approved; build and present final audit"
+            if _approval_is_current(
+                project_dir,
+                phase.key,
+                event,
+                document,
+            ):
+                if (
+                    evidence_ok
+                    and approval_checks_ok
+                    and _phase_requires_approval(
+                    project_dir,
+                    phase.key,
+                    )
+                ):
+                    state = "Awaiting approval"
+                    detail = (
+                        "checks passed; present the final architecture review "
+                        "packet and wait for explicit user approval"
+                    )
+                else:
+                    state = "In progress"
+                    detail = (
+                        "architecture proposal approved; build and present final audit"
+                    )
             else:
                 state = "Blocked"
                 detail = (
@@ -1138,6 +1494,17 @@ def _derive_phases(
                 "architecture source exists without current proposal approval; "
                 "stop source changes and present docs/architecture.md for approval"
             )
+        elif (
+            evidence_ok
+            and approval_checks_ok
+            and predecessors_complete
+            and _phase_requires_approval(project_dir, phase.key)
+        ):
+            state = "Awaiting approval"
+            detail = (
+                "technical evidence is current; present the phase review packet "
+                "and wait for explicit user approval"
+            )
         elif partial:
             state = "In progress"
             detail = evidence_detail
@@ -1157,12 +1524,24 @@ def _actions_for(result: PhaseResult) -> tuple[str, ...]:
             f"Resolve the {result.phase.label} blocker: {result.detail}",
             "Refresh with `pcbforge status --check --write` after the fix.",
         )
+    if result.state == "Awaiting approval":
+        return (
+            f"Run `pcbforge status review {phase}` and present the exact packet.",
+            "Wait for an unambiguous user approval of that fingerprint.",
+            (
+                f"Then record it with `pcbforge status approve {phase} "
+                '--fingerprint <sha256> --note "<approval>"`.'
+            ),
+        )
     actions = {
         "spec": (
             "Review and finalize `spec.md`.",
-            'Record approval with `pcbforge status mark spec complete --note "..."`.',
+            "Run `pcbforge status review spec` and present the exact packet.",
         ),
-        "init": ("Run `pcbforge init`.",),
+        "init": (
+            "Run `pcbforge init`.",
+            "Review the generated scaffold, then request explicit INIT approval.",
+        ),
         "architect": (
             "Draft `docs/architecture.md` without coding the module skeleton.",
             "Present material options and record explicit proposal approval.",
@@ -1171,12 +1550,12 @@ def _actions_for(result: PhaseResult) -> tuple[str, ...]:
         "mcu": (
             "Create the canonical IOC and matching `src/mcu.ato`.",
             "Run `pcbforge check-ioc` and complete the one-to-one audit.",
-            "Mark MCU complete with an audit note.",
+            "Present `pcbforge status review mcu` and request explicit approval.",
         ),
         "implement": (
             "Finish physical module bodies, parts, values, and constraints.",
             "Run `pcbforge check-parts` and replace forbidden local commodity assets.",
-            "Run a checked dashboard refresh, then mark IMPLEMENT complete.",
+            "Run a checked refresh, then present the IMPLEMENT review packet.",
         ),
         "build": (
             "Define the exact acceptance contract in `build-test.yaml`.",
@@ -1186,27 +1565,27 @@ def _actions_for(result: PhaseResult) -> tuple[str, ...]:
         "brief": (
             "Define every footprint, constraint, and exact net class in `placement.yaml`.",
             "Run `pcbforge brief`, then present `brief.md` and the schematic view.",
-            "After approval, mark BRIEF complete with `schematic review: adequate`.",
+            "Request approval of the BRIEF packet and schematic presentation.",
         ),
         "layout": (
             "Complete placement in KiCad 9.",
-            "Mark LAYOUT complete when you consider placement finished.",
+            "Present the LAYOUT review packet and request explicit approval.",
         ),
         "route": (
             "Complete routing in KiCad 9.",
-            "Mark ROUTE complete when you consider routing finished.",
+            "Present the ROUTE review packet and request explicit approval.",
         ),
         "verify": (
             "Run `pcbforge status --check --write` for DRC.",
-            "Complete scripted audits and render review, then mark VERIFY complete.",
+            "Complete audits and render review, then request VERIFY approval.",
         ),
         "fab-out": (
             "Generate Gerbers, drills, BOM, CPL, and the JLCPCB archive in `fab/`.",
-            "Review the outputs and mark FAB-OUT complete.",
+            "Present the FAB-OUT review packet and request explicit approval.",
         ),
         "order": (
             "Review and upload the fabrication package to JLCPCB.",
-            "After authorizing the purchase, mark ORDER complete.",
+            "After purchase authorization, request approval of the ORDER packet.",
         ),
         "publish": ("Publish proven reusable modules, or mark PUBLISH skipped.",),
     }
@@ -1318,6 +1697,7 @@ def run_status_checks(
     if (
         (project_dir / POLICY_FILENAME).is_file()
         or _policy_constraints_enabled(project_dir)
+        or not (project_dir / ".pcbforge").exists()
     ):
         current = next(
             (
@@ -1524,6 +1904,241 @@ def run_status_checks(
     return replace(document, checks=checks)
 
 
+def _prepare_phase_review(
+    project_dir: Path,
+    phase: str,
+    *,
+    document: StatusDocument | None = None,
+    tool_root: Path | None = None,
+    runner: CommandRunner = subprocess.run,
+    checked_at: str | None = None,
+) -> tuple[PhaseReview, StatusDocument]:
+    project_dir = _project_dir(project_dir)
+    phase = phase.lower()
+    if phase not in PHASE_BY_KEY:
+        raise StatusInputError(
+            f"unknown phase {phase!r}; choose from {', '.join(PHASE_BY_KEY)}"
+        )
+    document = (
+        document
+        if document is not None
+        else read_status_document(project_dir)
+    )
+    if (project_dir / ".pcbforge").is_file():
+        pins = _project_pins(project_dir)
+        schema = pins.get("schema")
+        if type(schema) is int and schema == 10:
+            raise StatusInputError(
+                "project approval workflow is schema 10; run "
+                "`pcbforge migrate-approvals` before reviewing phases"
+            )
+    checked = run_status_checks(
+        project_dir,
+        document,
+        tool_root=tool_root,
+        runner=runner,
+        checked_at=checked_at,
+    )
+    report = inspect_status(project_dir, document=checked)
+    spec = report.spec
+    target_index = PHASE_NUMBER[phase] - 1
+    predecessors = [
+        result for result in report.phases[:target_index] if result.phase.required
+    ]
+    target = report.phases[target_index]
+    evidence_ok, evidence_detail, _ = _static_evidence(
+        project_dir,
+        spec,
+        checked,
+        phase,
+    )
+    check_reviews: list[PhaseReviewCheck] = []
+    check_failures = []
+    for name in APPROVAL_CHECKS.get(phase, ()):
+        current, detail = _current_check(project_dir, spec, checked, name)
+        record = checked.checks.get(name)
+        check_reviews.append(
+            PhaseReviewCheck(
+                name,
+                record.outcome if record is not None else "missing",
+                record.summary if record is not None else detail,
+                record.fingerprint if record is not None else "",
+            )
+        )
+        if not current:
+            check_failures.append(detail)
+
+    failures = []
+    if target.complete:
+        failures.append(f"{target.phase.label} is already complete")
+    if not all(result.complete for result in predecessors):
+        waiting = next(
+            result.phase.label for result in predecessors if not result.complete
+        )
+        failures.append(f"{waiting} is not complete")
+    if not evidence_ok:
+        failures.append(evidence_detail)
+    failures.extend(check_failures)
+    if (
+        phase == "architect"
+        and _current_architect_proposal(project_dir, checked) is None
+    ):
+        failures.append("current architecture proposal approval is missing")
+    if (
+        phase != "spec"
+        and not _current_policy_baseline(project_dir, checked)
+    ):
+        failures.append("migrated policy baseline approval is missing")
+
+    artifacts = tuple(
+        path.relative_to(project_dir).as_posix()
+        for path in _phase_artifact_paths(project_dir, spec, phase)
+    )
+    fingerprint = _approval_fingerprint(
+        project_dir,
+        phase,
+        "complete",
+        checked,
+    )
+    ready = not failures
+    detail = (
+        "technical evidence passed; explicit user approval is required"
+        if ready
+        else "; ".join(dict.fromkeys(failures))
+    )
+    return (
+        PhaseReview(
+            project_dir,
+            PHASE_BY_KEY[phase],
+            ready,
+            detail,
+            fingerprint,
+            artifacts,
+            tuple(check_reviews),
+        ),
+        checked,
+    )
+
+
+def review_phase(
+    project_dir: Path,
+    phase: str,
+    *,
+    tool_root: Path | None = None,
+    runner: CommandRunner = subprocess.run,
+    checked_at: str | None = None,
+) -> PhaseReview:
+    """Build a read-only, deterministic phase packet for user review."""
+    review, _ = _prepare_phase_review(
+        project_dir,
+        phase,
+        tool_root=tool_root,
+        runner=runner,
+        checked_at=checked_at,
+    )
+    return review
+
+
+def render_phase_review(review: PhaseReview) -> str:
+    """Render the exact evidence packet that the user may approve."""
+    lines = [
+        f"pcbforge phase review: {review.phase.label}",
+        f"readiness: {'AWAITING APPROVAL' if review.ready else 'BLOCKED'}",
+        f"detail: {review.detail}",
+        "artifacts:",
+    ]
+    lines.extend(
+        f"  - {artifact}" for artifact in review.artifacts
+    )
+    if not review.artifacts:
+        lines.append("  - (explicit workflow declaration; no tracked artifact)")
+    lines.append("checks:")
+    if review.checks:
+        lines.extend(
+            (
+                f"  - {check.name}: {check.outcome} — {check.summary} "
+                f"[{check.fingerprint}]"
+            )
+            for check in review.checks
+        )
+    else:
+        lines.append("  - (no automated checks required)")
+    lines.append(f"approval fingerprint: {review.fingerprint}")
+    if review.ready:
+        lines.append(
+            "next: present this packet and wait for explicit user approval"
+        )
+    return "\n".join(lines)
+
+
+def approve_phase(
+    project_dir: Path,
+    phase: str,
+    expected_fingerprint: str,
+    note: str,
+    *,
+    tool_root: Path | None = None,
+    runner: CommandRunner = subprocess.run,
+    now: str | None = None,
+) -> StatusResult:
+    """Record an explicit user approval of the exact reviewed phase packet."""
+    project_dir = _project_dir(project_dir)
+    phase = phase.lower()
+    note = note.strip()
+    expected_fingerprint = expected_fingerprint.strip().lower()
+    if not note:
+        raise StatusInputError("--note must be a non-empty approval explanation")
+    if re.fullmatch(r"[0-9a-f]{64}", expected_fingerprint) is None:
+        raise StatusInputError("--fingerprint must be a lowercase SHA-256 value")
+    if not _universal_approval_enabled(project_dir):
+        raise StatusInputError(
+            "project approval workflow is not migrated; run "
+            "`pcbforge migrate-approvals`"
+        )
+    event_time = now or _now()
+    review, checked = _prepare_phase_review(
+        project_dir,
+        phase,
+        tool_root=tool_root,
+        runner=runner,
+        checked_at=event_time,
+    )
+    if not review.ready:
+        raise StatusInputError(
+            f"cannot approve {phase}: {review.detail}"
+        )
+    if review.fingerprint != expected_fingerprint:
+        raise StatusInputError(
+            "cannot approve phase: reviewed fingerprint is stale or does not "
+            f"match current evidence (expected {review.fingerprint})"
+        )
+    if phase == "brief":
+        note_lower = note.lower()
+        if "brief.md" not in note_lower or not re.search(
+            r"schematic\s+review\s*:\s*adequate",
+            note_lower,
+        ):
+            raise StatusInputError(
+                "cannot approve brief: --note must reference brief.md and "
+                "contain `schematic review: adequate`"
+            )
+    event = StatusEvent(
+        event_time,
+        phase,
+        "complete",
+        note,
+        review.fingerprint,
+    )
+    checked = replace(checked, events=(*checked.events, event))
+    return write_status(
+        project_dir,
+        tool_root=tool_root,
+        runner=runner,
+        now=event_time,
+        document=checked,
+    )
+
+
 def _metadata(document: StatusDocument) -> dict[str, Any]:
     events = []
     for event in document.events:
@@ -1650,6 +2265,7 @@ def render_dashboard(report: StatusReport) -> str:
         "Complete": "✅",
         "In progress": "🟡",
         "Ready": "🔵",
+        "Awaiting approval": "🟣",
         "Not started": "⚪",
         "Blocked": "🔴",
         "Skipped": "➖",
@@ -1779,7 +2395,12 @@ def _invalidate_stale_approvals(
             and not _approval_constraints_enabled(project_dir)
         ):
             continue
-        if _approval_is_current(project_dir, phase.key, event):
+        if _approval_is_current(
+            project_dir,
+            phase.key,
+            event,
+            document,
+        ):
             continue
         invalidations.append(
             StatusEvent(
@@ -1895,6 +2516,151 @@ def write_status(
     return StatusResult(report=report, wrote=True)
 
 
+def migrate_approvals(
+    project_dir: Path,
+    *,
+    tool_root: Path | None = None,
+    now: str | None = None,
+) -> ApprovalMigrationResult:
+    """Atomically migrate a generated schema-10 project to universal approvals."""
+    project_dir = _project_dir(project_dir)
+    tool_root = (
+        tool_root.resolve()
+        if tool_root is not None
+        else Path(__file__).resolve().parent.parent
+    )
+    pins_path = project_dir / ".pcbforge"
+    pins = dict(_project_pins(project_dir))
+    schema = pins.get("schema")
+    if schema == UNIVERSAL_APPROVAL_PIN_SCHEMA:
+        return ApprovalMigrationResult(project_dir, False, ())
+    if schema != 10:
+        raise StatusInputError(
+            "migrate-approvals requires generated .pcbforge schema 10; "
+            f"got {schema!r}"
+        )
+
+    agents_path = project_dir / "AGENTS.md"
+    try:
+        agents = agents_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise StatusInputError(f"cannot read {agents_path}: {exc}") from exc
+    if not agents.startswith("<!-- pcbforge-agents-schema: 10 -->"):
+        raise StatusInputError(
+            "AGENTS.md is not the expected generated schema-10 guidance"
+        )
+
+    from pcbforge.initialize import (
+        AGENTS_SCHEMA,
+        APPROVAL_GUIDE_SCHEMA,
+        _render_agents,
+    )
+
+    document = read_status_document(project_dir)
+    latest, _ = _latest_events(document.events)
+    event_time = now or _now()
+    reopenings: list[StatusEvent] = []
+    reopened_phases: list[str] = []
+    predecessor_approvals_current = True
+    for phase in PHASES:
+        event_info = latest.get(phase.key)
+        if event_info is None:
+            if phase.required:
+                predecessor_approvals_current = False
+            continue
+        event = event_info[1]
+        if event.action != "complete":
+            if phase.required:
+                predecessor_approvals_current = False
+            continue
+        preserve = (
+            predecessor_approvals_current
+            and phase.key in LEGACY_APPROVAL_BOUND_PHASES
+            and bool(event.approval_fingerprint)
+            and _approval_is_current(
+                project_dir,
+                phase.key,
+                event,
+                document,
+            )
+        )
+        if preserve:
+            continue
+        if phase.required:
+            predecessor_approvals_current = False
+        reopenings.append(
+            StatusEvent(
+                event_time,
+                phase.key,
+                "reopened",
+                (
+                    "Schema-11 migration requires explicit approval of the "
+                    "current phase review fingerprint"
+                ),
+            )
+        )
+        reopened_phases.append(phase.key)
+    migrated_document = replace(
+        document,
+        events=(*document.events, *reopenings),
+    )
+
+    guidance = pins.get("guidance")
+    if not isinstance(guidance, dict):
+        raise StatusInputError(".pcbforge guidance: expected a mapping")
+    pins["schema"] = UNIVERSAL_APPROVAL_PIN_SCHEMA
+    pins["guidance"] = {
+        **guidance,
+        "agents_schema": AGENTS_SCHEMA,
+        "approval_schema": APPROVAL_GUIDE_SCHEMA,
+    }
+    spec = read_spec(project_dir / "spec.md")
+    outputs = {
+        pins_path: yaml.safe_dump(pins, sort_keys=False),
+        agents_path: _render_agents(spec, tool_root),
+    }
+    status_path = _status_path(project_dir)
+    originals = {
+        path: path.read_bytes() if path.exists() else None
+        for path in (*outputs, status_path)
+    }
+    installed: list[Path] = []
+    try:
+        for path, contents in outputs.items():
+            _atomic_write(path, contents)
+            installed.append(path)
+        write_status(
+            project_dir,
+            tool_root=tool_root,
+            now=event_time,
+            document=migrated_document,
+        )
+        installed.append(status_path)
+    except (OSError, StatusError) as exc:
+        for path in reversed(installed):
+            original = originals[path]
+            try:
+                if original is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    descriptor, temporary_name = tempfile.mkstemp(
+                        prefix=f".{path.name}.rollback.",
+                        suffix=".tmp",
+                        dir=path.parent,
+                    )
+                    with os.fdopen(descriptor, "wb") as output:
+                        output.write(original)
+                    os.replace(temporary_name, path)
+            except OSError:
+                pass
+        raise StatusError(f"could not migrate approvals atomically: {exc}") from exc
+    return ApprovalMigrationResult(
+        project_dir,
+        True,
+        tuple(reopened_phases),
+    )
+
+
 def _validate_transition(
     report: StatusReport,
     phase_key: str,
@@ -1914,7 +2680,14 @@ def _validate_transition(
         raise StatusInputError(
             "proposal-approved is only valid for the architect phase"
         )
-    if action == "complete" and phase_key not in MANUAL_PHASES:
+    if action == "complete" and _universal_approval_enabled(
+        report.project_dir
+    ):
+        raise StatusInputError(
+            "schema-11 completion requires `pcbforge status approve "
+            f"{phase_key} --fingerprint <sha256> --note \"...\"`"
+        )
+    if action == "complete" and phase_key not in LEGACY_MANUAL_PHASES:
         raise StatusInputError(f"{phase_key} is completed automatically from evidence")
 
     target_index = PHASE_NUMBER[phase_key] - 1
@@ -2148,6 +2921,12 @@ def mark_status(
         raise StatusInputError("--note must be a non-empty explanation")
 
     document = read_status_document(project_dir)
+    pins = _project_pins(project_dir)
+    if pins.get("schema") == 10:
+        raise StatusInputError(
+            "project approval workflow is schema 10; run "
+            "`pcbforge migrate-approvals` before recording status events"
+        )
     initial = inspect_status(project_dir, document=document)
     _validate_transition(initial, phase, action)
     if action == "complete" and (
@@ -2244,8 +3023,8 @@ def mark_status(
         raise StatusInputError(f"cannot mark {phase} complete: {evidence_detail}")
 
     approval_fingerprint = (
-        _approval_fingerprint(project_dir, phase, action)
-        if phase in APPROVAL_BOUND_PHASES
+        _approval_fingerprint(project_dir, phase, action, document)
+        if _phase_requires_approval(project_dir, phase)
         and action in {"complete", "proposal-approved"}
         else ""
     )

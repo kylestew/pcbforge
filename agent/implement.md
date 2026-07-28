@@ -1,11 +1,12 @@
 <!-- pcbforge-implement-schema: 1 -->
 # IMPLEMENT playbook
 
-Use this playbook after MCU is complete and before marking IMPLEMENT complete.
+Use this playbook after MCU is complete and before requesting IMPLEMENT
+approval.
 The goal is a physical circuit definition with exact sourcing and no redundant
 project-local KiCad libraries.
 
-The schema-10 `policy.yaml` is part of the implementation contract. JLCPCB,
+The schema-11 workflow's `policy.yaml` is part of the implementation contract. JLCPCB,
 STM32, 2/4 layers, SWD, pinned tools, exact part identity, official commodity
 libraries, spatial ownership, and human ordering authority are hard rules.
 Standard construction, 0603-or-larger ordinary R/C/LED packages, conventional
@@ -90,5 +91,7 @@ Before requesting IMPLEMENT completion:
 5. Confirm `build`, `parts`, and `policy` are current and passing.
 6. Present the selected parts, values, footprints, LCSC identifiers,
    constraints, generated-asset justifications, and check results.
-7. Mark IMPLEMENT complete only after the dashboard accepts its required
-   evidence.
+7. Run `pcbforge status review implement`, present the exact artifacts, checks,
+   and fingerprint, and stop.
+8. Only after explicit user approval, run
+   `pcbforge status approve implement --fingerprint <sha256> --note "<approval>"`.

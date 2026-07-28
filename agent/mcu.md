@@ -123,7 +123,9 @@ Perform a one-to-one audit after transcription:
 - no required `.ioc` assignment is absent from `src/mcu.ato`.
 
 Run the pinned compiler and present the source diff and audit result. The MCU
-phase is complete only when the `.ioc` passes, the derived module matches it,
-and the approved architecture contract is still satisfied. Record the audit
-with `pcbforge status mark mcu complete --note "<part and audit summary>"`,
+phase is technically ready only when the `.ioc` passes, the derived module
+matches it, and the approved architecture contract is still satisfied. Run
+`pcbforge status review mcu`, present the exact packet and fingerprint, and
+stop. After explicit user approval, record
+`pcbforge status approve mcu --fingerprint <sha256> --note "<part and audit summary>"`,
 then report IMPLEMENT as the next phase.

@@ -10,7 +10,7 @@ playbooks contain the detailed procedures for individual phases.
 flowchart LR
     SPEC[SPEC] --> INIT[init]
     INIT --> ARCH[ARCHITECT]
-    ARCH -->|User approval| MCU[MCU]
+    ARCH --> MCU[MCU]
     MCU --> IMPLEMENT[IMPLEMENT]
     IMPLEMENT --> BUILD[build + test]
     BUILD --> BRIEF[brief]
@@ -31,8 +31,10 @@ flowchart LR
 ```
 
 Blue phases are primarily AI-led, green phases are deterministic tooling, and
-yellow phases are owned by the user. ARCHITECT has mandatory proposal and final
-user-approval gates. CubeMX review during MCU is optional.
+yellow phases are owned by the user. These colors identify who performs the
+work, not who may accept it: every transition requires explicit final user
+approval of the current phase fingerprint. ARCHITECT additionally has a
+mandatory proposal approval before code. CubeMX review during MCU is optional.
 
 ## Decision authority
 
@@ -50,9 +52,16 @@ events carry artifact fingerprints. When an approved artifact changes, static
 status reports the approval stale and the next checked dashboard write records
 a durable reopen event; rerunning checks cannot revive that approval.
 
+This applies to all 13 phases, including tool-led init, build + test, verify,
+and fab-out. Passing technical evidence produces `Awaiting approval`, never
+`Complete`. The AI runs `pcbforge status review <phase>`, presents the exact
+packet and fingerprint, stops for approval, then records an approval already
+given with the `pcbforge status approve` command and that exact fingerprint.
+Optional PUBLISH alone may be explicitly skipped.
+
 ## Manufacturing and technology policy
 
-Schema-10 projects pair the requirements in `spec.md` with a tracked
+Schema-11 projects pair the requirements in `spec.md` with a tracked
 `policy.yaml`. The tool-owned `policies/pcbforge-standard-v1.yaml` profile
 defines hard rules, defaults, exception rule IDs, and the earliest phase each
 exception affects. `.pcbforge` pins the profile and hash.
@@ -75,19 +84,19 @@ checks are offline.
 
 | Phase | Lead | Durable output | Gate or completion condition |
 |---|---|---|---|
-| 1. SPEC | AI interview; user decides intent | Approved `spec.md`, initial `policy.yaml`, and tracked `STATUS.md` | Explicit SPEC completion event bound to spec and policy baseline |
-| 2. init | Tool | Project scaffold, pinned metadata, policy/rule profiles, KiCad shell, project-local `AGENTS.md` | Current artifact-bound SPEC/policy approval exists and the scaffold smoke-builds |
+| 1. SPEC | AI interview; user decides intent | Approved `spec.md`, initial `policy.yaml`, and tracked `STATUS.md` | Valid contracts and current policy check, then explicit fingerprint approval |
+| 2. init | Tool | Project scaffold, pinned metadata, policy/rule profiles, KiCad shell, project-local `AGENTS.md` | Scaffold smoke-builds, then explicit fingerprint approval |
 | 3. ARCHITECT | AI proposes; user approves twice | Approved graph in `docs/architecture.md`, then compiling functional skeleton in `src/` | Artifact-bound proposal approval before code and separate final approval after build/audit |
-| 4. MCU | AI; optional user CubeMX review | Checked `firmware/<project>.ioc` and matching `src/mcu.ato` | Pinmux validates and MCU code passes a one-to-one audit |
-| 5. IMPLEMENT | AI | Physical module bodies, selected parts, values, footprints, sourcing, assurances, and constraints | Current build, parts, IOC, and policy checks pass |
-| 6. build + test | Compiler and checks | Exact `build-test.yaml`, resolved BOM/connectivity, assertions, and tracked `docs/build-test.md` | Frozen build and every deterministic acceptance check pass with current fingerprints |
+| 4. MCU | AI; optional user CubeMX review | Checked `firmware/<project>.ioc` and matching `src/mcu.ato` | Pinmux and one-to-one audit pass, then explicit fingerprint approval |
+| 5. IMPLEMENT | AI | Physical module bodies, selected parts, values, footprints, sourcing, assurances, and constraints | Current build, parts, IOC, and policy checks pass, then explicit fingerprint approval |
+| 6. build + test | Compiler and checks | Exact `build-test.yaml`, resolved BOM/connectivity, assertions, and tracked `docs/build-test.md` | Deterministic acceptance checks pass, then explicit fingerprint approval |
 | 7. brief | Tool and AI; user approves | Exact `placement.yaml`, generated `brief.md`, and PCBForge-owned KiCad net classes | Contract check passes and user approves the brief plus schematic presentation |
-| 8. LAYOUT | User | Component placement in KiCad | User considers placement complete |
-| 9. ROUTE | User | Routed copper in KiCad | User considers routing complete |
-| 10. verify | Tools and AI | DRC, scripted audits, and render review | Manufacturing and layout checks pass |
-| 11. fab-out | Tool | JLCPCB Gerbers, drills, BOM, CPL, and upload archive | Outputs regenerate cleanly from the project |
-| 12. order | User | Fabrication order | User reviews files, confirms current post-FAB sourcing, uploads, and authorizes spending |
-| 13. publish | AI prepares; user curates | Proven reusable module, version, documentation, and render | Module has real-board evidence and a stable interface |
+| 8. LAYOUT | User | Component placement in KiCad | Placement semantics reviewed and explicitly fingerprint-approved |
+| 9. ROUTE | User | Routed copper in KiCad | Routing semantics reviewed and explicitly fingerprint-approved |
+| 10. verify | Tools and AI | DRC, scripted audits, and render review | Checks pass, then explicit fingerprint approval |
+| 11. fab-out | Tool | JLCPCB Gerbers, drills, BOM, CPL, and upload archive | Outputs regenerate cleanly, then explicit fingerprint approval |
+| 12. order | User | Fabrication order | Current sourcing confirmed, purchase authorized, then explicit fingerprint approval |
+| 13. publish | AI prepares; user curates | Proven reusable module, version, documentation, and render | Explicit fingerprint approval, or an explicit skip |
 
 ## 1. SPEC
 
@@ -104,12 +113,12 @@ The result is `spec.md` plus `policy.yaml`:
   later evidence slots, and any requested exceptions without claiming approval.
 
 Once the draft validates, the agent runs `pcbforge status --write` to create
-`STATUS.md`. After the user explicitly approves the baseline in conversation,
-the agent records that already-given approval with
-`pcbforge status mark spec complete --note "..."`. These status commands are
-the persistence mechanism, not the user interaction; the user does not need to
-run them in the normal workflow. Initialization preserves and refreshes the
-dashboard.
+`STATUS.md`, then runs `pcbforge status review spec` and presents the packet.
+After the user explicitly approves that fingerprint in conversation, the
+agent records it with `pcbforge status approve` and that exact fingerprint.
+These commands are the persistence mechanism, not the user interaction; the
+user does not need to run them in the normal workflow. Initialization
+preserves and refreshes the dashboard.
 
 SPEC's user interface is the conversation; there is no `pcbforge spec`
 command.
@@ -128,6 +137,11 @@ approval is rejected. It then validates both contracts, creates the atopile
 project, KiCad 9 board shell, JLC rules, output directories, firmware
 directory, pinned `.pcbforge` metadata, and project-local `AGENTS.md`. The
 scaffold is installed only after a successful compiler smoke test.
+
+Initialization does not self-complete. The agent next runs
+`pcbforge status review init`, presents the generated scaffold and passing
+checks, and waits for explicit approval of that fingerprint before ARCHITECT
+begins.
 
 Reinstalling pcbforge is not required for an existing checkout. Existing
 projects are never reinitialized to adopt workflow changes.
@@ -189,17 +203,20 @@ results.
 - `pcbforge status` is a fast, read-only inspection.
 - `pcbforge status --write` refreshes the document without running slow tools.
 - `pcbforge status --check --write` refreshes applicable pinned validations.
-- `pcbforge status mark <phase> <action> --note "..."` records explicit
-  ARCHITECT proposal approval, completion, blocker, reopen, or
-  optional-publish skip events.
+- `pcbforge status review <phase>` reruns required checks and renders the exact
+  phase packet and approval fingerprint without writing approval state.
+- `pcbforge status approve <phase> --fingerprint <sha256> --note "..."`
+  records an explicit user approval only if that exact packet is still ready.
+- `pcbforge status mark <phase> <action> --note "..."` records ARCHITECT
+  proposal approval, blockers, reopen events, or the optional PUBLISH skip; it
+  cannot complete schema-11 phases.
 - `pcbforge check-policy` validates the current policy scope.
 - `pcbforge policy approve-baseline`, `approve-exception`, and
   `confirm-sourcing` persist explicit user decisions in a separate append-only
   policy-event stream.
 
-Mechanical phases cannot complete without current evidence. Human-owned phases
-cannot complete from file heuristics alone. Reopening an earlier phase makes
-older downstream confirmations stale until they are reconfirmed.
+No phase completes from evidence or file heuristics alone. Reopening an earlier
+phase makes older downstream confirmations stale until they are reconfirmed.
 
 ## 4. MCU
 
@@ -258,8 +275,9 @@ content changes.
 
 `pcbforge status --check --write` saves the stable tracked
 `docs/build-test.md` evidence report and its input fingerprint in `STATUS.md`.
-Step 6 completes automatically only while both are current. A failed run never
-overwrites the last passing report.
+When both are current, Step 6 becomes `Awaiting approval`. The user approves
+the exact `status review build` fingerprint before Step 7 begins. A failed run
+never overwrites the last passing report.
 
 This offline gate deliberately excludes live stock/pricing, visual schematic
 adequacy, placement, routing, KiCad DRC, and fabrication output. Those remain
@@ -350,9 +368,10 @@ Implemented now:
 - `pcbforge init`;
 - `pcbforge check-ioc`;
 - `pcbforge check-parts` and its IMPLEMENT completion gate;
-- schema-10 policy profiles/contracts, `pcbforge check-policy`, explicit
+- schema-11 universal phase approvals plus policy profiles/contracts,
+  `pcbforge status review` / `status approve`, `pcbforge check-policy`, explicit
   baseline/exception/sourcing approvals, targeted reopening, and
-  `pcbforge migrate-policy`;
+  `pcbforge migrate-policy` / `pcbforge migrate-approvals`;
 - `pcbforge check-build-test`, exact Step 6 contracts, tracked reports, and
   dashboard completion gate;
 - `pcbforge brief` / `pcbforge check-brief`, strict Step 7 contracts,

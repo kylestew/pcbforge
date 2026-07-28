@@ -28,7 +28,7 @@ from pcbforge.initialize import InitInputError, read_spec
 
 PLACEMENT_SCHEMA = 1
 BRIEF_SCHEMA = 1
-PROJECT_PIN_SCHEMA = 10
+PROJECT_PIN_SCHEMA = 11
 PLACEMENT_FILENAME = "placement.yaml"
 BRIEF_FILENAME = "brief.md"
 OWNED_CLASS_PREFIX = "pcbforge:"
@@ -304,8 +304,8 @@ def _read_project_pins(project_dir: Path) -> Mapping[str, Any]:
             errors.append(
                 f"guidance.brief_schema: expected integer {BRIEF_SCHEMA}"
             )
-        if guidance.get("approval_schema") != 1:
-            errors.append("guidance.approval_schema: expected integer 1")
+        if guidance.get("approval_schema") != 2:
+            errors.append("guidance.approval_schema: expected integer 2")
         if guidance.get("policy_schema") != 1:
             errors.append("guidance.policy_schema: expected integer 1")
     if errors:
@@ -1246,9 +1246,11 @@ begin with `pcbforge:`; user-created classes remain untouched.
 ## Human approval gate
 
 Before Step 7 completes, review this brief and the available schematic
-presentation. Record approval with a note containing both `brief.md` and
-`schematic review: adequate`. If the schematic presentation is inadequate,
-block Step 7 and do not begin layout.
+presentation. Run `pcbforge status review brief`, present its exact
+fingerprint, and wait for explicit user approval. Record that approval with
+`pcbforge status approve brief --fingerprint <sha256> --note "Approved
+brief.md; schematic review: adequate"`. If the schematic presentation is
+inadequate, block Step 7 and do not begin layout.
 """
 
 

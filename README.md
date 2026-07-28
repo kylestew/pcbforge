@@ -60,9 +60,10 @@ should then show the available workflow verbs.
    Initialization requires the current artifact-bound SPEC/policy approval,
    validates both contracts, creates the atopile/KiCad 9 project, applies
    conservative JLC rules, and smoke-builds it before installing any generated files. The
-   generated `AGENTS.md` then directs the AI through the ARCHITECT playbook,
-   its tracked Mermaid architecture diagram, and separate user approvals
-   before coding and after the compiled architecture audit.
+   generated `AGENTS.md` then directs the AI to present the initialized
+   scaffold for your explicit INIT approval before beginning ARCHITECT.
+   ARCHITECT retains separate approvals before coding and after the compiled
+   architecture audit.
 4. After ARCHITECT approval, the AI follows `agent/mcu.md`: it selects the
    exact STM32 and pin mapping, creates `firmware/<project>.ioc`, and runs
    `pcbforge check-ioc`. You may open the file in CubeMX 6.18 to review or
@@ -78,9 +79,12 @@ next actions. No chat history is needed.
 Across every phase, the AI may derive consequences of approved requirements
 but may not silently choose between materially different reasonable designs.
 It must present options and stop before changing the affected artifact. Human
-approval is explicit and fingerprint-bound; changed approved artifacts are
-durably reopened by dashboard writes, and rerunning checks cannot revive an
-old approval.
+approval is required before every phase completes, including tool-led phases.
+Passing evidence moves a phase to `Awaiting approval`. The AI presents the
+phase-specific review packet and fingerprint, waits for an unambiguous
+conversational approval, and only then records it. Changed approved artifacts
+are durably reopened by dashboard writes, and rerunning checks cannot revive
+an old approval.
 
 Optional dashboard commands (the agent normally refreshes the dashboard and
 records conversational approvals for you):
@@ -88,7 +92,9 @@ records conversational approvals for you):
 ```bash
 pcbforge status
 pcbforge status --check --write
-pcbforge status mark layout complete --note "Placement reviewed in KiCad"
+pcbforge status review layout
+pcbforge status approve layout --fingerprint <sha256> \
+  --note "Placement reviewed and explicitly approved"
 pcbforge check-policy
 pcbforge policy approve-exception <id> --note "Approved tradeoff"
 pcbforge check-build-test
@@ -101,7 +107,8 @@ Static status is read-only and fast. `--check` runs applicable pinned build,
 Step 6 acceptance, placement-brief, parts-policy, CubeMX, and KiCad DRC
 validation before rendering the same status model.
 
-Schema 10 adds a versioned manufacturing and technology policy. The
+Schema 11 combines the versioned manufacturing and technology policy added in
+schema 10 with universal phase approvals. The
 tool-owned `policies/pcbforge-standard-v1.yaml` hard-locks JLCPCB, STM32,
 2/4-layer boards, SWD, pinned tools, exact part identity, spatial ownership,
 and human ordering authority. Project `policy.yaml` records standard
@@ -121,8 +128,9 @@ LCSC/MPN/footprint/quantity selections against the emitted BOM, checks
 BOM-to-PCB designator and footprint parity, requires resolved connectivity,
 and verifies that a no-op build preserved all spatial PCB work.
 `pcbforge status --check --write` records the current check fingerprint and
-generates the tracked `docs/build-test.md`; Step 7 stays blocked if either
-evidence source is missing or stale.
+generates the tracked `docs/build-test.md`. Passing evidence moves Step 6 to
+`Awaiting approval`; Step 7 stays blocked until the user explicitly approves
+the current Step 6 review fingerprint.
 
 For Step 7, follow `agent/brief.md` and write the authoritative
 `placement.yaml`: every PCB reference appears in exactly one ordered group;
@@ -132,7 +140,8 @@ exact current nets and safe JLC dimensions. `pcbforge brief` generates
 preserves user classes and verifies the PCB is byte-identical.
 `pcbforge check-brief` is read-only. Step 7 completes only after the user
 approves both `brief.md` and the available schematic presentation; record that
-gate with a note containing `schematic review: adequate`.
+gate with `pcbforge status approve brief --fingerprint <sha256> --note "..."`
+and a note containing `schematic review: adequate`.
 
 After FAB-OUT, refresh live JLC availability and lifecycle evidence for the
 exact BOM. Once the user confirms it, record
@@ -162,12 +171,22 @@ generated schema-7-through-9 project explicitly:
 pcbforge migrate-policy /path/to/project
 pcbforge check-policy /path/to/project
 pcbforge policy approve-baseline /path/to/project \
-  --note "Approved schema-10 policy baseline"
+  --note "Approved migrated policy baseline"
 ```
 
-Migration pins the profile, generates `policy.yaml` from discoverable facts,
-updates generated guidance, and leaves applicability and sourcing items for
-review. It never infers approval. Current artifact-bound approvals are
-preserved; older unbound approvals reopen for confirmation. Approved
-exceptions reopen only the earliest phase mapped by the profile. Temper is the
-first intended schema-10 migration pilot.
+This migrates directly to schema 11. It pins the profile, generates
+`policy.yaml` from discoverable facts, updates generated guidance, and leaves
+applicability and sourcing items for review. It never infers approval.
+
+For a generated schema-10 policy project, run:
+
+```bash
+pcbforge migrate-approvals /path/to/project
+```
+
+Current artifact-bound SPEC, ARCHITECT, and BRIEF approvals are preserved when
+their fingerprints still match and every preceding required approval remains
+current. Completed phases without a provable sequential approval reopen and
+require `status review` plus explicit approval. Approved policy exceptions
+retain their targeted reopening behavior. Temper is the first schema-11
+universal-approval migration pilot.

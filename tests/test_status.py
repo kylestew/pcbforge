@@ -7,6 +7,8 @@ from types import SimpleNamespace
 from pathlib import Path
 from unittest import mock
 
+import yaml
+
 from pcbforge.build_test import fingerprint_inputs
 from pcbforge.cli import main
 from pcbforge.policy import render_default_policy
@@ -16,11 +18,15 @@ from pcbforge.status import (
     StatusDocument,
     StatusEvent,
     StatusInputError,
+    _approval_fingerprint,
+    approve_phase,
     import_legacy_architect_approval,
     inspect_status,
     mark_status,
+    migrate_approvals,
     read_status_document,
     render_dashboard,
+    review_phase,
     run_status_checks,
     write_status,
 )
@@ -129,8 +135,172 @@ flowchart LR
             encoding="utf-8",
         )
 
+    def approve(
+        self,
+        project: Path,
+        phase: str,
+        note: str = "User explicitly approved the exact phase review",
+        *,
+        runner=None,
+        now: str | None = None,
+    ):
+        runner = runner or FakeRunner()
+        review = review_phase(
+            project,
+            phase,
+            tool_root=TOOL_ROOT,
+            runner=runner,
+            checked_at=now,
+        )
+        return approve_phase(
+            project,
+            phase,
+            review.fingerprint,
+            note,
+            tool_root=TOOL_ROOT,
+            runner=runner,
+            now=now,
+        )
+
 
 class DashboardTests(StatusFixture):
+    def test_schema_eleven_rejects_direct_completion_for_every_phase(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            for phase in (
+                "spec",
+                "init",
+                "architect",
+                "mcu",
+                "implement",
+                "build",
+                "brief",
+                "layout",
+                "route",
+                "verify",
+                "fab-out",
+                "order",
+                "publish",
+            ):
+                with (
+                    self.subTest(phase=phase),
+                    self.assertRaisesRegex(
+                        StatusInputError,
+                        f"status approve {phase}",
+                    ),
+                ):
+                    mark_status(
+                        project,
+                        phase,
+                        "complete",
+                        "Agent cannot self-complete this phase",
+                    )
+
+    def test_review_packet_requires_exact_current_fingerprint(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            review = review_phase(
+                project,
+                "spec",
+                tool_root=TOOL_ROOT,
+                checked_at="2026-07-28T10:00:00+00:00",
+            )
+            self.assertTrue(review.ready)
+            self.assertRegex(review.fingerprint, r"^[0-9a-f]{64}$")
+            self.assertEqual(
+                [(check.name, check.outcome) for check in review.checks],
+                [("policy", "pass")],
+            )
+
+            (project / "spec.md").write_text(
+                spec_text() + "\nChanged requirement.\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                StatusInputError,
+                "reviewed fingerprint is stale",
+            ):
+                approve_phase(
+                    project,
+                    "spec",
+                    review.fingerprint,
+                    "User approved only the earlier review",
+                    tool_root=TOOL_ROOT,
+                )
+
+    def test_schema_ten_migration_preserves_only_sequential_bound_approvals(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            (project / "policy.yaml").write_text(
+                render_default_policy(),
+                encoding="utf-8",
+            )
+            (project / ".pcbforge").write_text(
+                """schema: 10
+policy:
+  baseline_approval: spec
+guidance:
+  agents_schema: 10
+  approval_schema: 1
+""",
+                encoding="utf-8",
+            )
+            (project / "AGENTS.md").write_text(
+                "<!-- pcbforge-agents-schema: 10 -->\n# generated\n",
+                encoding="utf-8",
+            )
+            self.add_architecture(project)
+            events = (
+                StatusEvent(
+                    "2026-07-27T10:00:00+00:00",
+                    "spec",
+                    "complete",
+                    "Bound spec approval",
+                    _approval_fingerprint(project, "spec"),
+                ),
+                StatusEvent(
+                    "2026-07-27T10:01:00+00:00",
+                    "architect",
+                    "complete",
+                    "Bound architecture approval",
+                    _approval_fingerprint(project, "architect"),
+                ),
+                StatusEvent(
+                    "2026-07-27T10:02:00+00:00",
+                    "mcu",
+                    "complete",
+                    "Legacy unbound MCU completion",
+                ),
+            )
+            write_status(
+                project,
+                document=StatusDocument("", events, {}),
+            )
+
+            migration = migrate_approvals(
+                project,
+                tool_root=TOOL_ROOT,
+                now="2026-07-28T11:00:00+00:00",
+            )
+            pins = yaml.safe_load(
+                (project / ".pcbforge").read_text(encoding="utf-8")
+            )
+            document = read_status_document(project)
+            second = migrate_approvals(project, tool_root=TOOL_ROOT)
+
+        self.assertTrue(migration.wrote)
+        self.assertEqual(migration.reopened_phases, ("architect", "mcu"))
+        self.assertEqual(pins["schema"], 11)
+        self.assertEqual(pins["guidance"]["agents_schema"], 11)
+        self.assertEqual(pins["guidance"]["approval_schema"], 2)
+        self.assertEqual(document.events[0].phase, "spec")
+        self.assertEqual(document.events[0].action, "complete")
+        self.assertEqual(document.events[-2].action, "reopened")
+        self.assertEqual(document.events[-1].action, "reopened")
+        self.assertFalse(second.wrote)
+
     def test_pre_init_dashboard_is_deterministic_and_records_spec_gate(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))
@@ -144,10 +314,9 @@ class DashboardTests(StatusFixture):
             self.assertEqual(first.report.current.phase.key, "spec")
             self.assertEqual(first.report.current.state, "In progress")
 
-            marked = mark_status(
+            marked = self.approve(
                 project,
                 "spec",
-                "complete",
                 "Requirements baseline approved",
                 now="2026-07-26T12:00:00+00:00",
             )
@@ -162,10 +331,9 @@ class DashboardTests(StatusFixture):
             project = self.project(Path(temporary))
             spec = project / "spec.md"
             approved_contents = spec.read_text(encoding="utf-8")
-            marked = mark_status(
+            marked = self.approve(
                 project,
                 "spec",
-                "complete",
                 "User approved requirements",
             )
             self.assertTrue(
@@ -439,7 +607,7 @@ class DashboardTests(StatusFixture):
     def test_reopen_is_append_only_and_reactivates_phase(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))
-            mark_status(project, "spec", "complete", "Approved")
+            self.approve(project, "spec", "Approved")
             reopened = mark_status(project, "spec", "reopened", "Requirements changed")
 
             self.assertEqual(reopened.report.current.phase.key, "spec")
@@ -451,7 +619,7 @@ class DashboardTests(StatusFixture):
 
     def test_reopened_phase_invalidates_older_downstream_confirmations(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            project = self.project(Path(temporary))
+            project = self.project(Path(temporary), initialized=True)
             manual = (
                 "spec",
                 "architect",
@@ -501,7 +669,7 @@ class DashboardTests(StatusFixture):
 
     def test_optional_publish_skip_does_not_change_required_progress(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            project = self.project(Path(temporary))
+            project = self.project(Path(temporary), initialized=True)
             manual = (
                 "spec",
                 "architect",
@@ -928,13 +1096,15 @@ class StatusCliTests(StatusFixture):
                     main(["status", "--write", str(project)]),
                     0,
                 )
+                review = review_phase(project, "spec", tool_root=TOOL_ROOT)
                 self.assertEqual(
                     main(
                         [
                             "status",
-                            "mark",
+                            "approve",
                             "spec",
-                            "complete",
+                            "--fingerprint",
+                            review.fingerprint,
                             "--note",
                             "Approved",
                             str(project),

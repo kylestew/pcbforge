@@ -112,6 +112,9 @@ Review `docs/build-test.md` and present:
 - spatial-preservation result;
 - any limitation that remains for visual review, DRC, stock, or fabrication.
 
-Build + test completes automatically only while both its saved check
-fingerprint and tracked report match current project inputs. Proceed to Step 7
-only after the dashboard reports Step 6 complete.
+Current saved check evidence and the tracked report move build + test to
+`Awaiting approval`; they never complete it automatically. Run
+`pcbforge status review build`, present the exact packet and fingerprint, and
+stop. Only after the user explicitly approves that packet, record
+`pcbforge status approve build --fingerprint <sha256> --note "<approval>"`.
+Proceed to Step 7 only after the dashboard reports Step 6 complete.

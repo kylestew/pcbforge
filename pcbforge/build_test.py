@@ -20,7 +20,7 @@ from pcbforge.initialize import InitInputError, read_spec
 
 BUILD_TEST_SCHEMA = 1
 BUILD_TEST_REPORT_SCHEMA = 1
-PROJECT_PIN_SCHEMA = 10
+PROJECT_PIN_SCHEMA = 11
 BUILD_TEST_FILENAME = "build-test.yaml"
 BUILD_TEST_REPORT = Path("docs/build-test.md")
 

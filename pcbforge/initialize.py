@@ -29,15 +29,15 @@ from pcbforge.policy import (
 ATO_VERSION = "0.15.7"
 KICAD_VERSION = "9.0.9"
 SPEC_SCHEMA = 1
-PIN_SCHEMA = 10
-AGENTS_SCHEMA = 10
+PIN_SCHEMA = 11
+AGENTS_SCHEMA = 11
 ARCHITECT_GUIDE_SCHEMA = 4
 ARCHITECTURE_DIAGRAM_SCHEMA = 1
 MCU_GUIDE_SCHEMA = 1
 IMPLEMENT_GUIDE_SCHEMA = 1
 BUILD_TEST_GUIDE_SCHEMA = 1
 BRIEF_GUIDE_SCHEMA = 1
-APPROVAL_GUIDE_SCHEMA = 1
+APPROVAL_GUIDE_SCHEMA = 2
 POLICY_GUIDE_SCHEMA = POLICY_SCHEMA
 STATUS_SCHEMA = 1
 BOARD_ORIGIN_MM = 100.0
@@ -681,10 +681,11 @@ saved workflow gates, compiler output, and the KiCad board.
 
 ## Ownership
 
-- The user owns intent, architecture approval, optional CubeMX review, layout,
-  routing, and ordering.
+- The user owns acceptance of every phase, plus intent, optional CubeMX review,
+  layout, routing, and ordering.
 - The agent owns circuit code, exact MCU and pin selection, part selection,
-  checks, and written layout audits.
+  checks, written layout audits, and preparation of review packets. Tool or
+  agent ownership of work never grants completion authority.
 - Never place, route, move, or “fix” copper. Never rewrite spatial board data.
 - Circuit source owns identity, footprints, fields, and connectivity.
 - `{spec.name}.kicad_pcb` owns all spatial work.
@@ -703,8 +704,15 @@ saved workflow gates, compiler output, and the KiCad board.
   infer, self-approve, or reuse it.
 - Proposal approval precedes implementation. Final approval follows artifact
   presentation and validation.
-- Approvals are bound to artifact fingerprints. A changed approved artifact
-  requires renewed approval; rerunning checks cannot revive an old gate.
+- Every phase requires an explicit final user approval after technical evidence
+  passes. Passing checks means `Awaiting approval`, never `Complete`.
+- Before requesting approval, run `pcbforge status review <phase>` and present
+  its exact artifacts, check results, and fingerprint. After an unambiguous
+  approval of that packet, record the same fingerprint with
+  `pcbforge status approve <phase> --fingerprint <sha256> --note "<approval>"`.
+- Approvals are phase-specific and fingerprint-bound. A changed approved
+  artifact requires renewed approval; rerunning checks cannot revive an old
+  gate.
 - Only local, reversible details that do not alter an approved contract may be
   chosen autonomously, and their assumptions must be stated.
 
@@ -738,8 +746,8 @@ saved workflow gates, compiler output, and the KiCad board.
 1. Read this file, `spec.md`, `policy.yaml`, and `STATUS.md`.
 2. Run `{tool_root}/scripts/pcbforge status --check --write` from this directory.
 3. Inspect any dashboard blocker and the evidence for the reported current phase.
-4. Report the current focus and next actions, then wait for user approval where
-   the workflow requires it.
+4. Report the current focus and next actions. If the phase is technically
+   ready, present `status review <phase>` and stop for explicit user approval.
 
 ## Status dashboard
 
@@ -749,9 +757,11 @@ saved workflow gates, compiler output, and the KiCad board.
 - Use `{tool_root}/scripts/pcbforge status --write` after meaningful project
   changes. Use `--check` when compiler, build-test, parts-policy,
   placement-brief, IOC, or DRC evidence must be refreshed.
-- Record human gates only after an explicit declaration:
-  `{tool_root}/scripts/pcbforge status mark <phase> complete --note "<reason>"`.
-  The command persists approval but never constitutes it.
+- Never use `status mark <phase> complete`. After checks pass, run
+  `{tool_root}/scripts/pcbforge status review <phase>`, present the packet, and
+  stop. Only after explicit user approval, run
+  `{tool_root}/scripts/pcbforge status approve <phase> --fingerprint <sha256> --note "<approval>"`.
+  The command persists approval already expressed; it never constitutes it.
 - Use `blocked` with a concrete reason, `reopened` when an approved phase
   changes, and `skipped` only for optional publish. Never infer user approval,
   layout completion, routing completion, or ordering.
@@ -795,8 +805,9 @@ implementation:
    external boundary against the diagram. Present the tracked Mermaid diagram
    with the interface table, spec coverage, reuse status, risks, source diff,
    and build result. Stop for separate explicit final user approval.
-11. After final approval, run
-   `{tool_root}/scripts/pcbforge status mark architect complete --note "<summary>; diagram: docs/architecture.md"`,
+11. Run `pcbforge status review architect`, present its exact packet, and stop.
+   After final approval of that fingerprint, run
+   `{tool_root}/scripts/pcbforge status approve architect --fingerprint <sha256> --note "<summary>; diagram: docs/architecture.md"`,
    optionally retain the design rationale in the `spec.md` Decisions log, then
    stop at the MCU handoff. The STATUS event is the durable workflow gate.
    Never infer approval.
@@ -817,6 +828,9 @@ After explicit ARCHITECT approval and a new MCU request, follow
 5. Until `ioc2code` exists, manually derive `src/mcu.ato` from the checked
    `.ioc` and perform an explicit one-to-one audit. Never let it silently
    diverge from the `.ioc`.
+6. Run `pcbforge status review mcu`, present the exact device, pin map,
+   artifacts, checks, and fingerprint, then stop. Record `status approve mcu`
+   only after the user explicitly approves that fingerprint.
 
 ## IMPLEMENT gate
 
@@ -834,7 +848,9 @@ Before adding physical parts, follow `{tool_root}/agent/implement.md`:
    `policy.yaml`; run `{tool_root}/scripts/pcbforge check-policy` and stop for
    explicit user approval of every required exception.
 5. `status --check` records these audits as required evidence. IMPLEMENT
-   cannot complete while parts or policy evidence is failed or stale.
+   cannot become ready while parts or policy evidence is failed or stale.
+6. Present `pcbforge status review implement` and stop. Record approval only
+   after the user explicitly accepts the exact implementation fingerprint.
 
 ## Build + test gate
 
@@ -845,9 +861,10 @@ After IMPLEMENT completes, follow `{tool_root}/agent/build-test.md`:
    list the same IDs in the contract.
 3. Run
    `{tool_root}/scripts/pcbforge status --check --write`.
-4. Build + test completes automatically only when the frozen build, exact BOM,
-   BOM-to-board parity, assertions, connectivity evidence, no-op spatial
-   preservation, and tracked `docs/build-test.md` report are all current.
+4. Inspect the generated `docs/build-test.md` evidence report.
+5. Passing evidence moves build + test to `Awaiting approval`; it never
+   completes automatically. Present `pcbforge status review build`, stop, and
+   record `status approve build` only after explicit approval.
 
 ## Placement brief gate
 
@@ -860,7 +877,8 @@ After build + test completes, follow `{tool_root}/agent/brief.md`:
    only `pcbforge:` net classes into the KiCad project. It never edits the PCB.
 4. Run `{tool_root}/scripts/pcbforge check-brief` and present `brief.md` plus
    the available schematic presentation for explicit user review.
-5. Mark BRIEF complete only after the user approves both. The status note must
+5. Run `pcbforge status review brief` and present its packet. Record
+   `status approve brief` only after the user approves both; the note must
    contain `brief.md` and `schematic review: adequate`. If the presentation is
    inadequate, block BRIEF and do not begin layout.
 
@@ -872,6 +890,8 @@ After build + test completes, follow `{tool_root}/agent/brief.md`:
   `{tool_root}/scripts/pcbforge policy confirm-sourcing --note "<review>"`.
 - ORDER cannot complete unless that confirmation fingerprints the current
   policy sourcing records, exact build-test BOM, and fabrication outputs.
+- FAB-OUT and ORDER each still require their own `status review` packet and
+  explicit `status approve` after their technical/manual evidence is current.
 """
 
 

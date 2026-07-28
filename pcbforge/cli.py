@@ -40,12 +40,16 @@ from pcbforge.status import (
     StatusCheckError,
     StatusError,
     StatusInputError,
+    approve_phase,
     inspect_status,
     mark_policy,
     mark_status,
+    migrate_approvals,
     policy_approval_context,
     read_status_document,
+    render_phase_review,
     render_terminal,
+    review_phase,
     run_status_checks,
     write_status,
 )
@@ -167,7 +171,7 @@ def _parser() -> argparse.ArgumentParser:
         "check-policy",
         help="validate manufacturing and technology policy",
         description=(
-            "Read-only validation of the pinned schema-10 platform policy, "
+            "Read-only validation of the pinned project platform policy, "
             "project declarations, sourcing evidence, and approved exceptions."
         ),
     )
@@ -226,7 +230,7 @@ def _parser() -> argparse.ArgumentParser:
 
     migrate_parser = subcommands.add_parser(
         "migrate-policy",
-        help="explicitly migrate a schema-7-through-9 project to schema 10",
+        help="explicitly migrate a schema-7-through-9 project to schema 11",
     )
     migrate_parser.add_argument(
         "project_dir",
@@ -234,6 +238,18 @@ def _parser() -> argparse.ArgumentParser:
         default=".",
         metavar="PROJECT_DIR",
         help="initialized schema-7-through-9 project (default: current directory)",
+    )
+
+    migrate_approvals_parser = subcommands.add_parser(
+        "migrate-approvals",
+        help="migrate a schema-10 project to universal phase approvals",
+    )
+    migrate_approvals_parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+        help="initialized schema-10 project (default: current directory)",
     )
 
     status_parser = subcommands.add_parser(
@@ -288,8 +304,8 @@ def _status_mark_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pcbforge status mark",
         description=(
-            "Append a durable workflow event and refresh STATUS.md. Completion "
-            "is accepted only when predecessors and required evidence are current."
+            "Append a non-approval workflow event and refresh STATUS.md. "
+            "Schema-11 completion uses `pcbforge status approve`."
         ),
     )
     parser.add_argument("phase", help="workflow phase key, such as layout or order")
@@ -312,12 +328,65 @@ def _status_mark_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _status_review_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="pcbforge status review",
+        description=(
+            "Run read-only phase checks and print the exact artifact/check "
+            "packet and fingerprint that may be presented for user approval."
+        ),
+    )
+    parser.add_argument("phase", help="workflow phase key, such as mcu or build")
+    parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+        help="project containing spec.md (default: current directory)",
+    )
+    return parser
+
+
+def _status_approve_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="pcbforge status approve",
+        description=(
+            "Record an explicit user approval of the exact fingerprint "
+            "previously presented by `pcbforge status review`."
+        ),
+    )
+    parser.add_argument("phase", help="workflow phase key, such as mcu or build")
+    parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+        help="project containing spec.md (default: current directory)",
+    )
+    parser.add_argument(
+        "--fingerprint",
+        required=True,
+        help="exact SHA-256 printed by the phase review command",
+    )
+    parser.add_argument(
+        "--note",
+        required=True,
+        help="the explicit user approval recorded in append-only history",
+    )
+    return parser
+
+
 def _run_status_cli(argv: list[str]) -> int:
-    is_mark = bool(argv and argv[0] == "mark")
-    parser = _status_mark_parser() if is_mark else _status_show_parser()
-    status_args = parser.parse_args(argv[1:] if is_mark else argv)
+    mode = argv[0] if argv and argv[0] in {"mark", "review", "approve"} else "show"
+    parser = {
+        "mark": _status_mark_parser,
+        "review": _status_review_parser,
+        "approve": _status_approve_parser,
+        "show": _status_show_parser,
+    }[mode]()
+    status_args = parser.parse_args(argv[1:] if mode != "show" else argv)
     try:
-        if is_mark:
+        if mode == "mark":
             result = mark_status(
                 Path(status_args.project_dir),
                 status_args.phase,
@@ -327,6 +396,26 @@ def _run_status_cli(argv: list[str]) -> int:
             print(render_terminal(result.report))
             print(
                 f"pcbforge: recorded {status_args.phase} {status_args.action}; "
+                f"{'updated' if result.wrote else 'unchanged'} STATUS.md"
+            )
+            return 0
+        if mode == "review":
+            review = review_phase(
+                Path(status_args.project_dir),
+                status_args.phase,
+            )
+            print(render_phase_review(review))
+            return 0 if review.ready else 1
+        if mode == "approve":
+            result = approve_phase(
+                Path(status_args.project_dir),
+                status_args.phase,
+                status_args.fingerprint,
+                status_args.note,
+            )
+            print(render_terminal(result.report))
+            print(
+                f"pcbforge: recorded explicit {status_args.phase} approval; "
                 f"{'updated' if result.wrote else 'unchanged'} STATUS.md"
             )
             return 0
@@ -497,6 +586,24 @@ def main(argv: list[str] | None = None) -> int:
         if migration.wrote:
             print(
                 "pcbforge: explicit policy baseline approval is still required"
+            )
+        return 0
+
+    if args.command == "migrate-approvals":
+        try:
+            migration = migrate_approvals(Path(args.project_dir))
+        except StatusInputError as exc:
+            print(f"pcbforge migrate-approvals: {exc}", file=sys.stderr)
+            return 2
+        except StatusError as exc:
+            print(f"pcbforge migrate-approvals: {exc}", file=sys.stderr)
+            return 1
+        state = "migrated" if migration.wrote else "already migrated"
+        print(f"pcbforge: {state} approvals in {migration.project_dir}")
+        if migration.reopened_phases:
+            print(
+                "pcbforge: explicit reapproval required for "
+                + ", ".join(migration.reopened_phases)
             )
         return 0
 

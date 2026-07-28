@@ -44,10 +44,12 @@ Vendor-neutral: any agent with file read/write follows this document.
    empty.
 5. Once the draft validates, you run `pcbforge status --write`; refresh the
    dashboard after material revisions. Do not ask the user to run this command.
-6. Iterate until the user explicitly declares it good in conversation. Only
-   then do you record the gate with
-   `pcbforge status mark spec complete --note "<approval summary>"`. The
-   command persists the approval; it does not constitute approval by itself.
+6. Once technically ready, run `pcbforge status review spec` and present the
+   exact artifacts, checks, and fingerprint. Iterate until the user explicitly
+   approves that packet in conversation. Only then record the gate with
+   `pcbforge status approve spec --fingerprint <sha256> --note "<approval summary>"`.
+   The command persists the approval; it does not constitute approval by
+   itself.
 7. Remind: `spec.md` and `policy.yaml` are **living contracts**. Later
    requirement changes go to the spec first; technology declarations,
    sourcing evidence, and requested exceptions go to policy. Keep each file

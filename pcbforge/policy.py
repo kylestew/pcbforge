@@ -19,7 +19,7 @@ POLICY_PROFILE_SCHEMA = 1
 POLICY_PROFILE_ID = "pcbforge-standard-v1"
 POLICY_FILENAME = "policy.yaml"
 POLICY_PROFILE_PATH = Path("policies") / f"{POLICY_PROFILE_ID}.yaml"
-PROJECT_PIN_SCHEMA = 10
+PROJECT_PIN_SCHEMA = 11
 
 ASSURANCE_RULES = (
     "reverse-polarity",
@@ -859,7 +859,8 @@ def _pinned_policy(
     if not path.is_file():
         return "spec", []
     data = _load_yaml(path, ".pcbforge")
-    if data.get("schema") != PROJECT_PIN_SCHEMA:
+    schema = data.get("schema")
+    if schema not in {10, PROJECT_PIN_SCHEMA}:
         raise PolicyInputError(
             "project policy is not migrated: run `pcbforge migrate-policy`"
         )
@@ -1512,7 +1513,7 @@ def migrate_policy(
     *,
     tool_root: Path | None = None,
 ) -> PolicyMigrationResult:
-    """Explicitly migrate a generated schema-7-through-9 project to schema 10."""
+    """Explicitly migrate a generated schema-7-through-9 project to schema 11."""
     project_dir = project_dir.expanduser().resolve()
     tool_root = (
         tool_root.resolve()
@@ -1548,6 +1549,11 @@ def migrate_policy(
             through_phase="spec",
         )
         return PolicyMigrationResult(project_dir, False, ())
+    if schema == 10:
+        raise PolicyInputError(
+            "policy is already migrated; run `pcbforge migrate-approvals` "
+            "to upgrade schema 10 to 11"
+        )
     if schema not in {7, 8, 9}:
         raise PolicyInputError(
             "migrate-policy requires generated .pcbforge schema 7, 8, or 9; "

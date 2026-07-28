@@ -34,7 +34,7 @@ own everything mechanical around KiCad board design for JLCPCB fab.
 
 | Actor | Role |
 |---|---|
-| **User** | spec intent, architecture approval, optional CubeMX review, **layout + routing (the art)**, order |
+| **User** | acceptance of every phase, spec intent, optional CubeMX review, **layout + routing (the art)**, order |
 | **AI agent** | spec interview, writes/edits all capture code, exact MCU/pin selection, part selection, layout spotter, review |
 | **Compiler/scripts** | netlist + BOM emission, assertions, electrical checks/DRC, briefs, fab-out — deterministic, free (stock queries excepted: live network) |
 
@@ -54,10 +54,14 @@ implementation and final approval follows presentation plus validation.
 Approval events are bound to artifact fingerprints. A changed approved
 artifact becomes stale; a dashboard write durably reopens its phase so tool
 reruns or later content restoration cannot silently revive the approval.
+Every phase, including tool-led work, requires final user approval. Passing
+checks produce `Awaiting approval`, not completion. The agent presents the
+exact `status review` packet and may record its fingerprint with
+`status approve` only after the user unambiguously accepts it.
 
 ### Manufacturing-policy invariant
 
-Schema-10 projects consume the hash-pinned
+Schema-11 projects consume the hash-pinned
 `policies/pcbforge-standard-v1.yaml` profile and track their declarations,
 evidence, sourcing, and exception requests in `policy.yaml`. The profile—not
 the editable project contract—defines hard rules, exception-capable defaults,
@@ -78,6 +82,16 @@ exception approval reopens the profile-mapped completed phase.
 
 ## Decision record
 
+- **2026-07-28 — schema-11 universal phase approval adopted.** Every phase,
+  including init, MCU, IMPLEMENT, build + test, LAYOUT, ROUTE, verify,
+  fab-out, order, and publish, now needs explicit final user approval.
+  Technical readiness is reported as `Awaiting approval`. `status review`
+  produces a phase-specific artifact/check fingerprint; `status approve`
+  records an approval already expressed by the user and rejects stale
+  fingerprints. ARCHITECT keeps its distinct proposal-before-code gate.
+  Optional PUBLISH may be explicitly skipped. Schema-10 migration preserves
+  only current legacy artifact-bound approvals and reopens completions that
+  cannot be proven.
 - **2026-07-27 — schema-10 manufacturing policy adopted.** Tool-owned policy
   profiles separate unconditional platform constraints from approval-required
   defaults and advisory sourcing preferences. New SPEC approval binds the
@@ -226,6 +240,13 @@ for whichever compiler wins:
 13. publish   proven modules: version tag + generated schematic render;
               U optional prettify (the surviving drawing act).
 ```
+
+Every numbered phase ends with the same final gate: required evidence becomes
+current, the agent presents `pcbforge status review <phase>`, the user
+explicitly approves that fingerprint, and the agent records it with
+`pcbforge status approve`. The phase cannot complete from tool success, file
+presence, or agent judgment alone. ARCHITECT's proposal approval remains an
+additional earlier gate; optional PUBLISH may instead be explicitly skipped.
 
 ### Phase 3 — ARCHITECT
 
