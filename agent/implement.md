@@ -1,4 +1,4 @@
-<!-- pcbforge-implement-schema: 2 -->
+<!-- pcbforge-implement-schema: 3 -->
 # IMPLEMENT playbook
 
 Use this playbook after MCU is complete and before requesting IMPLEMENT
@@ -7,46 +7,100 @@ The goal is an understandable, explicitly approved circuit proposal followed
 by a physical circuit definition whose compiled connectivity and exact parts
 are proven to match that proposal.
 
-The schema-12 workflow's `policy.yaml` is part of the implementation contract. JLCPCB,
+The schema-13 workflow's `policy.yaml` is part of the implementation contract. JLCPCB,
 STM32, 2/4 layers, SWD, pinned tools, exact part identity, official commodity
 libraries, spatial ownership, and human ordering authority are hard rules.
 Standard construction, 0603-or-larger ordinary R/C/LED packages, conventional
 vias, and avoidance of BGA/WLCSP/sub-0.5-mm QFN are defaults with explicit
 exception gates.
 
-## Gate A — native topology proposal before source edits
+## Gate A — explanatory circuit proposal before source edits
 
 MCU approval captures `review/implement/source-baseline.json`. Do not change
 physical Atopile module bodies, part definitions, values, footprints,
 connectivity, or the product PCB until the topology proposal below is approved.
 
-Create `schematic-review.yaml`:
+Create `circuit-review.yaml`:
 
 ```yaml
-schematic_review_schema: 1
+circuit_review_schema: 1
 build: default
-proposal_root: review/implement/proposal/main.kicad_sch
-final_root: review/implement/final/main.kicad_sch
+model: review/implement/circuit.yaml
+diagram: review/implement/circuit.svg
 proposal_narrative: docs/implementation-proposal.md
 final_narrative: docs/implementation-review.md
 ```
 
-Create a distinct, review-only KiCad project under
-`review/implement/proposal/`. It may use hierarchical sheets, but
-`main.kicad_sch` and its rendered pages must let the reviewer follow the
-complete circuit. Do not create a `.kicad_pcb` in this directory. Never run
-Update PCB from Schematic from this derivative; Atopile remains authoritative.
+Do **not** generate a KiCad schematic. Create the exact proposal model at
+`review/implement/circuit.yaml` using `circuit_model_schema: 1`. It contains:
 
-The proposal must show:
+1. `components`: every proposed reference with `kind`, value, official
+   footprint, `mpn`, `lcsc`, and a plain-language `purpose`;
+2. `nets`: a stable kebab-case `id`, human `display_name`, optional exact
+   `compiler_name`, and every connected physical `REF.PIN` endpoint;
+3. `groups`: complete one-to-one component grouping with title and purpose;
+4. `paths`: important power/current/signal flows as ordered endpoints, where
+   adjacent endpoints either share a net or cross the same component.
 
-1. every electrical component with stable proposed reference, value,
-   footprint, `MPN`, and `LCSC` fields;
-2. every rail, ground, external boundary, MCU support connection, programming
-   connection, polarized direction, and protection direction;
-3. physical pin numbers and net labels matching the proposed source contract;
-4. visible purpose notes for decoupling, bulk storage, filtering, pull
-   resistors, current limiting, biasing, and termination;
-5. a prominent `PCBForge review-only — proposal` marker.
+Example shape:
+
+```yaml
+circuit_model_schema: 1
+components:
+  - reference: F1
+    kind: fuse
+    value: 10mA hold
+    footprint: Fuse:Fuse_0603_1608Metric
+    mpn: SMD0603-001-60
+    lcsc: C46640946
+    purpose: Limits abnormal battery current.
+nets:
+  - id: battery-positive
+    display_name: BAT+
+    nodes: [BT1.1, F1.1]
+  - id: fused-battery
+    display_name: FUSED_BAT
+    nodes: [F1.2, Q1.1]
+groups:
+  - id: power-entry
+    title: Power input and protection
+    purpose: Defines the protected board supply.
+    references: [BT1, F1, Q1]
+paths:
+  - id: protected-power
+    title: Battery to protected rail
+    purpose: Shows current through the fuse and reverse-polarity MOSFET.
+    nodes: [BT1.1, F1.1, F1.2, Q1.1, Q1.2]
+```
+
+The complete file must define every referenced component and every connected
+endpoint; the shortened example only illustrates the field shapes.
+
+The model is the frozen pre-source approval contract. It is not maintained as
+a second design source after IMPLEMENT; compiled Atopile output remains the
+electrical authority.
+
+Deliberately author `review/implement/circuit.svg` for human comprehension. It
+must open directly in a browser and:
+
+1. show external power through protection to the named rail as continuous
+   wires, and show complete user-control, LED/load, MCU-support, programming,
+   and test paths;
+2. use logical names rather than compiler-generated labels in the drawing;
+3. group related parts and label ambiguous functions such as MOSFETs, switches,
+   connectors, and protection devices directly;
+4. place every passive beside a visible purpose note;
+5. include an accessible `<title>` and `<desc>` plus a prominent
+   `PCBForge review-only — not PCB input` marker;
+6. put the canonical model fingerprint on the root as
+   `data-pcbforge-model-sha256`;
+7. tag visible explanatory elements with `data-component-ref`, `data-net-id`,
+   `data-group-id`, `data-path-id`, and `data-purpose-for` for complete model
+   coverage; every tagged path contains a visible SVG wire shape; and
+8. contain no scripts, external images/resources, or PCB spatial information.
+
+If the root model fingerprint is absent or stale, `check-circuit-review`
+reports the exact expected SHA-256 to place on the SVG before review.
 
 Write `docs/implementation-proposal.md`. It must contain the exact phrase
 `PCBForge review-only`, identify itself as a proposal, explain every circuit
@@ -55,22 +109,22 @@ block and passive purpose, and list material alternatives and decisions.
 Run:
 
 ```sh
-pcbforge check-schematic --stage proposal --write
+pcbforge check-circuit-review --stage proposal --write
 pcbforge status review implement --stage proposal
 ```
 
-PCBForge runs pinned KiCad 9 ERC, exports tracked SVG pages, checks that no
-review PCB exists, proves the product PCB is byte-identical, and binds the
-proposal to the MCU handoff baseline. Present the native schematic, SVG pages,
-narrative, ERC result, and exact fingerprint. Stop. Only after explicit user
-approval may you run:
+PCBForge parses the exact model, validates the SVG's semantic coverage and
+model binding, checks that no review PCB exists, proves the product topology
+is unchanged, and binds the packet to the MCU handoff baseline. Present the
+SVG, narrative, exact model summary, and fingerprint. Stop. Only after explicit
+user approval may you run:
 
 ```sh
 pcbforge status approve implement --stage proposal \
   --fingerprint <sha256> --note "<approved topology and material choices>"
 ```
 
-Any proposal schematic, narrative, upstream contract, or baseline change
+Any proposal model, SVG, narrative, upstream contract, or baseline change
 stales this approval. Physical source changes made before approval are a
 blocker; return to the captured baseline instead of recapturing it.
 
@@ -154,17 +208,18 @@ Before requesting final IMPLEMENT completion:
 3. Run `pcbforge check-parts`.
 4. Complete `policy.yaml`, run `pcbforge check-policy`, and resolve or obtain
    explicit approval for every exception.
-5. Create `review/implement/final/main.kicad_sch` and
-   `docs/implementation-review.md`, both marked `PCBForge review-only`.
-6. Run `pcbforge check-schematic --stage final --write`. It requires clean ERC
-   and exact parity for references, values, footprints, MPN/LCSC identity, and
-   every connected physical pin/net against both the approved proposal and the
-   compiled Atopile BOM/PCB.
+5. Write `docs/implementation-review.md`, marked `PCBForge review-only`. Keep
+   the approved model and explanatory SVG unchanged.
+6. Run `pcbforge check-circuit-review --stage final --write`. It requires exact
+   parity for references, values, footprints, MPN/LCSC identity, and every
+   connected physical-pin endpoint set against the approved model and compiled
+   Atopile BOM/PCB. Declared `compiler_name` values must also match; generated
+   compiler names are otherwise recorded only in machine evidence.
 7. If an electrical or part-identity difference exists, update the proposal
    and repeat Gate A. Cosmetic drawing layout may change without changing the
    canonical graph.
 8. Run `pcbforge status --check --write`.
-9. Confirm `build`, `parts`, `policy`, and `schematic-final` are current and
+9. Confirm `build`, `parts`, `policy`, and `circuit-final` are current and
    passing.
 10. Present the selected parts, values, footprints, LCSC identifiers,
    constraints, generated-asset justifications, and check results.

@@ -20,7 +20,7 @@ from pcbforge.initialize import InitInputError, read_spec
 
 BUILD_TEST_SCHEMA = 1
 BUILD_TEST_REPORT_SCHEMA = 1
-PROJECT_PIN_SCHEMA = 12
+PROJECT_PIN_SCHEMA = 13
 BUILD_TEST_FILENAME = "build-test.yaml"
 BUILD_TEST_REPORT = Path("docs/build-test.md")
 
@@ -38,6 +38,16 @@ AT_RE = re.compile(r"\n\s*\(at\s+([^)]+)\)")
 LAYER_RE = re.compile(r'\n\s*\(layer\s+"([^"]+)"\)')
 PAD_RE = re.compile(r'^\(pad\s+"?([^"\s)]+)"?')
 NET_RE = re.compile(r'\(net\s+(?:"([^"]+)"|([^\s()]+))(?:\s+"((?:\\.|[^"])*)")?\)')
+UNFITTED_PCB_FEATURES = (
+    (
+        re.compile(r"^H[1-9][0-9]*$"),
+        ("MountingHole:", "MountingHole.pretty:"),
+    ),
+    (
+        re.compile(r"^TP[1-9][0-9]*$"),
+        ("TestPoint:", "TestPoint.pretty:"),
+    ),
+)
 
 CommandRunner = Callable[..., subprocess.CompletedProcess[str]]
 
@@ -279,8 +289,8 @@ def read_build_test_contract(project_dir: Path) -> BuildTestContract:
 def _read_pin_metadata(project_dir: Path) -> Mapping[str, Any]:
     data = _load_yaml(project_dir / ".pcbforge", label=".pcbforge")
     errors = []
-    if data.get("schema") not in {11, PROJECT_PIN_SCHEMA}:
-        errors.append(f"schema: expected integer 11 or {PROJECT_PIN_SCHEMA}")
+    if data.get("schema") not in {11, 12, PROJECT_PIN_SCHEMA}:
+        errors.append(f"schema: expected integer 11, 12, or {PROJECT_PIN_SCHEMA}")
     toolchain = data.get("toolchain")
     if not isinstance(toolchain, dict):
         errors.append("toolchain: expected a mapping")
@@ -531,6 +541,35 @@ def _find_assertions(
     return tuple(found), errors
 
 
+def ato_source_semantic_bytes(path: Path) -> bytes:
+    """Return source semantics without valid Step-6 marker/assert pairs.
+
+    Build + test assertions are added only after MCU and IMPLEMENT approval.
+    Excluding the exact adjacent pair keeps those earlier approval fingerprints
+    stable while preserving every other source byte, including malformed or
+    unmarked assertions.
+    """
+    try:
+        with path.open("r", encoding="utf-8", newline="") as stream:
+            lines = stream.read().splitlines(keepends=True)
+    except (OSError, UnicodeError):
+        return path.read_bytes()
+    semantic: list[str] = []
+    index = 0
+    while index < len(lines):
+        marker_text = lines[index].rstrip("\r\n")
+        if (
+            ASSERTION_MARKER_RE.match(marker_text) is not None
+            and index + 1 < len(lines)
+            and lines[index + 1].lstrip().startswith("assert ")
+        ):
+            index += 2
+            continue
+        semantic.append(lines[index])
+        index += 1
+    return "".join(semantic).encode()
+
+
 def _validate_assertions(
     expected: Sequence[str],
     found: Sequence[AssertionLocation],
@@ -701,13 +740,25 @@ def _validate_board(
     )
     missing = sorted(set(bom_references) - set(board.references))
     unexpected = sorted(set(board.references) - set(bom_references))
+    board_footprints = dict(board.footprints)
+    invalid_unexpected = [
+        reference
+        for reference in unexpected
+        if not any(
+            pattern.fullmatch(reference)
+            and board_footprints.get(reference, "").startswith(footprint_prefixes)
+            for pattern, footprint_prefixes in UNFITTED_PCB_FEATURES
+        )
+    ]
     if missing:
         errors.append(f"PCB is missing BOM references: {', '.join(missing)}")
-    if unexpected:
-        errors.append(f"PCB has non-BOM references: {', '.join(unexpected)}")
+    if invalid_unexpected:
+        errors.append(
+            f"PCB has unsupported non-BOM references: "
+            f"{', '.join(invalid_unexpected)}"
+        )
     if len(bom_references) != len(set(bom_references)):
         errors.append("BOM contains duplicate designators")
-    board_footprints = dict(board.footprints)
     for component in components:
         for designator in component.designators:
             actual_footprint = board_footprints.get(designator)
@@ -855,6 +906,10 @@ def _render_report(
         for path in build_test_inputs(project_dir)
     )
     net_ids = {net for _, _, net in board.pad_nets}
+    bom_references = {
+        designator for component in components for designator in component.designators
+    }
+    unfitted_references = sorted(set(board.references) - bom_references)
     return f"""---
 {metadata}
 ---
@@ -875,6 +930,8 @@ and no-op spatial preservation all passed.
 | KiCad | `{toolchain["kicad"]}` |
 | Input fingerprint | `{fingerprint}` |
 | BOM lines | {len(components)} |
+| Fitted components | {len(bom_references)} |
+| Unfitted PCB features | {len(unfitted_references)} |
 | PCB footprints | {len(board.references)} |
 | Resolved nets | {len(net_ids)} |
 | Source assertions | {len(assertions)} |
@@ -894,6 +951,9 @@ and no-op spatial preservation all passed.
 ## Board evidence
 
 - Every BOM designator appears exactly once on the PCB.
+- {len(unfitted_references)} canonical unfitted mounting-hole/test-point PCB
+  features are included in the footprint count
+  ({", ".join(unfitted_references) if unfitted_references else "none"}).
 - Footprint count matches `build-test.yaml`.
 - {len(board.pad_nets)} pad-to-net assignments resolve across {len(net_ids)} nets.
 - Connectivity SHA-256: `{board.connectivity_sha256}`.

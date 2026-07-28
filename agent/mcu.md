@@ -106,7 +106,7 @@ Also present the MCU support circuit in a conventional electrical view when it
 already exists: supplies and grounds, local decoupling, reset, boot, clock,
 SWD, and assigned application pins. If exact support components or topology
 remain undecided, label the view provisional and state clearly that the
-complete native KiCad view and passive-purpose explanations are mandatory at
+complete authored circuit overview and passive-purpose explanations are mandatory at
 the first IMPLEMENT proposal gate before any physical source edits.
 
 Offer to pause while the user opens `firmware/<project>.ioc` in CubeMX 6.18.

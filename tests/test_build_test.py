@@ -14,6 +14,7 @@ from pcbforge.build_test import (
     BuildTestError,
     BuildTestInputError,
     BuildTestResult,
+    ato_source_semantic_bytes,
     check_build_test,
     fingerprint_inputs,
     read_build_test_contract,
@@ -176,6 +177,33 @@ guidance:
 
 
 class ContractTests(BuildTestFixture):
+    def test_source_semantics_remove_only_valid_marker_assert_pairs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "main.ato"
+            source.write_bytes(
+                b"module App:\r\n"
+                b"    pass\r\n"
+                b"    # pcbforge-test: rail-3v3-tolerance\r\n"
+                b"    assert 3.3V within 3.3V +/- 5%\r\n"
+                b"    assert 1V within 1V\r\n"
+                b"    # pcbforge-test: Not-Kebab\r\n"
+                b"    assert 2V within 2V\r\n"
+                b"    # pcbforge-test: non-adjacent\r\n"
+                b"\r\n"
+                b"    assert 4V within 4V\r\n"
+            )
+
+            semantic = ato_source_semantic_bytes(source)
+
+        self.assertNotIn(b"rail-3v3-tolerance", semantic)
+        self.assertNotIn(b"3.3V within", semantic)
+        self.assertIn(b"assert 1V within 1V", semantic)
+        self.assertIn(b"Not-Kebab", semantic)
+        self.assertIn(b"assert 2V within 2V", semantic)
+        self.assertIn(b"non-adjacent\r\n\r\n", semantic)
+        self.assertIn(b"assert 4V within 4V", semantic)
+        self.assertNotIn(b"\n", semantic.replace(b"\r\n", b""))
+
     def test_reads_strict_exact_contract(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             contract = read_build_test_contract(self.project(Path(temporary)))
@@ -232,6 +260,90 @@ board_footprints: 1""",
 
 
 class CheckerTests(BuildTestFixture):
+    def test_allows_canonical_unfitted_pcb_features(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            contract = project / "build-test.yaml"
+            contract.write_text(
+                contract.read_text(encoding="utf-8").replace(
+                    "board_footprints: 1",
+                    "board_footprints: 3",
+                ),
+                encoding="utf-8",
+            )
+            board = project / "garden-logger.kicad_pcb"
+            board.write_text(
+                board.read_text(encoding="utf-8").replace(
+                    "  (gr_line",
+                    """  (footprint "MountingHole.pretty:MountingHole_3.2mm_M3"
+    (layer "F.Cu")
+    (at 105 105)
+    (property "Reference" "H1")
+  )
+  (footprint "TestPoint.pretty:TestPoint_Pad_D1.5mm"
+    (layer "B.Cu")
+    (at 106 106)
+    (property "Reference" "TP1")
+    (pad "1" thru_hole circle
+      (at 0 0)
+      (net 1 "GND")
+    )
+  )
+  (gr_line""",
+                ),
+                encoding="utf-8",
+            )
+
+            result = check_build_test(
+                project,
+                tool_root=TOOL_ROOT,
+                runner=FakeRunner(),
+                write_report=True,
+            )
+            report = (project / BUILD_TEST_REPORT).read_text(encoding="utf-8")
+
+        self.assertEqual(result.footprint_count, 3)
+        self.assertIn("H1, TP1", report)
+
+    def test_rejects_non_bom_reference_with_unrelated_footprint(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            contract = project / "build-test.yaml"
+            contract.write_text(
+                contract.read_text(encoding="utf-8").replace(
+                    "board_footprints: 1",
+                    "board_footprints: 2",
+                ),
+                encoding="utf-8",
+            )
+            board = project / "garden-logger.kicad_pcb"
+            board.write_text(
+                board.read_text(encoding="utf-8").replace(
+                    "  (gr_line",
+                    """  (footprint "Connector_PinHeader_2.54mm:PinHeader_1x01_P2.54mm_Vertical"
+    (layer "B.Cu")
+    (at 106 106)
+    (property "Reference" "TP1")
+    (pad "1" thru_hole circle
+      (at 0 0)
+      (net 1 "GND")
+    )
+  )
+  (gr_line""",
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                BuildTestError,
+                "unsupported non-BOM references: TP1",
+            ):
+                check_build_test(
+                    project,
+                    tool_root=TOOL_ROOT,
+                    runner=FakeRunner(),
+                )
+
     def test_frozen_build_failure_is_reported(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))
@@ -305,6 +417,8 @@ class CheckerTests(BuildTestFixture):
         self.assertEqual(first.footprint_count, 1)
         self.assertEqual(first.net_count, 2)
         self.assertIn("Exact BOM", report)
+        self.assertIn("| Fitted components | 1 |", report)
+        self.assertIn("| Unfitted PCB features | 0 |", report)
         self.assertIn("rail-3v3-tolerance", report)
         self.assertTrue(report_ok, detail)
         self.assertEqual(len(runner.calls), 2)
@@ -390,6 +504,31 @@ class CheckerTests(BuildTestFixture):
             source = project / "src" / "main.ato"
             source.write_text(
                 source.read_text(encoding="utf-8") + "\n# changed\n",
+                encoding="utf-8",
+            )
+            ok, detail = saved_report_status(
+                project,
+                fingerprint_inputs(project),
+            )
+
+        self.assertFalse(ok)
+        self.assertIn("stale", detail)
+
+    def test_assertion_change_makes_saved_report_stale(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            check_build_test(
+                project,
+                tool_root=TOOL_ROOT,
+                runner=FakeRunner(),
+                write_report=True,
+            )
+            source = project / "src" / "main.ato"
+            source.write_text(
+                source.read_text(encoding="utf-8").replace(
+                    "assert 3.3V within 3.3V +/- 5%",
+                    "assert 3.3V within 3.3V +/- 2%",
+                ),
                 encoding="utf-8",
             )
             ok, detail = saved_report_status(

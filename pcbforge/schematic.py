@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import re
 import shutil
 import subprocess
 import tempfile
@@ -18,6 +17,7 @@ import yaml
 
 from pcbforge.build_test import (
     BuildTestError,
+    ato_source_semantic_bytes,
     board_topology_bytes,
     read_board_evidence,
 )
@@ -173,20 +173,33 @@ def read_schematic_contract(project_dir: Path) -> SchematicContract:
     )
 
 
-def _read_pins(project_dir: Path) -> Mapping[str, Any]:
+def _read_pins(
+    project_dir: Path,
+    *,
+    allow_circuit_review: bool = False,
+) -> Mapping[str, Any]:
     data = _load_yaml(project_dir / ".pcbforge")
-    if data.get("schema") != PROJECT_PIN_SCHEMA:
+    schema = data.get("schema")
+    allowed = {PROJECT_PIN_SCHEMA, 13} if allow_circuit_review else {PROJECT_PIN_SCHEMA}
+    if schema not in allowed:
         raise SchematicInputError(
-            "project is not migrated for schematic review; run "
-            "`pcbforge migrate-schematic-review`"
+            "native KiCad schematic review is available only to schema-12 "
+            "legacy projects"
         )
     guidance = data.get("guidance")
     if (
         not isinstance(guidance, dict)
-        or guidance.get("schematic_review_schema") != SCHEMATIC_REVIEW_SCHEMA
+        or (
+            schema == PROJECT_PIN_SCHEMA
+            and guidance.get("schematic_review_schema") != SCHEMATIC_REVIEW_SCHEMA
+        )
+        or (
+            schema == 13
+            and guidance.get("circuit_review_schema") != 1
+        )
     ):
         raise SchematicInputError(
-            "project guidance does not pin schematic review schema 1"
+            "project guidance does not pin the expected circuit review schema"
         )
     return data
 
@@ -303,7 +316,11 @@ def _semantic_fingerprint(graph: SchematicGraph) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _source_baseline_payload(project_dir: Path) -> dict[str, Any]:
+def _source_baseline_payload(
+    project_dir: Path,
+    *,
+    legacy: bool | None = None,
+) -> dict[str, Any]:
     try:
         spec = read_spec(project_dir / "spec.md")
     except InitInputError as exc:
@@ -313,7 +330,9 @@ def _source_baseline_payload(project_dir: Path) -> dict[str, Any]:
         sources.append(
             {
                 "path": path.relative_to(project_dir).as_posix(),
-                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                "sha256": hashlib.sha256(
+                    ato_source_semantic_bytes(path)
+                ).hexdigest(),
             }
         )
     board = project_dir / f"{spec.name}.kicad_pcb"
@@ -323,8 +342,18 @@ def _source_baseline_payload(project_dir: Path) -> dict[str, Any]:
         ).hexdigest()
     except BuildTestError as exc:
         raise SchematicInputError(str(exc)) from exc
+    if legacy is None:
+        try:
+            pins = _load_yaml(project_dir / ".pcbforge")
+            legacy = pins.get("schema") == PROJECT_PIN_SCHEMA
+        except SchematicInputError:
+            legacy = True
     payload: dict[str, Any] = {
-        "schematic_review_schema": SCHEMATIC_REVIEW_SCHEMA,
+        (
+            "schematic_review_schema"
+            if legacy
+            else "source_baseline_schema"
+        ): 1,
         "sources": sources,
         "board_topology_sha256": board_hash,
     }
@@ -337,7 +366,7 @@ def _source_baseline_payload(project_dir: Path) -> dict[str, Any]:
 def capture_implementation_baseline(project_dir: Path) -> Path:
     """Capture the source/board handoff immediately after MCU approval."""
     project_dir = project_dir.expanduser().resolve()
-    _read_pins(project_dir)
+    _read_pins(project_dir, allow_circuit_review=True)
     payload = _source_baseline_payload(project_dir)
     path = project_dir / BASELINE_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -355,7 +384,10 @@ def baseline_is_current(project_dir: Path) -> tuple[bool, str]:
         return False, f"missing {BASELINE_PATH.as_posix()}; reapprove MCU"
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         return False, f"invalid {BASELINE_PATH.as_posix()}: {exc}"
-    current = _source_baseline_payload(project_dir)
+    current = _source_baseline_payload(
+        project_dir,
+        legacy="schematic_review_schema" in saved,
+    )
     if not isinstance(saved, dict) or saved.get("fingerprint") != current["fingerprint"]:
         return (
             False,

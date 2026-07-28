@@ -29,16 +29,16 @@ from pcbforge.policy import (
 ATO_VERSION = "0.15.7"
 KICAD_VERSION = "9.0.9"
 SPEC_SCHEMA = 1
-PIN_SCHEMA = 12
-AGENTS_SCHEMA = 12
+PIN_SCHEMA = 13
+AGENTS_SCHEMA = 13
 ARCHITECT_GUIDE_SCHEMA = 4
 ARCHITECTURE_DIAGRAM_SCHEMA = 1
 MCU_GUIDE_SCHEMA = 2
-IMPLEMENT_GUIDE_SCHEMA = 2
+IMPLEMENT_GUIDE_SCHEMA = 3
 BUILD_TEST_GUIDE_SCHEMA = 1
-BRIEF_GUIDE_SCHEMA = 2
-APPROVAL_GUIDE_SCHEMA = 3
-SCHEMATIC_REVIEW_SCHEMA = 1
+BRIEF_GUIDE_SCHEMA = 3
+APPROVAL_GUIDE_SCHEMA = 4
+CIRCUIT_REVIEW_SCHEMA = 1
 POLICY_GUIDE_SCHEMA = POLICY_SCHEMA
 STATUS_SCHEMA = 2
 BOARD_ORIGIN_MM = 100.0
@@ -841,13 +841,14 @@ After explicit ARCHITECT approval and a new MCU request, follow
 
 Before adding physical parts, follow `{tool_root}/agent/implement.md`:
 
-1. Do not edit physical Atopile source yet. Create `schematic-review.yaml`,
-   the complete review-only KiCad proposal under
-   `review/implement/proposal/`, and `docs/implementation-proposal.md`.
-2. Run `pcbforge check-schematic --stage proposal --write`, then
-   `pcbforge status review implement --stage proposal`. Present the native
-   schematic and SVG pages and stop. Record the proposal fingerprint only
-   after explicit user approval.
+1. Do not edit physical Atopile source yet. Create `circuit-review.yaml`, the
+   exact `review/implement/circuit.yaml` proposal model, the deliberately
+   authored browser-readable `review/implement/circuit.svg`, and
+   `docs/implementation-proposal.md`. Do not generate a KiCad schematic.
+2. Run `pcbforge check-circuit-review --stage proposal --write`, then
+   `pcbforge status review implement --stage proposal`. Present the explanatory
+   SVG, narrative, exact model summary, and fingerprint, then stop. Record the
+   proposal fingerprint only after explicit user approval.
 3. After proposal approval, implement the circuit in Atopile. Reuse canonical
    KiCad symbols and footprints for commodity packages. A
    selected MPN or LCSC number is supplier metadata, not a reason to generate
@@ -860,10 +861,10 @@ Before adding physical parts, follow `{tool_root}/agent/implement.md`:
 6. Complete protection/testability evidence and sourcing entries in
    `policy.yaml`; run `{tool_root}/scripts/pcbforge check-policy` and stop for
    explicit user approval of every required exception.
-7. Create the final review-only schematic under `review/implement/final/`.
-   Run `pcbforge check-schematic --stage final --write`; ERC, exact part
-   identity, physical pins, and nets must match both the proposal and compiled
-   Atopile design. Electrical differences return to proposal approval.
+7. Write `docs/implementation-review.md`, then run
+   `pcbforge check-circuit-review --stage final --write`. Exact part identity,
+   physical pins, and endpoint topology must match both the approved model and
+   compiled Atopile design. Electrical differences return to proposal approval.
 8. `status --check` records these audits as required evidence. IMPLEMENT
    cannot become ready while parts or policy evidence is failed or stale.
 9. Present `pcbforge status review implement` and stop. Record approval only
@@ -893,11 +894,11 @@ After build + test completes, follow `{tool_root}/agent/brief.md`:
 3. Run `{tool_root}/scripts/pcbforge brief`; it generates `brief.md` and merges
    only `pcbforge:` net classes into the KiCad project. It never edits the PCB.
 4. Run `{tool_root}/scripts/pcbforge check-brief` and present `brief.md` beside
-   the already-approved final Step 5 schematic.
+   the already-approved Step 5 explanatory SVG and final parity evidence.
 5. Run `pcbforge status review brief` and present its packet. Record
    `status approve brief` only after the user approves `brief.md` beside the
-   current Step 5 schematic. If that evidence is missing, stale, or inadequate
-   for placement decisions, block BRIEF and do not begin layout.
+   current Step 5 circuit overview. If that evidence is missing, stale, or
+   inadequate for placement decisions, block BRIEF and do not begin layout.
 
 ## FAB-OUT and order policy
 
@@ -962,7 +963,7 @@ def _render_pins(
             "build_test_schema": BUILD_TEST_GUIDE_SCHEMA,
             "brief_schema": BRIEF_GUIDE_SCHEMA,
             "approval_schema": APPROVAL_GUIDE_SCHEMA,
-            "schematic_review_schema": SCHEMATIC_REVIEW_SCHEMA,
+            "circuit_review_schema": CIRCUIT_REVIEW_SCHEMA,
             "policy_schema": POLICY_GUIDE_SCHEMA,
             "status_schema": STATUS_SCHEMA,
         },

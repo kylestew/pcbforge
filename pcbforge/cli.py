@@ -11,6 +11,11 @@ from pcbforge.build_test import (
     BuildTestInputError,
     check_build_test,
 )
+from pcbforge.circuit_review import (
+    CircuitReviewError,
+    CircuitReviewInputError,
+    check_circuit_review,
+)
 from pcbforge.initialize import InitError, InitInputError, initialize_project
 from pcbforge.ioc import (
     IocProjectError,
@@ -50,6 +55,7 @@ from pcbforge.status import (
     mark_policy,
     mark_status,
     migrate_approvals,
+    migrate_circuit_review,
     migrate_schematic_review,
     policy_approval_context,
     read_status_document,
@@ -120,7 +126,7 @@ def _parser() -> argparse.ArgumentParser:
 
     check_schematic_parser = subcommands.add_parser(
         "check-schematic",
-        help="run the native KiCad Step 5 schematic review gate",
+        help="run the legacy schema-12 native KiCad review gate",
         description=(
             "Run pinned KiCad ERC and SVG export for the proposal or final "
             "review-only schematic. Final checks also prove compiled "
@@ -143,6 +149,33 @@ def _parser() -> argparse.ArgumentParser:
         "--write",
         action="store_true",
         help="atomically write canonical evidence and SVG render pages",
+    )
+
+    check_circuit_review_parser = subcommands.add_parser(
+        "check-circuit-review",
+        help="validate the schema-13 Step 5 circuit review gate",
+        description=(
+            "Validate the exact proposal model and authored explanatory SVG. "
+            "Final checks compare the approved model directly with the compiled "
+            "Atopile BOM and PCB topology; KiCad schematic generation is not used."
+        ),
+    )
+    check_circuit_review_parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+        help="initialized pcbforge project (default: current directory)",
+    )
+    check_circuit_review_parser.add_argument(
+        "--stage",
+        required=True,
+        choices=("proposal", "final"),
+    )
+    check_circuit_review_parser.add_argument(
+        "--write",
+        action="store_true",
+        help="atomically write canonical circuit review evidence",
     )
 
     check_build_test_parser = subcommands.add_parser(
@@ -263,7 +296,7 @@ def _parser() -> argparse.ArgumentParser:
 
     migrate_parser = subcommands.add_parser(
         "migrate-policy",
-        help="explicitly migrate a schema-7-through-9 project to schema 12",
+        help="explicitly migrate a schema-7-through-9 project to schema 13",
     )
     migrate_parser.add_argument(
         "project_dir",
@@ -275,7 +308,7 @@ def _parser() -> argparse.ArgumentParser:
 
     migrate_approvals_parser = subcommands.add_parser(
         "migrate-approvals",
-        help="migrate a schema-10 project to schema-12 approvals and schematics",
+        help="migrate a schema-10 project to current approvals and circuit review",
     )
     migrate_approvals_parser.add_argument(
         "project_dir",
@@ -287,7 +320,7 @@ def _parser() -> argparse.ArgumentParser:
 
     migrate_schematic_parser = subcommands.add_parser(
         "migrate-schematic-review",
-        help="migrate a schema-11 project to the native schematic workflow",
+        help="legacy alias: migrate schema 11 to current circuit review",
     )
     migrate_schematic_parser.add_argument(
         "project_dir",
@@ -295,6 +328,26 @@ def _parser() -> argparse.ArgumentParser:
         default=".",
         metavar="PROJECT_DIR",
         help="initialized schema-11 project (default: current directory)",
+    )
+
+    migrate_circuit_parser = subcommands.add_parser(
+        "migrate-circuit-review",
+        help="migrate a schema-12 project to authored SVG circuit review",
+    )
+    migrate_circuit_parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+        help="initialized schema-12 project (default: current directory)",
+    )
+    migrate_circuit_parser.add_argument(
+        "--adopt-existing",
+        action="store_true",
+        help=(
+            "explicitly adopt source that changed after the MCU baseline; "
+            "never claims that pre-source proposal approval occurred"
+        ),
     )
     migrate_schematic_parser.add_argument(
         "--adopt-existing",
@@ -598,6 +651,25 @@ def main(argv: list[str] | None = None) -> int:
         print(f"pcbforge: evidence fingerprint {result.fingerprint}")
         return 0
 
+    if args.command == "check-circuit-review":
+        try:
+            result = check_circuit_review(
+                Path(args.project_dir),
+                args.stage,
+                write=args.write,
+            )
+        except CircuitReviewInputError as exc:
+            print(f"pcbforge check-circuit-review: {exc}", file=sys.stderr)
+            return 2
+        except CircuitReviewError as exc:
+            print(f"pcbforge check-circuit-review: {exc}", file=sys.stderr)
+            return 1
+        state = "wrote" if args.write and result.wrote else "validated"
+        print(f"pcbforge: {state} {result.stage} circuit review evidence")
+        print(f"pcbforge: {result.summary}")
+        print(f"pcbforge: evidence fingerprint {result.fingerprint}")
+        return 0
+
     if args.command == "check-policy":
         try:
             project_dir = Path(args.project_dir)
@@ -707,6 +779,27 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         state = "migrated" if migration.wrote else "already migrated"
         print(f"pcbforge: {state} schematic workflow in {migration.project_dir}")
+        if migration.reopened_phases:
+            print(
+                "pcbforge: explicit reapproval required for "
+                + ", ".join(migration.reopened_phases)
+            )
+        return 0
+
+    if args.command == "migrate-circuit-review":
+        try:
+            migration = migrate_circuit_review(
+                Path(args.project_dir),
+                adopt_existing=args.adopt_existing,
+            )
+        except StatusInputError as exc:
+            print(f"pcbforge migrate-circuit-review: {exc}", file=sys.stderr)
+            return 2
+        except StatusError as exc:
+            print(f"pcbforge migrate-circuit-review: {exc}", file=sys.stderr)
+            return 1
+        state = "migrated" if migration.wrote else "already migrated"
+        print(f"pcbforge: {state} circuit review workflow in {migration.project_dir}")
         if migration.reopened_phases:
             print(
                 "pcbforge: explicit reapproval required for "

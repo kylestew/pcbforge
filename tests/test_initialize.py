@@ -326,10 +326,10 @@ class InitializeTests(unittest.TestCase):
             self.assertIn("kicad: 9.0.9", pins)
             self.assertIn("jlc-2layer-conservative-v1", pins)
             pin_data = yaml.safe_load(pins)
-            self.assertEqual(pin_data["schema"], 12)
-            self.assertEqual(pin_data["guidance"]["brief_schema"], 2)
-            self.assertEqual(pin_data["guidance"]["approval_schema"], 3)
-            self.assertEqual(pin_data["guidance"]["agents_schema"], 12)
+            self.assertEqual(pin_data["schema"], 13)
+            self.assertEqual(pin_data["guidance"]["brief_schema"], 3)
+            self.assertEqual(pin_data["guidance"]["approval_schema"], 4)
+            self.assertEqual(pin_data["guidance"]["agents_schema"], 13)
             self.assertEqual(pin_data["guidance"]["policy_schema"], 1)
             self.assertEqual(pin_data["guidance"]["architect_schema"], 4)
             self.assertEqual(
@@ -337,11 +337,11 @@ class InitializeTests(unittest.TestCase):
                 1,
             )
             self.assertEqual(pin_data["guidance"]["mcu_schema"], 2)
-            self.assertEqual(pin_data["guidance"]["implement_schema"], 2)
+            self.assertEqual(pin_data["guidance"]["implement_schema"], 3)
             self.assertEqual(pin_data["guidance"]["build_test_schema"], 1)
             self.assertEqual(pin_data["guidance"]["status_schema"], 2)
             self.assertEqual(
-                pin_data["guidance"]["schematic_review_schema"],
+                pin_data["guidance"]["circuit_review_schema"],
                 1,
             )
             self.assertEqual(
@@ -358,7 +358,7 @@ class InitializeTests(unittest.TestCase):
             )
 
             agents = (project / "AGENTS.md").read_text(encoding="utf-8")
-            self.assertIn("pcbforge-agents-schema: 12", agents)
+            self.assertIn("pcbforge-agents-schema: 13", agents)
             self.assertIn("agent/brief.md", agents)
             self.assertIn("Never place, route, move", agents)
             self.assertIn("ready for\nARCHITECT", agents)
@@ -375,6 +375,9 @@ class InitializeTests(unittest.TestCase):
             self.assertIn("## Manufacturing and technology policy", agents)
             self.assertIn("pcbforge check-policy", agents)
             self.assertIn("policy confirm-sourcing", agents)
+            self.assertIn("Do not generate a KiCad schematic", agents)
+            self.assertIn("check-circuit-review --stage proposal", agents)
+            self.assertIn("review/implement/circuit.svg", agents)
             self.assertIn("Do not choose parts", agents)
             self.assertIn("docs/architecture.md", agents)
             self.assertIn("pcbforge-architecture-diagram-schema: 1", agents)
@@ -686,12 +689,12 @@ class GuidanceTests(unittest.TestCase):
             encoding="utf-8"
         )
         for required in (
-            "pcbforge-implement-schema: 2",
+            "pcbforge-implement-schema: 3",
             "Device:R",
             "Resistor_SMD:R_0603_1608Metric",
             "supplier/BOM",
             "pcbforge check-parts",
-            "`schematic-final`",
+            "`circuit-final`",
             "policy approve-exception",
             "status review implement --stage proposal",
         ):

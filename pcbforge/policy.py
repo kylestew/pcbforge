@@ -19,7 +19,7 @@ POLICY_PROFILE_SCHEMA = 1
 POLICY_PROFILE_ID = "pcbforge-standard-v1"
 POLICY_FILENAME = "policy.yaml"
 POLICY_PROFILE_PATH = Path("policies") / f"{POLICY_PROFILE_ID}.yaml"
-PROJECT_PIN_SCHEMA = 12
+PROJECT_PIN_SCHEMA = 13
 
 ASSURANCE_RULES = (
     "reverse-polarity",
@@ -860,7 +860,7 @@ def _pinned_policy(
         return "spec", []
     data = _load_yaml(path, ".pcbforge")
     schema = data.get("schema")
-    if schema not in {10, 11, PROJECT_PIN_SCHEMA}:
+    if schema not in {10, 11, 12, PROJECT_PIN_SCHEMA}:
         raise PolicyInputError(
             "project policy is not migrated: run `pcbforge migrate-policy`"
         )
@@ -1513,7 +1513,7 @@ def migrate_policy(
     *,
     tool_root: Path | None = None,
 ) -> PolicyMigrationResult:
-    """Explicitly migrate a generated schema-7-through-9 project to schema 12."""
+    """Explicitly migrate a generated schema-7-through-9 project to schema 13."""
     project_dir = project_dir.expanduser().resolve()
     tool_root = (
         tool_root.resolve()
@@ -1531,7 +1531,7 @@ def migrate_policy(
         MCU_GUIDE_SCHEMA,
         POLICY_GUIDE_SCHEMA,
         STATUS_SCHEMA,
-        SCHEMATIC_REVIEW_SCHEMA,
+        CIRCUIT_REVIEW_SCHEMA,
         _render_agents,
         read_spec,
     )
@@ -1553,7 +1553,7 @@ def migrate_policy(
     if schema == 10:
         raise PolicyInputError(
             "policy is already migrated; run `pcbforge migrate-approvals` "
-            "to upgrade schema 10 to 12"
+            "to upgrade schema 10 to current approvals"
         )
     if schema not in {7, 8, 9}:
         raise PolicyInputError(
@@ -1606,7 +1606,7 @@ def migrate_policy(
     guidance["approval_schema"] = APPROVAL_GUIDE_SCHEMA
     guidance["policy_schema"] = POLICY_GUIDE_SCHEMA
     guidance["status_schema"] = STATUS_SCHEMA
-    guidance["schematic_review_schema"] = SCHEMATIC_REVIEW_SCHEMA
+    guidance["circuit_review_schema"] = CIRCUIT_REVIEW_SCHEMA
     pins["guidance"] = guidance
     outputs = {
         policy_path: policy_contents,

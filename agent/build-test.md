@@ -8,7 +8,7 @@ declared electrical assertions, emits the required artifacts, and preserves
 all user-owned spatial board data.
 
 Live stock and pricing, placement, routing, KiCad PCB DRC, and fabrication
-output are separate gates. Native schematic review, ERC, and compiled parity
+output are separate gates. Explanatory circuit review and exact compiled parity
 were completed in Step 5. `pcbforge check-policy`
 cross-checks the exact BOM against the tracked offline sourcing evidence, but
 does not claim that the evidence is still live. Do not claim that Step 6 proves
@@ -46,7 +46,9 @@ compiler output happened to contain:
 
 The BOM is exact. Missing, unexpected, duplicate, unselected, or mismatched
 components fail. Every BOM usage/designator must appear exactly once on the
-PCB; non-BOM PCB footprints also fail.
+PCB. Canonical `H*` mounting-hole and `TP*` test-point footprints are permitted
+as intentionally unfitted PCB features and count toward `board_footprints`;
+other non-BOM PCB footprints fail.
 
 ## 2. Identify executable assertions
 

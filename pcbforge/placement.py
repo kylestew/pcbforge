@@ -28,7 +28,7 @@ from pcbforge.initialize import InitInputError, read_spec
 
 PLACEMENT_SCHEMA = 1
 BRIEF_SCHEMA = 1
-PROJECT_PIN_SCHEMA = 12
+PROJECT_PIN_SCHEMA = 13
 PLACEMENT_FILENAME = "placement.yaml"
 BRIEF_FILENAME = "brief.md"
 OWNED_CLASS_PREFIX = "pcbforge:"
@@ -294,15 +294,15 @@ def _read_rules(
 def _read_project_pins(project_dir: Path) -> Mapping[str, Any]:
     data = _load_yaml(project_dir / ".pcbforge", ".pcbforge")
     errors = []
-    if data.get("schema") not in {11, PROJECT_PIN_SCHEMA}:
-        errors.append(f"schema: expected integer 11 or {PROJECT_PIN_SCHEMA}")
+    if data.get("schema") not in {11, 12, PROJECT_PIN_SCHEMA}:
+        errors.append(f"schema: expected integer 11, 12, or {PROJECT_PIN_SCHEMA}")
     guidance = data.get("guidance")
     if not isinstance(guidance, dict):
         errors.append("guidance: expected a mapping")
     else:
         schema = data.get("schema")
-        expected_brief = 2 if schema == PROJECT_PIN_SCHEMA else BRIEF_SCHEMA
-        expected_approval = 3 if schema == PROJECT_PIN_SCHEMA else 2
+        expected_brief = 3 if schema == 13 else 2 if schema == 12 else BRIEF_SCHEMA
+        expected_approval = 4 if schema == 13 else 3 if schema == 12 else 2
         if guidance.get("brief_schema") != expected_brief:
             errors.append(
                 f"guidance.brief_schema: expected integer {expected_brief}"

@@ -12,6 +12,9 @@ been changed and exercised on a real board project.
 | ID | Status | Severity | Reported | Summary |
 |---|---|---|---|---|
 | `PC-001` | Ready for pilot | High | 2026-07-28 | IMPLEMENT asks for topology approval without a native, auditable schematic |
+| `PC-002` | Ready for pilot | High | 2026-07-28 | A generated KiCad schematic is the wrong human-review artifact |
+| `PC-003` | Ready for merge | High | 2026-07-28 | Build + Test rejects intentional unfitted PCB features as rogue BOM parts |
+| `PC-004` | Ready for merge | High | 2026-07-28 | Required Step-6 assertions invalidate approved MCU and IMPLEMENT gates |
 
 ## PC-001 — A topology approval needs a schematic
 
@@ -238,3 +241,426 @@ This complaint can close only when all of the following are true:
 | 2026-07-28 | Open | Complaint recorded from the Blinky IMPLEMENT proposal review. No workflow fix has been implemented yet. |
 | 2026-07-28 | Open | Complaint strengthened after a successful Atopile build still provided no conventional schematic view. Native review-only KiCad schematic, ERC, rendered export, and compiled-design parity are now the proposed remedy. |
 | 2026-07-28 | Ready for pilot | Schema-12 tooling and playbooks add the pre-source native KiCad proposal, pinned ERC/SVG evidence, final compiled parity, staged approvals, and migration. Resolution still requires the user to exercise the Blinky replay and confirm circuit/passive comprehension. |
+| 2026-07-28 | Ready for pilot | The Blinky replay showed that schema 12's native-KiCad remedy was not readable enough. PC-002 supersedes that remedy while retaining PC-001's requirement for circuit comprehension before implementation. |
+
+## PC-002 — Do not generate a KiCad schematic for human review
+
+### Report
+
+**Project context:** Blinky schema-12 replay, during the IMPLEMENT proposal
+pilot created to exercise the PC-001 remedy.
+
+**Workflow point:** The proposal had a complete generated native KiCad
+schematic, an exported SVG, exact part identities, a canonical net graph, and
+a clean pinned KiCad ERC result. The gate reported 25 components, 23 nets, 57
+connected pins, and zero ERC violations.
+
+**User feedback:**
+
+> “The Kicad schematic is pretty hard to follow. Would it have been better to
+> create a simplified SVG?”
+>
+> “For example, its unclear how the battery connects to fuse then to reverse
+> polarity and then defines the power net. Why is there a button on the reverse
+> polarity, etc”
+>
+> “Yes! This is exactly what I need.”
+>
+> “Make sure you highlight that we don't want to attempt a kicad schematic.”
+
+The first two quotes describe the generated KiCad schematic and its direct SVG
+export. The third quote followed review of a purpose-built simplified SVG that
+showed one continuous path:
+
+```text
+BT1 positive → F1 → Q1 drain → Q1 source → +VBAT
+BT1 negative → GND
+Q1 gate → GND
+```
+
+The same SVG placed the only pushbutton in a separate PA2 wake circuit, called
+out that Q1 is a transistor rather than a button, showed both complete LED
+paths, and used human net names instead of compiler-generated labels. The user
+could understand it immediately.
+
+### Why this is a process defect
+
+PC-001 correctly identified that prose, tables, and source are insufficient
+for topology approval. Its proposed remedy was wrong: a synthetic native KiCad
+schematic optimizes for file format validity and ERC, not for explanation.
+
+The pilot's KiCad file was electrically complete and machine-checkable, but
+the generated drawing:
+
+- represented many connections as isolated labeled stubs instead of visible
+  continuous paths;
+- exposed compiler-oriented net names that obscured familiar rails and
+  signals;
+- scattered related parts across a large page;
+- mixed exact identity evidence, implementation labels, and explanatory text
+  in one visual layer;
+- used symbols without enough visual context for the reviewer to distinguish
+  circuit function confidently; and
+- made a clean ERC result look like evidence of readability when it was only
+  evidence of KiCad electrical-rule consistency.
+
+Creating and maintaining generated KiCad geometry is also expensive and
+fragile. Considerable agent effort went into symbol-library compatibility,
+property placement, label direction, intentional singleton nets, ERC
+suppression, and rendering behavior. None of that effort improved the
+authoritative Atopile circuit, and it still produced a worse human-review
+artifact than a direct explanatory SVG.
+
+A valid native schematic is not automatically a readable schematic. PCBForge
+must not treat “KiCad can parse and ERC this” as a proxy for “the user can
+understand and approve this.”
+
+### Required process change
+
+For circuit-as-code projects, **do not generate or require a synthetic KiCad
+schematic as the IMPLEMENT human-review artifact**.
+
+Replace the schema-12 native-schematic proposal with two deliberately separate
+artifacts:
+
+1. A purpose-built, schematic-like SVG optimized for human comprehension.
+2. A structured electrical review contract optimized for machine comparison.
+
+The SVG should:
+
+- show power flow as continuous wires from each external source through
+  protection to the named rail it defines;
+- use logical names such as `+VBAT`, `GND`, `LED_A_PWM`, and `BUTTON`, keeping
+  compiler-generated net names out of the primary drawing;
+- group related components into clear functional regions;
+- show complete current or signal paths instead of requiring label matching;
+- distinguish transistors, switches, connectors, and other potentially
+  ambiguous functions with direct labels and short purpose annotations;
+- place each passive beside the connection that explains its role;
+- include reference designators and values needed for informed review;
+- identify external boundaries, programming access, and test access;
+- state explicitly that it is explanatory, review-only, and owns no PCB
+  spatial data; and
+- open directly in a browser without requiring KiCad.
+
+The structured review contract should carry the exact references, MPNs,
+supplier identities, footprints, physical pins, and proposed connectivity. It
+must be fingerprinted with the explanatory SVG, narrative, and approved
+upstream artifacts. After proposal approval, PCBForge should compare this
+contract directly with the compiled Atopile BOM, net graph, and PCB topology.
+
+The SVG and structured contract should be generated from, or validated
+against, one common proposal model so the explanatory view cannot silently
+diverge from the exact approval contract.
+
+### KiCad policy
+
+PCBForge should not attempt to synthesize a native KiCad schematic merely to
+satisfy a review gate.
+
+If a project already has a human-authored native schematic with established
+ownership, PCBForge may present it as additional evidence. That is not a reason
+to require one for Atopile projects, create a parallel electrical authority,
+or make generated KiCad schematic geometry part of the critical workflow.
+
+The product `.kicad_pcb` remains the spatial authority and must never be
+updated from a review derivative.
+
+### Acceptance criteria for resolving this complaint
+
+This complaint can close only when all of the following are true:
+
+- `agent/implement.md` requires a browser-readable schematic-like SVG before
+  proposal approval and does not require PCBForge to create a KiCad schematic.
+- Generated project `AGENTS.md` instructions carry the same rule.
+- The proposal review contract stores exact component identity, physical pins,
+  and connectivity without depending on `.kicad_sch`.
+- `pcbforge status review implement --stage proposal` fingerprints the SVG,
+  narrative, structured contract, source baseline, and approved upstream
+  artifacts.
+- Final IMPLEMENT checks compare the approved structured contract directly
+  with compiled Atopile BOM, connectivity, and PCB topology.
+- The workflow does not require generated KiCad ERC or schematic-render parity
+  for an Atopile project.
+- Human-facing SVGs use continuous paths and logical net names while preserving
+  exact compiler names in machine evidence.
+- Every protection device and user control is visually unambiguous.
+- Every passive's purpose can be understood from its placement and annotation.
+- A pilot user can explain the battery-to-rail path, LED current paths, button
+  wake path, MCU support, and service boundaries from the SVG alone.
+- The final packet retains machine proof that the approved proposal and
+  implemented circuit are electrically identical.
+
+### Non-goals
+
+- Do not make the SVG the electrical source of truth.
+- Do not replace exact connectivity, BOM, pin, policy, or PCB-topology checks
+  with visual inspection.
+- Do not put placement, routing, layers, or copper geometry into the
+  explanatory SVG.
+- Do not ban presentation of a native schematic that already exists and has a
+  clear project owner.
+- Do not preserve synthetic KiCad generation merely because schema-12 already
+  implemented it.
+
+### Likely affected areas
+
+- `pcbforge/circuit_review.py`
+- `pcbforge/status.py`
+- `pcbforge/initialize.py`
+- `agent/implement.md`
+- `agent/brief.md`
+- generated project `AGENTS.md`
+- `README.md`, `WORKFLOW.md`, and `DESIGN.md`
+- schema migration and review/status tests
+
+### Resolution log
+
+| Date | State | Note |
+|---|---|---|
+| 2026-07-28 | Open | Complaint recorded from the Blinky schema-12 proposal review. The purpose-built overview SVG demonstrated the preferred human artifact. |
+| 2026-07-28 | Ready for pilot | Schema 13 replaces generated KiCad review with an intentionally authored SVG bound to a strict pre-source circuit model. Proposal checks validate semantic SVG coverage; final checks compare the frozen model directly with compiled Atopile BOM identity and PCB endpoint topology. Schema-12 projects have an explicit, non-destructive migration. Resolution still requires a real project pilot confirming comprehension. |
+
+## PC-003 — Build + Test must distinguish fitted BOM parts from PCB features
+
+### Report
+
+**Project context:** Blinky schema-13 replay, during the first Build + Test run
+after final IMPLEMENT approval.
+
+**Workflow point:** `build-test.yaml` correctly declared the ten exact fitted
+BOM lines and the board's total of 25 physical footprints. The board also
+contained two required M3 mounting holes and eight required rear service pads,
+all already represented in the approved circuit model as intentionally
+unfitted PCB features with `LCSC: N/A`.
+
+The frozen build compiled successfully and all 13 source assertions executed,
+but the gate failed with:
+
+```text
+PCB has non-BOM references: H1, H2, TP1, TP2, TP3, TP4, TP5, TP6, TP7, TP8
+```
+
+The checker required every PCB footprint reference to appear in the fitted
+compiler BOM. The contract could not express an unfitted feature because its
+strict BOM schema accepts only real `C...` LCSC identifiers.
+
+### Why this is a process defect
+
+PCBForge requires mounting holes and test access when applicable, and the
+IMPLEMENT review model explicitly distinguishes them from fitted assembly
+parts. Build + Test then discarded that distinction and treated the same
+approved features as unexpected components.
+
+This creates three bad choices:
+
+- remove required test and mounting features from the PCB;
+- invent supplier identities for non-purchased PCB geometry; or
+- weaken exact BOM parity by treating every physical footprint as a fitted
+  component.
+
+All three corrupt the design contract. A physical footprint count and a fitted
+BOM answer different questions and must remain independently exact.
+
+The bug also made the documented Build + Test gate impossible for any board
+that uses canonical test pads, mounting holes, fiducials, or similar PCB-only
+features unless the checker has an explicit representation for them.
+
+### Required process change
+
+Build + Test must validate two disjoint physical sets:
+
+1. **Fitted BOM components:** exact LCSC, MPN, footprint, quantity, and
+   designator parity with compiler output and the PCB.
+2. **Intentionally unfitted PCB features:** exact allowed references and
+   canonical feature footprints, included in `board_footprints` but excluded
+   from the procurement BOM.
+
+The immediate schema-1 repair is deliberately narrow:
+
+- `H[1-9][0-9]*` is allowed only with a `MountingHole:` or
+  `MountingHole.pretty:` footprint;
+- `TP[1-9][0-9]*` is allowed only with a `TestPoint:` or
+  `TestPoint.pretty:` footprint;
+- every other non-BOM reference still fails; and
+- all allowed features still count toward the exact board footprint total.
+
+A future contract schema may list unfitted features explicitly or import them
+from the approved circuit model. It must not broadly waive non-BOM parity.
+
+### Acceptance criteria for resolving this complaint
+
+- A board with exact fitted BOM parity and canonical `H*`/`TP*` PCB features
+  passes Build + Test.
+- The same `H*` or `TP*` reference attached to an unrelated connector or
+  component footprint fails.
+- Missing, duplicate, unexpected, or footprint-mismatched fitted BOM
+  designators still fail.
+- `board_footprints` counts both fitted components and intentional PCB
+  features.
+- `docs/build-test.md` reports fitted BOM evidence separately from unfitted
+  mounting-hole/test-point evidence.
+- The playbook explains the fitted/unfitted distinction and does not instruct
+  agents to invent LCSC identities.
+- Regression tests cover both the accepted canonical feature case and the
+  disguised unrelated-footprint case.
+- The real Blinky gate passes with ten BOM lines, 15 fitted components, ten
+  unfitted PCB features, and 25 total footprints.
+
+### Non-goals
+
+- Do not permit arbitrary non-BOM footprints.
+- Do not put mounting holes or bare test pads into the procurement BOM.
+- Do not infer that a reference is safe from its prefix alone.
+- Do not weaken exact BOM identity, quantity, designator, footprint, or PCB
+  connectivity checks.
+
+### Likely affected areas
+
+- `pcbforge/build_test.py`
+- `tests/test_build_test.py`
+- `agent/build-test.md`
+- future `build-test.yaml` schema evolution
+- circuit-review/build-test feature-parity integration
+
+### Resolution log
+
+| Date | State | Note |
+|---|---|---|
+| 2026-07-28 | Open | Blinky reproduced the defect after a successful frozen build: H1, H2, and TP1–TP8 were rejected as non-BOM references despite approved IMPLEMENT evidence. |
+| 2026-07-28 | Ready for merge | The checker now admits only canonical mounting-hole and test-point footprints, reports them separately, and retains exact fitted-BOM validation. Seventeen Build + Test regression tests pass, including a negative disguised-footprint case. |
+| 2026-07-28 | Ready for merge | The repaired real Blinky gate passed with 10 BOM lines, 25 footprints, 23 nets, 59 pad-to-net assignments, 13 assertions, and unchanged spatial data. |
+
+## PC-004 — Step-6 assertions must not reopen approved circuit phases
+
+### Report
+
+**Project context:** Blinky schema-13 replay, immediately after IMPLEMENT
+fingerprint `d4f4c2dc…53be5` was explicitly approved.
+
+**Workflow point:** The Build + Test playbook requires agents to create
+`build-test.yaml`, then add a stable `pcbforge-test` marker immediately before
+every required Atopile assertion. Blinky added 13 such marker/assert pairs for
+LED current limiting, BOOT0 bias, capacitance, and capacitor voltage headroom.
+
+The assertions compiled and the standalone Build + Test diagnostic passed.
+However, the required full command:
+
+```text
+pcbforge status --check --write
+```
+
+automatically changed the dashboard from five completed phases to three. It
+reopened MCU and IMPLEMENT and failed the IMPLEMENT proposal check with:
+
+```text
+Approval invalidated automatically because the approved artifact fingerprint changed
+physical source or board topology changed before proposal approval
+```
+
+No component, pin, footprint, net, or board topology had changed. Raw file
+hashes were reacting to the Step-6 test declarations that the workflow itself
+had instructed the agent to add.
+
+### Why this is a process defect
+
+The documented order was self-contradictory:
+
+1. final IMPLEMENT approval must complete before Build + Test begins;
+2. Build + Test must add executable assertions to physical source; and
+3. any source-byte change invalidates MCU, the IMPLEMENT proposal baseline,
+   final circuit evidence, and IMPLEMENT approval.
+
+Following Step 6 exactly therefore destroyed the approvals required to enter
+Step 6. The only apparent recovery was to ask the user to reapprove unchanged
+MCU and circuit artifacts, which would make fingerprint-bound approval noisy
+and untrustworthy.
+
+This was not one isolated hash. Raw source bytes appeared in:
+
+- the MCU approval fingerprint;
+- final IMPLEMENT source semantics;
+- the pre-IMPLEMENT proposal baseline;
+- circuit-review check fingerprints;
+- final circuit-review evidence; and
+- automatic staleness evaluation.
+
+Repairing only one location would leave the workflow unstable.
+
+### Required process change
+
+Earlier electrical approvals must use source semantics that exclude only a
+valid Step-6 traceability pair:
+
+```ato
+# pcbforge-test: stable-kebab-case-id
+assert deterministic_expression
+```
+
+The marker and assertion must be adjacent. The normalization must preserve
+every other source byte. In particular:
+
+- an unmarked assertion remains approval-significant;
+- a malformed marker remains approval-significant;
+- a marker not immediately followed by `assert` remains
+  approval-significant;
+- component creation, assignments, connections, pin mappings, imports, and
+  all other real source changes remain approval-significant; and
+- the Build + Test fingerprint itself continues to bind the raw source,
+  contract, and generated report, so changing a test invalidates Step 6.
+
+The same normalization must be reused by MCU/IMPLEMENT approval hashing,
+proposal-baseline comparison, circuit-review fingerprints, and final evidence
+generation. Separate near-duplicate filters are too likely to drift.
+
+### Acceptance criteria for resolving this complaint
+
+- Adding only valid adjacent `pcbforge-test` marker/assert pairs does not change
+  current ARCHITECT, MCU, IMPLEMENT proposal, or final IMPLEMENT approval
+  fingerprints.
+- It does make Build + Test evidence stale until the compiler and report are
+  rerun.
+- Unmarked, malformed, or non-adjacent assertions remain visible to earlier
+  approval fingerprints.
+- Any real source statement added beside the tests changes the applicable MCU
+  or IMPLEMENT fingerprint.
+- Proposal source-baseline checks remain current after Step-6 assertions but
+  still fail for real physical source changes.
+- Final circuit-review evidence remains byte-stable for assertion-only changes.
+- Automatic status refresh does not append erroneous MCU or IMPLEMENT reopen
+  events.
+- The real Blinky project reproduces the exact approved MCU fingerprint
+  `efdb10cc…c879` and IMPLEMENT fingerprint `d4f4c2dc…53be5` after adding the
+  assertions.
+- The full gate returns Blinky to five completed phases with Build + Test
+  `Awaiting approval`.
+- Regression tests cover semantic stripping, baseline stability, circuit
+  evidence stability, earlier approval stability, and real-source-change
+  invalidation.
+
+### Non-goals
+
+- Do not ignore all comments or all assertions.
+- Do not weaken exact compiled BOM, connectivity, IOC, parts, policy, or board
+  topology checks.
+- Do not automatically revive a phase that was genuinely reopened.
+- Do not treat test-only semantic normalization as user approval of Step 6.
+
+### Likely affected areas
+
+- `pcbforge/build_test.py`
+- `pcbforge/schematic.py`
+- `pcbforge/circuit_review.py`
+- `pcbforge/status.py`
+- `tests/test_build_test.py`
+- `tests/test_schematic.py`
+- `tests/test_circuit_review.py`
+- `tests/test_status.py`
+
+### Resolution log
+
+| Date | State | Note |
+|---|---|---|
+| 2026-07-28 | Open | Blinky reproduced the contradiction: 13 required passing assertions reopened MCU and IMPLEMENT and made the approved proposal baseline fail. |
+| 2026-07-28 | Ready for merge | A shared semantic-source helper now removes only valid adjacent Step-6 marker/assert pairs from earlier approval and review hashes. Real source changes remain significant. |
+| 2026-07-28 | Ready for merge | Sixty-nine focused Build Test, schematic, circuit-review, and status regression tests pass. Blinky reproduced the original MCU and IMPLEMENT fingerprints and the repaired full gate reached Build + Test Awaiting approval without reopening prior phases. |

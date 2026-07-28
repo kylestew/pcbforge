@@ -164,6 +164,43 @@ flowchart LR
 
 
 class DashboardTests(StatusFixture):
+    def test_step_six_assertions_preserve_prior_source_fingerprints(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            (project / ".pcbforge").write_text("schema: 13\n", encoding="utf-8")
+            self.add_architecture(project)
+            before = {
+                phase: _approval_fingerprint(project, phase)
+                for phase in ("architect", "mcu", "implement")
+            }
+            for relative in ("src/main.ato", "src/mcu.ato"):
+                source = project / relative
+                source.write_text(
+                    source.read_text(encoding="utf-8")
+                    + """    # pcbforge-test: rail-3v3-tolerance
+    assert 3.3V within 3.3V +/- 5%
+""",
+                    encoding="utf-8",
+                )
+
+            after = {
+                phase: _approval_fingerprint(project, phase)
+                for phase in ("architect", "mcu", "implement")
+            }
+            source = project / "src" / "mcu.ato"
+            source.write_text(
+                source.read_text(encoding="utf-8") + "    signal = 1\n",
+                encoding="utf-8",
+            )
+            changed = {
+                phase: _approval_fingerprint(project, phase)
+                for phase in ("mcu", "implement")
+            }
+
+        self.assertEqual(before, after)
+        self.assertNotEqual(after["mcu"], changed["mcu"])
+        self.assertNotEqual(after["implement"], changed["implement"])
+
     def test_schema_eleven_rejects_direct_completion_for_every_phase(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))
@@ -292,9 +329,9 @@ guidance:
 
         self.assertTrue(migration.wrote)
         self.assertEqual(migration.reopened_phases, ("architect", "mcu"))
-        self.assertEqual(pins["schema"], 12)
-        self.assertEqual(pins["guidance"]["agents_schema"], 12)
-        self.assertEqual(pins["guidance"]["approval_schema"], 3)
+        self.assertEqual(pins["schema"], 13)
+        self.assertEqual(pins["guidance"]["agents_schema"], 13)
+        self.assertEqual(pins["guidance"]["approval_schema"], 4)
         self.assertEqual(document.events[0].phase, "spec")
         self.assertEqual(document.events[0].action, "complete")
         self.assertEqual(document.events[-2].action, "reopened")
@@ -564,9 +601,18 @@ guidance:
 
             diagram.write_text(approved_contents, encoding="utf-8")
             restored = inspect_status(project)
+            reapproved_final = mark_status(
+                project,
+                "architect",
+                "complete",
+                "User reapproved the restored final architecture",
+                tool_root=TOOL_ROOT,
+                runner=FakeRunner(),
+            )
 
         self.assertFalse(restored.phases[2].complete)
         self.assertEqual(restored.phases[2].state, "In progress")
+        self.assertTrue(reapproved_final.report.phases[2].complete)
 
     def test_spatial_board_edit_does_not_stale_saved_build_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

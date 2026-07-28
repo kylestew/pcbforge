@@ -97,7 +97,7 @@ pcbforge status approve layout --fingerprint <sha256> \
   --note "Placement reviewed and explicitly approved"
 pcbforge check-policy
 pcbforge policy approve-exception <id> --note "Approved tradeoff"
-pcbforge check-schematic --stage proposal --write
+pcbforge check-circuit-review --stage proposal --write
 pcbforge status review implement --stage proposal
 pcbforge check-build-test
 pcbforge check-build-test --write-report
@@ -106,11 +106,11 @@ pcbforge check-brief
 ```
 
 Static status is read-only and fast. `--check` runs applicable pinned build,
-Step 5 schematic, Step 6 acceptance, placement-brief, parts-policy, CubeMX,
+Step 5 circuit review, Step 6 acceptance, placement-brief, parts-policy, CubeMX,
 and KiCad DRC
 validation before rendering the same status model.
 
-Schema 12 combines native Step 5 KiCad schematic review with the manufacturing
+Schema 13 combines authored Step 5 circuit review with the manufacturing
 policy and universal phase approvals. The
 tool-owned `policies/pcbforge-standard-v1.yaml` hard-locks JLCPCB, STM32,
 2/4-layer boards, SWD, pinned tools, exact part identity, spatial ownership,
@@ -119,14 +119,14 @@ construction, package/process declarations, protection/testability evidence,
 sourcing evidence, and explicit exception requests. Routine validation is
 offline; approval commands only persist decisions already made by the user.
 
-Before physical implementation, create the review-only native KiCad proposal
-described by `agent/implement.md`. Run
-`pcbforge check-schematic --stage proposal --write`, present its SVG/ERC
-packet, and receive explicit proposal-stage approval before source edits.
-After implementation, the final check requires the schematic to match the
-approved proposal and compiled Atopile references, values, footprints,
-MPN/LCSC identities, pins, and nets. Atopile remains authoritative and the
-review project never owns a PCB.
+Before physical implementation, create the exact circuit proposal model and
+deliberately authored browser-readable SVG described by `agent/implement.md`.
+Run `pcbforge check-circuit-review --stage proposal --write`, present the SVG,
+narrative, exact model summary, and fingerprint, and receive explicit approval
+before source edits. After implementation, the final check compares that frozen
+model directly with compiled Atopile references, values, footprints, MPN/LCSC
+identities, and physical-pin endpoint topology. Atopile remains authoritative;
+PCBForge does not generate a KiCad schematic for this review.
 
 During physical implementation, run `pcbforge check-parts` directly. It rejects
 project-local KiCad assets for recognized commodity chip resistors, capacitors,
@@ -151,7 +151,7 @@ exact current nets and safe JLC dimensions. `pcbforge brief` generates
 `brief.md` and merges only `pcbforge:` classes into the KiCad project. It
 preserves user classes and verifies the PCB is byte-identical.
 `pcbforge check-brief` is read-only. Step 7 completes only after the user
-approves `brief.md` beside the already-approved current Step 5 schematic;
+approves `brief.md` beside the approved current Step 5 circuit overview;
 record that gate with
 `pcbforge status approve brief --fingerprint <sha256> --note "..."`.
 
@@ -186,7 +186,7 @@ pcbforge policy approve-baseline /path/to/project \
   --note "Approved migrated policy baseline"
 ```
 
-This migrates directly to schema 12. It pins the profile, generates
+This migrates directly to schema 13. It pins the profile, generates
 `policy.yaml` from discoverable facts, updates generated guidance, and leaves
 applicability and sourcing items for review. It never infers approval.
 
@@ -203,7 +203,8 @@ require `status review` plus explicit approval. Approved policy exceptions
 retain their targeted reopening behavior. Temper is the first schema-11
 universal-approval migration pilot.
 
-For an existing schema-11 project, enable the schematic workflow explicitly:
+For an existing schema-11 project, use the legacy migration alias to reach the
+current circuit-review workflow:
 
 ```bash
 pcbforge migrate-schematic-review /path/to/project
@@ -212,5 +213,15 @@ pcbforge migrate-schematic-review /path/to/project
 An already completed IMPLEMENT phase must first be rewound, or migrated with
 `--adopt-existing`. Adoption is labelled in STATUS and never claims the
 circuit received pre-source proposal approval. A clean pre-IMPLEMENT migration
-reopens MCU once so its renewed approval captures the schema-12 source
+reopens MCU once so its renewed approval captures the schema-13 source
 baseline.
+
+For an existing schema-12 project, replace the native KiCad review gate:
+
+```bash
+pcbforge migrate-circuit-review /path/to/project
+```
+
+Legacy KiCad review files are preserved but ignored. A current MCU handoff
+baseline is retained; changed post-baseline source requires explicit
+`--adopt-existing`. The migration never generates or deletes review artwork.

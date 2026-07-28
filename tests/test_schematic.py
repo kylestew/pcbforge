@@ -269,6 +269,22 @@ class SchematicTests(SchematicFixture):
         self.assertFalse(current)
         self.assertIn("physical source", detail)
 
+    def test_build_test_assertion_does_not_change_source_baseline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            source = project / "src" / "main.ato"
+            source.write_text(
+                source.read_text(encoding="utf-8")
+                + """    # pcbforge-test: rail-3v3-tolerance
+    assert 3.3V within 3.3V +/- 5%
+""",
+                encoding="utf-8",
+            )
+
+            current, detail = baseline_is_current(project)
+
+        self.assertTrue(current, detail)
+
     def test_erc_violation_and_review_pcb_are_blockers(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))
@@ -385,9 +401,9 @@ guidance:
 
         self.assertTrue(migration.wrote)
         self.assertFalse(second.wrote)
-        self.assertEqual(pins["schema"], 12)
-        self.assertEqual(pins["guidance"]["agents_schema"], 12)
-        self.assertEqual(pins["guidance"]["schematic_review_schema"], 1)
+        self.assertEqual(pins["schema"], 13)
+        self.assertEqual(pins["guidance"]["agents_schema"], 13)
+        self.assertEqual(pins["guidance"]["circuit_review_schema"], 1)
         self.assertEqual(document.events, ())
 
     def test_migration_requires_explicit_adoption_for_existing_step_five_files(

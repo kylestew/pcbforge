@@ -82,6 +82,13 @@ exception approval reopens the profile-mapped completed phase.
 
 ## Decision record
 
+- **2026-07-28 — schema-13 authored circuit review supersedes synthetic KiCad
+  review.** The schema-12 pilot proved that a valid generated `.kicad_sch` and
+  clean ERC do not guarantee human comprehension. IMPLEMENT now approves a
+  deliberately authored browser-readable SVG bound to a strict pre-source
+  electrical model. Final evidence compares that frozen model directly with
+  compiled Atopile BOM identity and PCB endpoint topology. PCBForge does not
+  generate a KiCad schematic for circuit-as-code review.
 - **2026-07-28 — schema-12 native Step 5 schematic review adopted.** IMPLEMENT
   now has a proposal gate before physical Atopile source edits and a separate
   final gate. The AI authors a review-only native KiCad schematic, PCBForge
@@ -92,6 +99,7 @@ exception approval reopens the profile-mapped completed phase.
   part-identity differences return to proposal approval. Atopile remains the
   authority and the review project is forbidden from owning a PCB. Step 7
   consumes this approved evidence rather than introducing the circuit view.
+  **Superseded by schema 13 after the Blinky readability pilot.**
 - **2026-07-28 — schema-11 universal phase approval adopted.** Every phase,
   including init, MCU, IMPLEMENT, build + test, LAYOUT, ROUTE, verify,
   fab-out, order, and publish, now needs explicit final user approval.
@@ -231,9 +239,9 @@ for whichever compiler wins:
 4. MCU        AI selects exact STM32 + pins → creates .ioc → T: check-ioc;
               U may review/edit in CubeMX. AI derives the MCU module manually
               with a one-to-one audit until ioc2code is implemented.
-5. IMPLEMENT  AI creates complete review-only native KiCad proposal; T: ERC +
-              SVG; U approves before source. AI implements exact parts; T:
-              compiled identity/pin/net parity + check-parts + check-policy;
+5. IMPLEMENT  AI creates an explanatory SVG plus exact proposal model; T:
+              semantic binding; U approves before source. AI implements exact
+              parts; T: compiled identity/pin/topology parity + check-parts + check-policy;
               U gives separate final approval.
 6. build+test T: exact build-test.yaml → frozen compile → resolved
               connectivity + BOM; marked assertions + compiler-native checks;
@@ -241,7 +249,7 @@ for whichever compiler wins:
 7. brief      AI: exact placement.yaml from reviewed intent; T validates
               complete footprint/ref/pad/net coverage, generates brief.md,
               and seeds PCBForge-owned classes in .kicad_pro without touching
-              .kicad_pcb; U approves brief beside current Step 5 schematic.
+              .kicad_pcb; U approves brief beside current Step 5 circuit view.
 8. LAYOUT     U — THE ART. AI spotter on request (see Layout copilot).
 9. ROUTE      U — the art continues. AI sanity checks on request.
 10. verify    T: DRC vs JLC rules + scripted layout audits; AI render review.
@@ -418,10 +426,10 @@ what's encoded. AI netlist review stays as second layer; catches what nobody
 encoded yet.
 
 Electrical validation is **compiler-native** (connectivity/drive checks on the
-resolved graph) and independently reviewable. Step 5 requires a real,
-review-only `.kicad_sch`; pinned KiCad ERC runs on it and PCBForge compares its
-canonical XML netlist to the compiled BOM/PCB. DRC runs on the product
-`.kicad_pcb`. The review schematic never updates that PCB.
+resolved graph) and independently reviewable. Step 5 binds a deliberately
+authored explanatory SVG to an exact pre-source proposal model, then compares
+that model directly with the compiled BOM/PCB. DRC runs later on the product
+`.kicad_pcb`; no review derivative owns or updates that PCB.
 
 **BOM by construction:** BOM and connectivity derive from the same resolved
 component graph — they cannot diverge from each other. (Wrong part choice
@@ -454,8 +462,8 @@ stale reopens the mechanical Step 6 gate. Failure never overwrites the previous
 passing report.
 
 This deterministic gate does not pretend to prove live JLC stock or price,
-placement/routing quality, KiCad PCB DRC, or fab output. Native schematic
-comprehension, ERC, and compiled parity are already mandatory in Step 5.
+placement/routing quality, KiCad PCB DRC, or fab output. Circuit comprehension
+and exact compiled parity are already mandatory in Step 5.
 
 `pcbforge check-policy` cross-checks the exact Step 6 LCSC set against tracked
 offline sourcing evidence without making normal status network-dependent.
@@ -484,8 +492,8 @@ overridden. `.kicad_pcb` is read-only and confirmed byte-identical.
 The generated brief contains no coordinates and creates no geometric keepouts.
 It is guidance for the human placer, not spatial source. Step 7 is a combined
 machine/human gate: the checker must pass, then the user approves `brief.md`
-beside the current Step 5 schematic. Missing, stale, or inadequate schematic
-evidence blocks the phase before layout.
+beside the current Step 5 circuit overview. Missing, stale, or inadequate
+circuit-review evidence blocks the phase before layout.
 
 Saved Step 6 and Step 7 evidence fingerprints circuit-owned PCB semantics
 (references, selected footprints, pads, and connectivity), not placement,
@@ -598,14 +606,14 @@ library + publish + renders, assertion/check suite, layout copilot (brief +
 audits + render review), sourcing verify, fab output gen.
 
 **IS NOT (v1):** placement/routing by tool or AI, simulation,
-ordering/payments, making the KiCad review derivative authoritative, or
+ordering/payments, making explanatory review evidence authoritative, or
 silently treating legacy adoption as pre-source approval.
 
 ## Known costs (accepted 2026-07-24)
 
 | Cost | Mitigation |
 |---|---|
-| Review schematic duplicates presentation of code-owned connectivity | keep it review-only; hierarchy makes it tractable; pinned ERC plus exact compiled identity/pin/net parity blocks drift |
+| Review evidence duplicates the proposed code-owned connectivity | freeze it as pre-source approval evidence; bind SVG semantics to the exact model, then compare that model directly with compiled output |
 | Compiler dependency (atopile young) | SKiDL fallback, then option D; ejection: netlist + `.kicad_pcb` are plain KiCad — boards outlive tool |
 | Board-1 cost (DSL + ioc2code + rules port) | crossover ~board 3–5 — hypothesis; pilot + early boards test it |
 | Pin swap during routing re-coded by hand | KiCad is forward-annotation-dominant anyway |
@@ -631,11 +639,11 @@ order:
 1. MCU slice: AI-authored `.ioc` + `check-ioc` is implemented; remaining gate
    is ioc2code feasibility (parse checked `.ioc` → MCU module).
 2. Typed-interface + assertion expressiveness covers the JLC rule set;
-   compiler-native electrical checks plus native KiCad ERC are adequate.
-3. **In-loop visual schematic review** (schema-12 implementation ready for
-   Blinky pilot): complete native review-only KiCad proposal before source,
-   hierarchical SVG export, passive-purpose annotations, clean ERC, and exact
-   compiled parity before final IMPLEMENT approval.
+   compiler-native electrical checks plus exact circuit-model parity are adequate.
+3. **In-loop visual circuit review** (schema-13 implementation ready for
+   pilot): complete authored explanatory SVG and exact model before source,
+   passive-purpose annotations, semantic coverage, and exact compiled parity
+   before final IMPLEMENT approval.
 4. **Sync contract holds** (see Handoff): no-op idempotence, intended deltas
    only, atomic failure, component/pad/net identity stability.
 5. Registry/versioning health, breaking-change cadence tolerable.
@@ -643,7 +651,7 @@ order:
 Gates while building board 1:
 
 - **Step-5 comprehension gate (criterion 3):** the user must be able to explain
-  every major block and passive purpose from the native schematic packet before
+  every major block and passive purpose from the explanatory SVG before
   implementation. Inadequate presentation blocks IMPLEMENT.
 - **Sync drill (criterion 4):** immediately after the first placement
   session, scripted on the live board with the pilots' fingerprint tooling:
