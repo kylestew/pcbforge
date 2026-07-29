@@ -47,6 +47,12 @@ class IocCheckResult:
     pins: tuple[PinAssignment, ...]
 
 
+def _unescape_property_key(key: str) -> str:
+    """Normalize the escaped spaces CubeMX writes in Java-properties keys."""
+
+    return key.replace("\\ ", " ")
+
+
 def _parse_ioc(path: Path) -> dict[str, str]:
     try:
         text = path.read_text(encoding="utf-8")
@@ -63,11 +69,12 @@ def _parse_ioc(path: Path) -> dict[str, str]:
             raise IocValidationError(
                 f"{path}:{line_number}: expected a key=value assignment"
             )
-        key, value = line.split("=", 1)
-        if not key or key != key.strip():
+        raw_key, value = line.split("=", 1)
+        if not raw_key or raw_key != raw_key.strip():
             raise IocValidationError(
-                f"{path}:{line_number}: invalid key {key!r}"
+                f"{path}:{line_number}: invalid key {raw_key!r}"
             )
+        key = _unescape_property_key(raw_key)
         if key in values:
             raise IocValidationError(
                 f"{path}:{line_number}: duplicate key {key!r}"

@@ -184,6 +184,42 @@ class IocCheckTests(unittest.TestCase):
             self.assertEqual(ioc_path.read_bytes(), before)
             self.assertEqual(len(runner.calls), 2)
 
+    def test_accepts_cubemx_escaped_space_in_pin_property_key(self) -> None:
+        contents = (
+            valid_ioc()
+            .replace(
+                "Mcu.Pin9=VP_SYS_VS_Systick",
+                "\n".join(
+                    (
+                        "Mcu.Pin9=PC14-OSC32_IN (PC14)",
+                        "Mcu.Pin10=VP_SYS_VS_Systick",
+                    )
+                ),
+            )
+            .replace("Mcu.PinsNb=10", "Mcu.PinsNb=11")
+            .replace(
+                "VP_SYS_VS_Systick.Mode=SysTick",
+                "\n".join(
+                    (
+                        r"PC14-OSC32_IN\ (PC14).GPIO_Label=LSE_IN",
+                        r"PC14-OSC32_IN\ (PC14).Mode=LSE-External-Oscillator",
+                        r"PC14-OSC32_IN\ (PC14).Signal=RCC_OSC32_IN",
+                        "VP_SYS_VS_Systick.Mode=SysTick",
+                    )
+                ),
+            )
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self._project(Path(temporary), contents=contents)
+            result = check_ioc(
+                project,
+                tool_root=TOOL_ROOT,
+                runner=FakeCubeMxRunner(),
+            )
+
+        lse = next(pin for pin in result.pins if pin.label == "LSE_IN")
+        self.assertEqual(lse.signal, "RCC_OSC32_IN")
+
     def test_static_validation_aggregates_contract_failures(self) -> None:
         broken = (
             valid_ioc()
