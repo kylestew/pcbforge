@@ -421,7 +421,7 @@ guidance:
         self.assertTrue(migration.wrote)
         self.assertFalse(second.wrote)
         self.assertEqual(pins["schema"], 14)
-        self.assertEqual(pins["guidance"]["agents_schema"], 14)
+        self.assertEqual(pins["guidance"]["agents_schema"], 15)
         self.assertEqual(pins["guidance"]["circuit_review_schema"], 2)
         self.assertEqual(document.events, ())
 

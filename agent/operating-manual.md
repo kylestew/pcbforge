@@ -79,8 +79,8 @@ may be selected autonomously, and those assumptions must be stated.
 5. CIRCUIT     authored SVG + exact model + USER proposal approval before
                source; then exact parts, compiled parity, frozen build,
                deterministic acceptance, and one final approval
-6. brief       agent/brief.md; exact placement contract + generated brief beside
-               the already-approved CIRCUIT overview
+6. brief       agent/brief.md; exact placement contract + generated
+               docs/placement-brief.md beside the approved CIRCUIT overview
 7. LAYOUT      USER. You spot on request only.
 8. ROUTE       USER. Sanity checks on request.
 9. verify      DRC (scripts/kicad-cli) + audits + render review

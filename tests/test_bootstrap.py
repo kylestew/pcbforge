@@ -82,6 +82,7 @@ class BootstrapArgumentTests(unittest.TestCase):
                 "yes",
             ): cwd / "board",
             ("migrate-circuit-phase", "board"): cwd / "board",
+            ("migrate-placement-brief", "board"): cwd / "board",
         }
         for argv, expected in cases.items():
             with self.subTest(argv=argv):

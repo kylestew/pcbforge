@@ -21,6 +21,7 @@ MIGRATION_COMMANDS = {
     "migrate-schematic-review",
     "migrate-circuit-review",
     "migrate-circuit-phase",
+    "migrate-placement-brief",
 }
 OPTIONS_WITH_VALUES = {"--stage", "--note", "--fingerprint"}
 SHA1_RE = re.compile(r"^[0-9a-f]{40}$")

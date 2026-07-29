@@ -82,6 +82,13 @@ exception approval reopens the profile-mapped completed phase.
 
 ## Decision record
 
+- **2026-07-29 — generated placement briefs live under `docs/`.**
+  `placement.yaml` remains the root-level machine and human contract;
+  `pcbforge brief` writes its generated review derivative to
+  `docs/placement-brief.md`. Brief guidance schema 5 and agent guidance schema
+  15 make the path explicit. `migrate-placement-brief` atomically upgrades
+  schema-14 projects, while older workflow migrations perform the same
+  byte-preserving relocation as part of their existing upgrade.
 - **2026-07-28 — schema-14 merges IMPLEMENT and build + test into CIRCUIT.**
   Physical implementation and its deterministic acceptance evidence are one
   lifecycle: CIRCUIT starts with an authored proposal and explicit approval,
@@ -254,7 +261,8 @@ for whichever compiler wins:
               exact build-test.yaml, assertions, BOM/connectivity, and no-op
               spatial preservation; U gives one final approval.
 6. brief      AI: exact placement.yaml from reviewed intent; T validates
-              complete footprint/ref/pad/net coverage, generates brief.md,
+              complete footprint/ref/pad/net coverage, generates
+              docs/placement-brief.md,
               and seeds PCBForge-owned classes in .kicad_pro without touching
               .kicad_pcb; U approves brief beside current CIRCUIT view.
 7. LAYOUT     U — THE ART. AI spotter on request (see Layout copilot).
@@ -353,7 +361,8 @@ Tool's job in the art phase: prime, spot, audit. Never move copper.
 **Pre-layout — prime the canvas:**
 - The agent records exact board-specific constraints in `placement.yaml`
   (`max_mm`, keepouts, differential-pair settings, thermal and access notes).
-- `pcbforge brief` emits **placement brief** (`brief.md`): per-block
+- `pcbforge brief` emits **placement brief** (`docs/placement-brief.md`):
+  per-block
   constraints, net priorities, suggested regions.
 - PCBForge-owned net classes are pre-seeded into `.kicad_pro`; the PCB and
   design-rules file remain untouched.
@@ -489,7 +498,8 @@ current net; wildcards are not inferred. Manufacturing dimensions must meet
 the pinned conservative JLC profile, including annular width and optional
 differential-pair width/gaps.
 
-`pcbforge brief` requires current CIRCUIT evidence, then stages `brief.md` and a
+`pcbforge brief` requires current CIRCUIT evidence, then stages
+`docs/placement-brief.md` and a
 merged KiCad project before committing either. It owns only net classes named
 `pcbforge:<name>` and their exact patterns in `.kicad_pro`; it preserves the
 Default class, user classes/assignments, unknown JSON fields, `.kicad_dru`, and
@@ -499,7 +509,8 @@ overridden. `.kicad_pcb` is read-only and confirmed byte-identical.
 
 The generated brief contains no coordinates and creates no geometric keepouts.
 It is guidance for the human placer, not spatial source. Step 6 is a combined
-machine/human gate: the checker must pass, then the user approves `brief.md`
+machine/human gate: the checker must pass, then the user approves
+`docs/placement-brief.md`
 beside the current CIRCUIT overview. Missing, stale, or inadequate
 circuit-review evidence blocks the phase before layout.
 
@@ -507,7 +518,7 @@ Saved CIRCUIT and BRIEF evidence fingerprints circuit-owned PCB semantics
 (references, selected footprints, pads, and connectivity), not placement,
 side, tracks, vias, zones, outline, graphics, or artwork. Circuit/topology
 changes stale both phases. Spatial edits do not. BRIEF additionally
-fingerprints `placement.yaml`, generated `brief.md`, and PCBForge-owned
+fingerprints `placement.yaml`, generated `docs/placement-brief.md`, and PCBForge-owned
 net-class semantics; unrelated user net classes remain outside its ownership
 and staleness boundary.
 

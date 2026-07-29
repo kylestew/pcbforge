@@ -10,13 +10,13 @@ import yaml
 PIN_SCHEMA = 14
 STATUS_SCHEMA = 3
 EXPECTED_GUIDANCE = {
-    "agents_schema": 14,
+    "agents_schema": 15,
     "architect_schema": 4,
     "architecture_diagram_schema": 1,
     "mcu_schema": 3,
     "circuit_schema": 1,
     "build_test_schema": 1,
-    "brief_schema": 4,
+    "brief_schema": 5,
     "approval_schema": 5,
     "circuit_review_schema": 2,
     "policy_schema": 1,

@@ -30,7 +30,8 @@ PLACEMENT_SCHEMA = 1
 BRIEF_SCHEMA = 1
 PROJECT_PIN_SCHEMA = 14
 PLACEMENT_FILENAME = "placement.yaml"
-BRIEF_FILENAME = "brief.md"
+BRIEF_FILENAME = "docs/placement-brief.md"
+LEGACY_BRIEF_FILENAME = "brief.md"
 OWNED_CLASS_PREFIX = "pcbforge:"
 CONTROLLED_CLASS_FIELDS = (
     "name",
@@ -303,7 +304,7 @@ def _read_project_pins(project_dir: Path) -> Mapping[str, Any]:
         errors.append("guidance: expected a mapping")
     else:
         schema = data.get("schema")
-        expected_brief = {11: 1, 12: 2, 13: 3, 14: 4}.get(schema)
+        expected_brief = {11: 1, 12: 2, 13: 3, 14: 5}.get(schema)
         expected_approval = {11: 2, 12: 3, 13: 4, 14: 5}.get(schema)
         if guidance.get("brief_schema") != expected_brief:
             errors.append(
@@ -1057,9 +1058,10 @@ def brief_status_fingerprint(
         else Path(__file__).resolve().parent.parent
     )
     digest = hashlib.sha256()
-    for name in (PLACEMENT_FILENAME, BRIEF_FILENAME):
-        path = project_dir / name
-        digest.update(name.encode())
+    paths = (project_dir / PLACEMENT_FILENAME, brief_document_path(project_dir))
+    for path in paths:
+        relative = path.relative_to(project_dir).as_posix()
+        digest.update(relative.encode())
         digest.update(b"\0")
         if path.is_file():
             digest.update(hashlib.sha256(path.read_bytes()).digest())
@@ -1116,11 +1118,28 @@ def brief_inputs(project_dir: Path) -> tuple[Path, ...]:
     project_dir = project_dir.expanduser().resolve()
     paths = [
         project_dir / PLACEMENT_FILENAME,
-        project_dir / BRIEF_FILENAME,
+        brief_document_path(project_dir),
         *sorted(project_dir.glob("*.kicad_pcb")),
         *sorted(project_dir.glob("*.kicad_pro")),
     ]
     return tuple(path for path in paths if path.is_file())
+
+
+def brief_document_path(project_dir: Path) -> Path:
+    """Return the generated brief path selected by the pinned guidance schema."""
+    project_dir = project_dir.expanduser().resolve()
+    try:
+        pins = _load_yaml(project_dir / ".pcbforge", ".pcbforge")
+    except PlacementInputError:
+        return project_dir / BRIEF_FILENAME
+    guidance = pins.get("guidance")
+    if (
+        isinstance(guidance, dict)
+        and type(guidance.get("brief_schema")) is int
+        and guidance["brief_schema"] < 5
+    ):
+        return project_dir / LEGACY_BRIEF_FILENAME
+    return project_dir / BRIEF_FILENAME
 
 
 def _distance(constraint: PlacementConstraint) -> str:
@@ -1256,7 +1275,7 @@ Before Step 6 completes, review this brief beside the current approved CIRCUIT
 overview. Run `pcbforge status review brief`, present its exact fingerprint,
 and wait for explicit user approval. Record that approval with
 `pcbforge status approve brief --fingerprint <sha256> --note "Approved
-brief.md beside the current CIRCUIT overview"`. If the circuit evidence is
+docs/placement-brief.md beside the current CIRCUIT overview"`. If the circuit evidence is
 missing, stale, or inadequate for placement decisions, block Step 6.
 """
 
@@ -1370,7 +1389,7 @@ def generate_brief(
     *,
     tool_root: Path | None = None,
 ) -> BriefResult:
-    """Generate brief.md and merge only PCBForge-owned KiCad net classes."""
+    """Generate docs/placement-brief.md and merge PCBForge-owned net classes."""
     project_dir = project_dir.expanduser().resolve()
     _require_circuit_acceptance(project_dir)
     spec, board, contract, project_path, project = _project_context(
@@ -1386,7 +1405,8 @@ def generate_brief(
     fingerprint = _contract_fingerprint(project_dir, board, merged)
     brief_text = _render_brief(spec.name, contract, fingerprint)
     project_text = _json_text(merged)
-    brief_path = project_dir / BRIEF_FILENAME
+    brief_path = brief_document_path(project_dir)
+    brief_path.parent.mkdir(parents=True, exist_ok=True)
     wrote_brief, wrote_project = _commit_outputs(
         (
             (project_path, project_text.encode()),
@@ -1408,7 +1428,7 @@ def generate_brief(
         len(contract.constraints),
         len(contract.net_classes),
         len(board.references),
-        Path(BRIEF_FILENAME),
+        brief_path.relative_to(project_dir),
         project_path.relative_to(project_dir),
         wrote_brief,
         wrote_project,
@@ -1435,16 +1455,18 @@ def check_brief(
         )
     fingerprint = _contract_fingerprint(project_dir, board, expected_project)
     expected_brief = _render_brief(spec.name, contract, fingerprint)
-    brief_path = project_dir / BRIEF_FILENAME
+    brief_path = brief_document_path(project_dir)
     try:
         actual_brief = brief_path.read_text(encoding="utf-8")
     except FileNotFoundError as exc:
-        raise PlacementError(f"missing {BRIEF_FILENAME}; run `pcbforge brief`") from exc
+        relative = brief_path.relative_to(project_dir).as_posix()
+        raise PlacementError(f"missing {relative}; run `pcbforge brief`") from exc
     except (OSError, UnicodeError) as exc:
         raise PlacementError(f"cannot read {brief_path}: {exc}") from exc
     if actual_brief != expected_brief:
+        relative = brief_path.relative_to(project_dir).as_posix()
         raise PlacementError(
-            f"{BRIEF_FILENAME} is missing, modified, or stale; run `pcbforge brief`"
+            f"{relative} is missing, modified, or stale; run `pcbforge brief`"
         )
     return BriefResult(
         project_dir,
@@ -1453,7 +1475,7 @@ def check_brief(
         len(contract.constraints),
         len(contract.net_classes),
         len(board.references),
-        Path(BRIEF_FILENAME),
+        brief_path.relative_to(project_dir),
         project_path.relative_to(project_dir),
         False,
         False,

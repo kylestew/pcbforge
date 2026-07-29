@@ -58,6 +58,7 @@ from pcbforge.status import (
     migrate_approvals,
     migrate_circuit_phase,
     migrate_circuit_review,
+    migrate_placement_brief,
     migrate_schematic_review,
     policy_approval_context,
     read_status_document,
@@ -207,8 +208,8 @@ def _parser() -> argparse.ArgumentParser:
         help="generate the Step 6 placement brief and KiCad net classes",
         description=(
             "Validate placement.yaml against the current CIRCUIT PCB topology, "
-            "generate brief.md, and merge only PCBForge-owned net classes into "
-            "the KiCad project. Never changes the PCB."
+            "generate docs/placement-brief.md, and merge only PCBForge-owned net "
+            "classes into the KiCad project. Never changes the PCB."
         ),
     )
     brief_parser.add_argument(
@@ -223,8 +224,9 @@ def _parser() -> argparse.ArgumentParser:
         "check-brief",
         help="validate the current Step 6 placement outputs without writing",
         description=(
-            "Read-only validation of placement.yaml, brief.md, the current "
-            "non-spatial PCB topology, and PCBForge-owned KiCad net classes."
+            "Read-only validation of placement.yaml, docs/placement-brief.md, "
+            "the current non-spatial PCB topology, and PCBForge-owned KiCad "
+            "net classes."
         ),
     )
     check_brief_parser.add_argument(
@@ -369,6 +371,17 @@ def _parser() -> argparse.ArgumentParser:
         default=".",
         metavar="PROJECT_DIR",
         help="initialized schema-13 project (default: current directory)",
+    )
+    migrate_brief_parser = subcommands.add_parser(
+        "migrate-placement-brief",
+        help="relocate the schema-14 placement brief into docs",
+    )
+    migrate_brief_parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+        help="initialized schema-14 project (default: current directory)",
     )
 
     status_parser = subcommands.add_parser(
@@ -598,6 +611,7 @@ def main(argv: list[str] | None = None) -> int:
         "migrate-schematic-review",
         "migrate-circuit-review",
         "migrate-circuit-phase",
+        "migrate-placement-brief",
     }:
         try:
             validate_project_compatibility(Path(args.project_dir))
@@ -854,6 +868,21 @@ def main(argv: list[str] | None = None) -> int:
                 "pcbforge: explicit reapproval required for "
                 + ", ".join(migration.reopened_phases)
             )
+        return 0
+
+    if args.command == "migrate-placement-brief":
+        try:
+            migration = migrate_placement_brief(Path(args.project_dir))
+        except StatusInputError as exc:
+            print(f"pcbforge migrate-placement-brief: {exc}", file=sys.stderr)
+            return 2
+        except StatusError as exc:
+            print(f"pcbforge migrate-placement-brief: {exc}", file=sys.stderr)
+            return 1
+        state = "migrated" if migration.wrote else "already migrated"
+        print(
+            f"pcbforge: {state} placement brief in {migration.project_dir}"
+        )
         return 0
 
     if args.command == "check-build-test":

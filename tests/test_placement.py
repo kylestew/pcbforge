@@ -399,6 +399,39 @@ fingerprint: {fingerprint_inputs(project)}
 
 
 class GeneratorTests(PlacementFixture):
+    def test_current_guidance_generates_placement_brief_under_docs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            pins_path = project / ".pcbforge"
+            pins = yaml.safe_load(pins_path.read_text(encoding="utf-8"))
+            pins["schema"] = 14
+            pins["guidance"]["brief_schema"] = 5
+            pins["guidance"]["approval_schema"] = 5
+            pins_path.write_text(
+                yaml.safe_dump(pins, sort_keys=False),
+                encoding="utf-8",
+            )
+            fingerprint = fingerprint_inputs(project)
+            (project / "docs" / "build-test.md").write_text(
+                f"""---
+pcbforge_build_test_report_schema: 1
+result: pass
+build: default
+fingerprint: {fingerprint}
+---
+# Pass
+""",
+                encoding="utf-8",
+            )
+
+            result = generate_brief(project, tool_root=TOOL_ROOT)
+            brief_exists = (project / result.brief_path).is_file()
+            legacy_exists = (project / "brief.md").exists()
+
+        self.assertEqual(result.brief_path, Path("docs/placement-brief.md"))
+        self.assertTrue(brief_exists)
+        self.assertFalse(legacy_exists)
+
     def test_generation_is_safe_preserving_idempotent_and_checkable(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))
@@ -408,15 +441,16 @@ class GeneratorTests(PlacementFixture):
             project_after = json.loads(
                 (project / "garden-logger.kicad_pro").read_text(encoding="utf-8")
             )
-            brief_text = (project / BRIEF_FILENAME).read_text(encoding="utf-8")
-            brief_after = (project / BRIEF_FILENAME).read_bytes()
+            brief_path = project / first.brief_path
+            brief_text = brief_path.read_text(encoding="utf-8")
+            brief_after = brief_path.read_bytes()
             pro_after = (project / "garden-logger.kicad_pro").read_bytes()
             second = generate_brief(project, tool_root=TOOL_ROOT)
             checked = check_brief(project, tool_root=TOOL_ROOT)
             board_unchanged = (
                 board_before == (project / "garden-logger.kicad_pcb").read_bytes()
             )
-            brief_stable = brief_after == (project / BRIEF_FILENAME).read_bytes()
+            brief_stable = brief_after == brief_path.read_bytes()
             project_stable = (
                 pro_after == (project / "garden-logger.kicad_pro").read_bytes()
             )

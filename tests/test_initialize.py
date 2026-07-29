@@ -334,9 +334,9 @@ class InitializeTests(unittest.TestCase):
             self.assertIn("jlc-2layer-conservative-v1", pins)
             pin_data = yaml.safe_load(pins)
             self.assertEqual(pin_data["schema"], 14)
-            self.assertEqual(pin_data["guidance"]["brief_schema"], 4)
+            self.assertEqual(pin_data["guidance"]["brief_schema"], 5)
             self.assertEqual(pin_data["guidance"]["approval_schema"], 5)
-            self.assertEqual(pin_data["guidance"]["agents_schema"], 14)
+            self.assertEqual(pin_data["guidance"]["agents_schema"], 15)
             self.assertEqual(pin_data["guidance"]["policy_schema"], 1)
             self.assertEqual(pin_data["guidance"]["architect_schema"], 4)
             self.assertEqual(
@@ -366,7 +366,7 @@ class InitializeTests(unittest.TestCase):
             )
 
             agents = (project / "AGENTS.md").read_text(encoding="utf-8")
-            self.assertIn("pcbforge-agents-schema: 14", agents)
+            self.assertIn("pcbforge-agents-schema: 15", agents)
             self.assertIn("agent/brief.md", agents)
             self.assertIn("Never place, route, move", agents)
             self.assertIn("ready for\nARCHITECT", agents)
@@ -400,6 +400,8 @@ class InitializeTests(unittest.TestCase):
             )
             self.assertIn("build-test.yaml", agents)
             self.assertIn("docs/build-test.md", agents)
+            self.assertIn("docs/placement-brief.md", agents)
+            self.assertNotIn("generates `brief.md`", agents)
 
         build_calls = [call for call in runner.calls if "build" in call[0]]
         self.assertEqual(len(build_calls), 1)

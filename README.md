@@ -162,10 +162,10 @@ For Step 6, follow `agent/brief.md` and write the authoritative
 `placement.yaml`: every PCB reference appears in exactly one ordered group;
 typed constraints use current `REF` / `REF.PAD` endpoints; routing classes use
 exact current nets and safe JLC dimensions. `pcbforge brief` generates
-`brief.md` and merges only `pcbforge:` classes into the KiCad project. It
-preserves user classes and verifies the PCB is byte-identical.
+`docs/placement-brief.md` and merges only `pcbforge:` classes into the KiCad
+project. It preserves user classes and verifies the PCB is byte-identical.
 `pcbforge check-brief` is read-only. Step 6 completes only after the user
-approves `brief.md` beside the approved current CIRCUIT overview;
+approves `docs/placement-brief.md` beside the approved current CIRCUIT overview;
 record that gate with
 `pcbforge status approve brief --fingerprint <sha256> --note "..."`.
 
@@ -247,6 +247,18 @@ pcbforge migrate-circuit-phase /path/to/project
 ```
 
 The migration renames active review artifacts to `review/circuit` and
-`docs/circuit-*`. CIRCUIT remains complete only when both old phase approvals
-are current; otherwise it reopens at the combined gate. Running the command
-again is a no-op.
+`docs/circuit-*`, and relocates an existing generated `brief.md` to
+`docs/placement-brief.md`. CIRCUIT remains complete only when both old phase
+approvals are current; otherwise it reopens at the combined gate. Running the
+command again is a no-op.
+
+For an existing schema-14 project, relocate the generated placement brief and
+refresh its pinned guidance:
+
+```bash
+pcbforge migrate-placement-brief /path/to/project
+```
+
+The migration is atomic and idempotent. If a current root `brief.md` exists,
+its bytes move unchanged to `docs/placement-brief.md`; missing briefs are not
+invented.

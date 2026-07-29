@@ -53,9 +53,12 @@ from pcbforge.policy import (
     read_policy_contract,
 )
 from pcbforge.placement import (
+    BRIEF_FILENAME,
+    LEGACY_BRIEF_FILENAME,
     PLACEMENT_FILENAME,
     PlacementError,
     PlacementInputError,
+    brief_document_path,
     brief_inputs,
     brief_status_fingerprint,
     check_brief,
@@ -2023,7 +2026,8 @@ def _actions_for(result: PhaseResult) -> tuple[str, ...]:
         ),
         "brief": (
             "Define every footprint, constraint, and exact net class in `placement.yaml`.",
-            "Run `pcbforge brief`, then present `brief.md` beside the approved circuit overview.",
+            "Run `pcbforge brief`, then present `docs/placement-brief.md` "
+            "beside the approved circuit overview.",
             "Request approval of the BRIEF packet.",
         ),
         "layout": (
@@ -2916,12 +2920,15 @@ def approve_phase(
         )
     if phase == "brief" and not _schematic_approval_enabled(project_dir):
         note_lower = note.lower()
-        if "brief.md" not in note_lower or not re.search(
+        brief_name = brief_document_path(project_dir).relative_to(
+            project_dir
+        ).as_posix()
+        if brief_name.lower() not in note_lower or not re.search(
             r"schematic\s+review\s*:\s*adequate",
             note_lower,
         ):
             raise StatusInputError(
-                "cannot approve brief: --note must reference brief.md and "
+                f"cannot approve brief: --note must reference {brief_name} and "
                 "contain `schematic review: adequate`"
             )
     event = StatusEvent(
@@ -3325,6 +3332,18 @@ def write_status(
     return StatusResult(report=report, wrote=True)
 
 
+def _placement_brief_migration_move(
+    project_dir: Path,
+) -> tuple[Path, Path] | None:
+    source = project_dir / LEGACY_BRIEF_FILENAME
+    target = project_dir / BRIEF_FILENAME
+    if source.exists() and target.exists():
+        raise StatusInputError(
+            f"refusing to overwrite migration target {BRIEF_FILENAME}"
+        )
+    return (source, target) if source.exists() else None
+
+
 def migrate_approvals(
     project_dir: Path,
     *,
@@ -3440,13 +3459,20 @@ def migrate_approvals(
         pins_path: yaml.safe_dump(pins, sort_keys=False),
         agents_path: _render_agents(spec, tool_root),
     }
+    brief_move = _placement_brief_migration_move(project_dir)
     status_path = _status_path(project_dir)
     originals = {
         path: path.read_bytes() if path.exists() else None
         for path in (*outputs, status_path)
     }
     installed: list[Path] = []
+    moved = False
     try:
+        if brief_move is not None:
+            source, target = brief_move
+            target.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(source, target)
+            moved = True
         for path, contents in outputs.items():
             _atomic_write(path, contents)
             installed.append(path)
@@ -3472,6 +3498,13 @@ def migrate_approvals(
                     with os.fdopen(descriptor, "wb") as output:
                         output.write(original)
                     os.replace(temporary_name, path)
+            except OSError:
+                pass
+        if moved and brief_move is not None:
+            source, target = brief_move
+            try:
+                if target.exists():
+                    os.replace(target, source)
             except OSError:
                 pass
         raise StatusError(f"could not migrate approvals atomically: {exc}") from exc
@@ -3662,6 +3695,7 @@ def migrate_schematic_review(
         pins_path: yaml.safe_dump(pins, sort_keys=False),
         agents_path: _render_agents(spec, tool_root),
     }
+    brief_move = _placement_brief_migration_move(project_dir)
     status_path = _status_path(project_dir)
     baseline_path = project_dir / BASELINE_PATH
     originals = {
@@ -3669,7 +3703,13 @@ def migrate_schematic_review(
         for path in (*outputs, status_path, baseline_path)
     }
     installed: list[Path] = []
+    moved = False
     try:
+        if brief_move is not None:
+            source, target = brief_move
+            target.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(source, target)
+            moved = True
         for path, contents in outputs.items():
             _atomic_write(path, contents)
             installed.append(path)
@@ -3695,6 +3735,13 @@ def migrate_schematic_review(
                     path.unlink(missing_ok=True)
                 else:
                     path.write_bytes(original)
+            except OSError:
+                pass
+        if moved and brief_move is not None:
+            source, target = brief_move
+            try:
+                if target.exists():
+                    os.replace(target, source)
             except OSError:
                 pass
         raise StatusError(
@@ -3859,6 +3906,7 @@ def migrate_circuit_review(
         pins_path: yaml.safe_dump(pins, sort_keys=False),
         agents_path: _render_agents(spec, tool_root),
     }
+    brief_move = _placement_brief_migration_move(project_dir)
     status_path = _status_path(project_dir)
     baseline_path = project_dir / BASELINE_PATH
     originals = {
@@ -3866,7 +3914,13 @@ def migrate_circuit_review(
         for path in (*outputs, status_path, baseline_path)
     }
     installed: list[Path] = []
+    moved = False
     try:
+        if brief_move is not None:
+            source, target = brief_move
+            target.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(source, target)
+            moved = True
         for path, contents in outputs.items():
             _atomic_write(path, contents)
             installed.append(path)
@@ -3888,6 +3942,13 @@ def migrate_circuit_review(
                     path.unlink(missing_ok=True)
                 else:
                     path.write_bytes(original)
+            except OSError:
+                pass
+        if moved and brief_move is not None:
+            source, target = brief_move
+            try:
+                if target.exists():
+                    os.replace(target, source)
             except OSError:
                 pass
         raise StatusError(
@@ -4093,6 +4154,10 @@ def migrate_circuit_phase(
             project_dir / "docs" / "implementation-review.md",
             project_dir / "docs" / "circuit-review.md",
         ),
+        (
+            project_dir / LEGACY_BRIEF_FILENAME,
+            project_dir / BRIEF_FILENAME,
+        ),
     )
     active_moves = tuple((source, target) for source, target in moves if source.exists())
     conflicts = [target for _, target in active_moves if target.exists()]
@@ -4254,6 +4319,17 @@ def migrate_circuit_phase(
             checks["policy"] = replace(
                 policy_record,
                 fingerprint=policy_status_fingerprint(project_dir),
+            )
+        brief_record = checks.get("brief")
+        if (
+            brief_record is not None
+            and brief_record.outcome == "pass"
+            and (project_dir / PLACEMENT_FILENAME).is_file()
+            and brief_document_path(project_dir).is_file()
+        ):
+            checks["brief"] = replace(
+                brief_record,
+                fingerprint=brief_status_fingerprint(project_dir),
             )
         migrated_document = replace(migrated_document, checks=checks)
 
@@ -4427,6 +4503,334 @@ def migrate_circuit_phase(
                 pass
         raise StatusError(f"could not migrate CIRCUIT phase atomically: {exc}") from exc
     return ApprovalMigrationResult(project_dir, True, tuple(reopened))
+
+
+def migrate_placement_brief(
+    project_dir: Path,
+    *,
+    tool_root: Path | None = None,
+    now: str | None = None,
+) -> ApprovalMigrationResult:
+    """Atomically move the generated placement brief into docs."""
+    project_dir = _project_dir(project_dir)
+    tool_root = (
+        tool_root.resolve()
+        if tool_root is not None
+        else Path(__file__).resolve().parent.parent
+    )
+    pins_path = project_dir / ".pcbforge"
+    pins = dict(_project_pins(project_dir))
+    if pins.get("schema") != CIRCUIT_PHASE_PIN_SCHEMA:
+        raise StatusInputError(
+            "migrate-placement-brief requires generated .pcbforge schema 14; "
+            f"got {pins.get('schema')!r}"
+        )
+    guidance = pins.get("guidance")
+    if not isinstance(guidance, dict):
+        raise StatusInputError(".pcbforge guidance: expected a mapping")
+    agents_path = project_dir / "AGENTS.md"
+    source = project_dir / LEGACY_BRIEF_FILENAME
+    target = project_dir / BRIEF_FILENAME
+
+    from pcbforge.initialize import (
+        AGENTS_SCHEMA,
+        BRIEF_GUIDE_SCHEMA,
+        _render_agents,
+    )
+
+    if (
+        guidance.get("agents_schema") == AGENTS_SCHEMA
+        and guidance.get("brief_schema") == BRIEF_GUIDE_SCHEMA
+    ):
+        if source.exists():
+            raise StatusInputError(
+                f"partially migrated project still contains {LEGACY_BRIEF_FILENAME}"
+            )
+        return ApprovalMigrationResult(project_dir, False, ())
+    if (
+        guidance.get("agents_schema") != 14
+        or guidance.get("brief_schema") != 4
+    ):
+        raise StatusInputError(
+            "migrate-placement-brief requires agents schema 14 and brief "
+            f"schema 4; got {guidance.get('agents_schema')!r} and "
+            f"{guidance.get('brief_schema')!r}"
+        )
+    try:
+        agents = agents_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise StatusInputError(f"cannot read {agents_path}: {exc}") from exc
+    if not agents.startswith("<!-- pcbforge-agents-schema: 14 -->"):
+        raise StatusInputError(
+            "AGENTS.md is not the expected generated schema-14 guidance"
+        )
+    if source.exists() and target.exists():
+        raise StatusInputError(
+            f"refusing to overwrite migration target {BRIEF_FILENAME}"
+        )
+    if not source.exists() and target.exists():
+        raise StatusInputError(
+            "placement brief was moved without updating project guidance; "
+            "restore the schema-14 state before migrating"
+        )
+
+    document = read_status_document(project_dir)
+    spec = read_spec(project_dir / "spec.md")
+    latest, _ = _latest_events(document.events)
+    current_events: dict[str, StatusEvent] = {}
+    for phase in PHASES:
+        event_info = latest.get(phase.key)
+        if (
+            event_info is not None
+            and event_info[1].action == "complete"
+            and event_info[1].approval_fingerprint
+            and _approval_is_current(
+                project_dir,
+                phase.key,
+                event_info[1],
+                document,
+            )
+        ):
+            current_events[phase.key] = event_info[1]
+    proposal_event = _current_circuit_proposal(project_dir, document)
+    current_checks = {
+        name: _current_check(project_dir, spec, document, name)[0]
+        for name in (
+            "build-test",
+            "brief",
+            "policy",
+            "circuit-proposal",
+            "circuit-final",
+        )
+    }
+    report_path = project_dir / BUILD_TEST_REPORT
+    old_report = (
+        report_path.read_text(encoding="utf-8")
+        if report_path.is_file()
+        else None
+    )
+    old_pin_hash = hashlib.sha256(pins_path.read_bytes()).hexdigest()
+    try:
+        old_build_fingerprint = fingerprint_inputs(project_dir)
+    except (BuildTestError, OSError):
+        old_build_fingerprint = ""
+
+    guidance = dict(guidance)
+    pins["guidance"] = {
+        **guidance,
+        "agents_schema": AGENTS_SCHEMA,
+        "brief_schema": BRIEF_GUIDE_SCHEMA,
+    }
+    try:
+        revision_result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=tool_root,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        dirty_result = subprocess.run(
+            ["git", "status", "--short"],
+            cwd=tool_root,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        revision = revision_result.stdout.strip()
+        dirty = bool(dirty_result.stdout.strip())
+    except OSError:
+        revision = ""
+        dirty = True
+    pcbforge_pin = pins.get("pcbforge")
+    if isinstance(pcbforge_pin, dict) and revision:
+        pins["pcbforge"] = {
+            **pcbforge_pin,
+            "revision": revision,
+            "dirty": dirty,
+        }
+    try:
+        _, _, profile_hash = load_policy_profile(tool_root)
+    except PolicyError as exc:
+        raise StatusInputError(str(exc)) from exc
+    policy_pin = pins.get("policy")
+    if isinstance(policy_pin, dict):
+        pins["policy"] = {**policy_pin, "profile_sha256": profile_hash}
+
+    outputs = {
+        pins_path: yaml.safe_dump(pins, sort_keys=False),
+        agents_path: _render_agents(spec, tool_root),
+    }
+    status_path = _status_path(project_dir)
+    evidence_paths = (
+        project_dir / "review" / "circuit" / "proposal" / "evidence.json",
+        project_dir / "review" / "circuit" / "final" / "evidence.json",
+    )
+    tracked_paths = (
+        *outputs,
+        status_path,
+        report_path,
+        target,
+        *evidence_paths,
+    )
+    originals = {
+        path: path.read_bytes() if path.exists() else None
+        for path in tracked_paths
+    }
+    moved = False
+    installed: list[Path] = []
+    event_time = now or _now()
+    try:
+        if source.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(source, target)
+            moved = True
+        for path, contents in outputs.items():
+            _atomic_write(path, contents)
+            installed.append(path)
+
+        checks = dict(document.checks)
+        if old_report is not None and old_build_fingerprint:
+            new_build_fingerprint = fingerprint_inputs(project_dir)
+            new_pin_hash = hashlib.sha256(pins_path.read_bytes()).hexdigest()
+            migrated_report = old_report.replace(
+                old_build_fingerprint,
+                new_build_fingerprint,
+            ).replace(old_pin_hash, new_pin_hash)
+            _atomic_write(report_path, migrated_report)
+            installed.append(report_path)
+            record = checks.get("build-test")
+            if (
+                record is not None
+                and record.outcome == "pass"
+                and current_checks["build-test"]
+            ):
+                checks["build-test"] = replace(
+                    record,
+                    fingerprint=new_build_fingerprint,
+                )
+        if current_checks["circuit-proposal"]:
+            proposal = check_circuit_review(project_dir, "proposal", write=True)
+            checks["circuit-proposal"] = CheckRecord(
+                event_time,
+                proposal.fingerprint,
+                "pass",
+                proposal.summary,
+            )
+        if current_checks["circuit-final"]:
+            final = check_circuit_review(project_dir, "final", write=True)
+            checks["circuit-final"] = CheckRecord(
+                event_time,
+                final.fingerprint,
+                "pass",
+                final.summary,
+            )
+        policy_record = checks.get("policy")
+        if (
+            policy_record is not None
+            and policy_record.outcome == "pass"
+            and current_checks["policy"]
+        ):
+            checks["policy"] = replace(
+                policy_record,
+                fingerprint=policy_status_fingerprint(project_dir),
+            )
+        brief_record = checks.get("brief")
+        if (
+            brief_record is not None
+            and brief_record.outcome == "pass"
+            and current_checks["brief"]
+        ):
+            checks["brief"] = replace(
+                brief_record,
+                fingerprint=brief_status_fingerprint(project_dir),
+            )
+        migrated_document = replace(document, checks=checks)
+
+        events = list(migrated_document.events)
+        if proposal_event is not None:
+            proposal_fingerprint = _approval_fingerprint(
+                project_dir,
+                "circuit",
+                "proposal-approved",
+                migrated_document,
+            )
+            if proposal_event.approval_fingerprint != proposal_fingerprint:
+                events.append(
+                    StatusEvent(
+                        event_time,
+                        "circuit",
+                        "proposal-approved",
+                        "Placement-brief migration preserved CIRCUIT proposal approval",
+                        proposal_fingerprint,
+                    )
+                )
+                migrated_document = replace(
+                    migrated_document,
+                    events=tuple(events),
+                )
+        for phase in PHASES:
+            event = current_events.get(phase.key)
+            if event is None:
+                continue
+            fingerprint = _approval_fingerprint(
+                project_dir,
+                phase.key,
+                "complete",
+                migrated_document,
+            )
+            if event.approval_fingerprint != fingerprint:
+                events.append(
+                    StatusEvent(
+                        event_time,
+                        phase.key,
+                        "complete",
+                        (
+                            "Placement-brief migration preserved equivalent "
+                            f"{phase.key} approval"
+                        ),
+                        fingerprint,
+                    )
+                )
+                migrated_document = replace(
+                    migrated_document,
+                    events=tuple(events),
+                )
+
+        write_status(
+            project_dir,
+            tool_root=tool_root,
+            now=event_time,
+            document=migrated_document,
+        )
+        installed.append(status_path)
+    except (
+        OSError,
+        BuildTestError,
+        CircuitReviewError,
+        PolicyError,
+        StatusError,
+    ) as exc:
+        restore_paths = (*outputs, status_path, report_path, *evidence_paths)
+        for path in reversed(restore_paths):
+            original = originals[path]
+            try:
+                if original is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(original)
+            except OSError:
+                pass
+        if moved:
+            try:
+                if target.exists():
+                    os.replace(target, source)
+            except OSError:
+                pass
+        raise StatusError(
+            f"could not migrate placement brief atomically: {exc}"
+        ) from exc
+    return ApprovalMigrationResult(project_dir, True, ())
 
 
 def _validate_transition(
@@ -4771,12 +5175,15 @@ def mark_status(
         and not _schematic_approval_enabled(project_dir)
     ):
         note_lower = note.lower()
-        if "brief.md" not in note_lower or not re.search(
+        brief_name = brief_document_path(project_dir).relative_to(
+            project_dir
+        ).as_posix()
+        if brief_name.lower() not in note_lower or not re.search(
             r"schematic\s+review\s*:\s*adequate",
             note_lower,
         ):
             raise StatusInputError(
-                "cannot mark brief complete: --note must reference brief.md and "
+                f"cannot mark brief complete: --note must reference {brief_name} and "
                 "contain `schematic review: adequate`"
             )
 

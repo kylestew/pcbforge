@@ -1615,12 +1615,29 @@ def migrate_policy(
         agents_path: _render_agents(spec, tool_root),
         pins_path: yaml.safe_dump(pins, sort_keys=False),
     }
+    legacy_brief = project_dir / "brief.md"
+    placement_brief = project_dir / "docs" / "placement-brief.md"
+    if legacy_brief.exists() and placement_brief.exists():
+        raise PolicyInputError(
+            "refusing to overwrite docs/placement-brief.md during migration"
+        )
+    brief_move = (
+        (legacy_brief, placement_brief)
+        if legacy_brief.exists()
+        else None
+    )
     originals = {
         path: path.read_bytes() if path.exists() else None
         for path in outputs
     }
     installed: list[Path] = []
+    moved = False
     try:
+        if brief_move is not None:
+            source, target = brief_move
+            target.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(source, target)
+            moved = True
         for path, contents in outputs.items():
             _atomic_write(path, contents)
             installed.append(path)
@@ -1632,6 +1649,13 @@ def migrate_policy(
                     path.unlink(missing_ok=True)
                 else:
                     _atomic_write(path, original.decode("utf-8"))
+            except OSError:
+                pass
+        if moved and brief_move is not None:
+            source, target = brief_move
+            try:
+                if target.exists():
+                    os.replace(target, source)
             except OSError:
                 pass
         raise PolicyError(f"could not migrate policy atomically: {exc}") from exc

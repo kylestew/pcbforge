@@ -1,4 +1,4 @@
-<!-- pcbforge-brief-schema: 4 -->
+<!-- pcbforge-brief-schema: 5 -->
 # Placement brief playbook
 
 Use this playbook only after CIRCUIT is complete. Step 6 turns the
@@ -9,7 +9,8 @@ KiCad PCB.
 ## Outputs and ownership
 
 - `placement.yaml` is the authoritative, human-reviewable placement contract.
-- `brief.md` is generated from that contract. Do not edit it by hand.
+- `docs/placement-brief.md` is generated from that contract. Do not edit it by
+  hand.
 - `<project>.kicad_pro` receives only classes named `pcbforge:<name>` and exact
   net-to-class patterns. The Default class, user classes, assignments, and
   unknown project settings are preserved.
@@ -152,10 +153,11 @@ The schema rules are:
    ```
 
 4. Confirm the command reports that the PCB is unchanged. Review the generated
-   `brief.md`, placement coverage, class dimensions, exact net assignments, and
-   the `.kicad_pro` diff. PCBForge may replace its own `pcbforge:` entries; it
-   must preserve every non-PCBForge entry.
-5. Present `brief.md` beside the current, approved CIRCUIT explanatory SVG.
+   `docs/placement-brief.md`, placement coverage, class dimensions, exact net
+   assignments, and the `.kicad_pro` diff. PCBForge may replace its own
+   `pcbforge:` entries; it must preserve every non-PCBForge entry.
+5. Present `docs/placement-brief.md` beside the current, approved CIRCUIT
+   explanatory SVG.
    PCBForge has already compared its exact approved proposal model with
    the compiled BOM and PCB topology; BRIEF checks that this evidence is still
    current before layout.
@@ -175,7 +177,7 @@ The schema rules are:
 
    ```sh
    pcbforge status approve brief --fingerprint <sha256> \
-     --note "Approved brief.md beside the current CIRCUIT overview"
+     --note "Approved docs/placement-brief.md beside the current CIRCUIT overview"
    ```
 
 Passing generation alone never records human approval. The approval event is
@@ -188,8 +190,8 @@ user review and approval; rerunning the checker cannot revive the old event.
 
 - Circuit identity, footprint, pad, or connectivity changes stale CIRCUIT
   evidence and BRIEF and require regeneration/review.
-- Changes to `placement.yaml`, generated `brief.md`, or PCBForge-owned net
-  classes stale BRIEF.
+- Changes to `placement.yaml`, generated `docs/placement-brief.md`, or
+  PCBForge-owned net classes stale BRIEF.
 - Footprint positions/sides, tracks, vias, zones, outline, graphics, and other
   user spatial edits do not stale CIRCUIT or BRIEF.
 - User-created KiCad net classes and unrelated project settings do not stale

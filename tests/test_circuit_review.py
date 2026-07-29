@@ -31,6 +31,7 @@ from pcbforge.status import (
     inspect_status,
     migrate_circuit_phase,
     migrate_circuit_review,
+    migrate_placement_brief,
     read_status_document,
     run_status_checks,
     write_status,
@@ -128,14 +129,14 @@ class CircuitReviewFixture(unittest.TestCase):
         (project / "spec.md").write_text(SPEC, encoding="utf-8")
         guidance = (
             (
-                "  agents_schema: 14\n"
+                "  agents_schema: 15\n"
                 "  architect_schema: 4\n"
                 "  architecture_diagram_schema: 1\n"
                 "  mcu_schema: 3\n"
                 "  circuit_schema: 1\n"
                 "  circuit_review_schema: 2\n"
                 "  build_test_schema: 1\n"
-                "  brief_schema: 4\n"
+                "  brief_schema: 5\n"
                 "  approval_schema: 5\n"
                 "  policy_schema: 1\n"
                 "  status_schema: 3\n"
@@ -172,8 +173,9 @@ guidance:
 {guidance}""",
             encoding="utf-8",
         )
+        agents_schema = 15 if schema == 14 else schema
         (project / "AGENTS.md").write_text(
-            f"<!-- pcbforge-agents-schema: {schema} -->\n# generated\n",
+            f"<!-- pcbforge-agents-schema: {agents_schema} -->\n# generated\n",
             encoding="utf-8",
         )
         (project / "ato.yaml").write_text(
@@ -319,6 +321,10 @@ class CircuitReviewTests(CircuitReviewFixture):
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary), schema=13)
             capture_implementation_baseline(project)
+            (project / "brief.md").write_text(
+                "# Legacy generated placement brief\n",
+                encoding="utf-8",
+            )
 
             migration = migrate_circuit_phase(
                 project,
@@ -342,6 +348,10 @@ class CircuitReviewTests(CircuitReviewFixture):
             legacy_review_exists = (
                 project / "review" / "implement"
             ).exists()
+            migrated_brief = (
+                project / "docs" / "placement-brief.md"
+            ).read_text(encoding="utf-8")
+            legacy_brief_exists = (project / "brief.md").exists()
 
         self.assertTrue(migration.wrote)
         self.assertEqual(migration.reopened_phases, ("circuit",))
@@ -359,6 +369,11 @@ class CircuitReviewTests(CircuitReviewFixture):
         self.assertTrue(final_narrative_exists)
         self.assertFalse(legacy_review_exists)
         self.assertEqual(
+            migrated_brief,
+            "# Legacy generated placement brief\n",
+        )
+        self.assertFalse(legacy_brief_exists)
+        self.assertEqual(
             [result.phase.key for result in report.phases],
             [
                 "spec",
@@ -375,6 +390,90 @@ class CircuitReviewTests(CircuitReviewFixture):
                 "publish",
             ],
         )
+
+    def test_schema_fourteen_migrates_placement_brief_into_docs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            pins_path = project / ".pcbforge"
+            pins = yaml.safe_load(pins_path.read_text(encoding="utf-8"))
+            pins["guidance"]["agents_schema"] = 14
+            pins["guidance"]["brief_schema"] = 4
+            pins_path.write_text(
+                yaml.safe_dump(pins, sort_keys=False),
+                encoding="utf-8",
+            )
+            (project / "AGENTS.md").write_text(
+                "<!-- pcbforge-agents-schema: 14 -->\n# generated\n",
+                encoding="utf-8",
+            )
+            legacy = project / "brief.md"
+            legacy.write_text(
+                "# Existing generated placement brief\n",
+                encoding="utf-8",
+            )
+
+            migration = migrate_placement_brief(
+                project,
+                tool_root=TOOL_ROOT,
+                now="2026-07-29T12:00:00+00:00",
+            )
+            second = migrate_placement_brief(project, tool_root=TOOL_ROOT)
+            migrated_pins = yaml.safe_load(
+                pins_path.read_text(encoding="utf-8")
+            )
+            target = project / "docs" / "placement-brief.md"
+            legacy_exists = legacy.exists()
+            target_text = target.read_text(encoding="utf-8")
+
+        self.assertTrue(migration.wrote)
+        self.assertFalse(second.wrote)
+        self.assertFalse(legacy_exists)
+        self.assertEqual(
+            target_text,
+            "# Existing generated placement brief\n",
+        )
+        self.assertEqual(migrated_pins["guidance"]["agents_schema"], 15)
+        self.assertEqual(migrated_pins["guidance"]["brief_schema"], 5)
+
+    def test_placement_brief_migration_refuses_target_conflict_without_writes(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            pins_path = project / ".pcbforge"
+            pins = yaml.safe_load(pins_path.read_text(encoding="utf-8"))
+            pins["guidance"]["agents_schema"] = 14
+            pins["guidance"]["brief_schema"] = 4
+            pins_path.write_text(
+                yaml.safe_dump(pins, sort_keys=False),
+                encoding="utf-8",
+            )
+            agents_path = project / "AGENTS.md"
+            agents_path.write_text(
+                "<!-- pcbforge-agents-schema: 14 -->\n# generated\n",
+                encoding="utf-8",
+            )
+            legacy = project / "brief.md"
+            target = project / "docs" / "placement-brief.md"
+            legacy.write_text("# Legacy\n", encoding="utf-8")
+            target.write_text("# Conflict\n", encoding="utf-8")
+            before = {
+                path: path.read_bytes()
+                for path in (pins_path, agents_path, legacy, target)
+            }
+
+            with self.assertRaisesRegex(
+                StatusInputError,
+                "refusing to overwrite migration target",
+            ):
+                migrate_placement_brief(project, tool_root=TOOL_ROOT)
+
+            after = {
+                path: path.read_bytes()
+                for path in (pins_path, agents_path, legacy, target)
+            }
+
+        self.assertEqual(after, before)
 
     def test_proposal_writes_stable_authored_svg_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

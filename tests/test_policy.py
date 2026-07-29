@@ -130,7 +130,7 @@ class PolicyFixture(unittest.TestCase):
             else ""
         )
         guidance = (
-            """  agents_schema: 14
+            """  agents_schema: 15
   architect_schema: 4
   architecture_diagram_schema: 1
   mcu_schema: 3
@@ -138,7 +138,7 @@ class PolicyFixture(unittest.TestCase):
   circuit_review_schema: 2
   policy_schema: 1
   build_test_schema: 1
-  brief_schema: 4
+  brief_schema: 5
   approval_schema: 5
   status_schema: 3
 """
@@ -472,7 +472,7 @@ class PolicyApprovalAndMigrationTests(PolicyFixture):
             "baseline-approved",
         )
         self.assertFalse(second.wrote)
-        self.assertIn("pcbforge-agents-schema: 14", migrated_agents)
+        self.assertIn("pcbforge-agents-schema: 15", migrated_agents)
 
     def test_schema_seven_migrates_directly_and_reopens_unbound_spec(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -513,10 +513,10 @@ class PolicyApprovalAndMigrationTests(PolicyFixture):
         self.assertEqual(
             pins["guidance"],
             {
-                "agents_schema": 14,
+                "agents_schema": 15,
                 "policy_schema": 1,
                 "build_test_schema": 1,
-                "brief_schema": 4,
+                "brief_schema": 5,
                 "approval_schema": 5,
                 "architect_schema": 4,
                 "architecture_diagram_schema": 1,

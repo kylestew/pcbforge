@@ -30,13 +30,13 @@ ATO_VERSION = "0.15.7"
 KICAD_VERSION = "9.0.9"
 SPEC_SCHEMA = 1
 PIN_SCHEMA = 14
-AGENTS_SCHEMA = 14
+AGENTS_SCHEMA = 15
 ARCHITECT_GUIDE_SCHEMA = 4
 ARCHITECTURE_DIAGRAM_SCHEMA = 1
 MCU_GUIDE_SCHEMA = 3
 CIRCUIT_GUIDE_SCHEMA = 1
 BUILD_TEST_GUIDE_SCHEMA = 1
-BRIEF_GUIDE_SCHEMA = 4
+BRIEF_GUIDE_SCHEMA = 5
 APPROVAL_GUIDE_SCHEMA = 5
 CIRCUIT_REVIEW_SCHEMA = 2
 POLICY_GUIDE_SCHEMA = POLICY_SCHEMA
@@ -888,13 +888,16 @@ After CIRCUIT completes, follow `{tool_root}/agent/brief.md`:
 1. Write the exact qualitative placement contract in `placement.yaml`.
 2. Assign every PCB footprint to exactly one group and reference only current
    PCB references, pads, and exact net names.
-3. Run `{tool_root}/scripts/pcbforge brief`; it generates `brief.md` and merges
-   only `pcbforge:` net classes into the KiCad project. It never edits the PCB.
-4. Run `{tool_root}/scripts/pcbforge check-brief` and present `brief.md` beside
-   the already-approved CIRCUIT explanatory SVG and final parity evidence.
+3. Run `{tool_root}/scripts/pcbforge brief`; it generates
+   `docs/placement-brief.md` and merges only `pcbforge:` net classes into the
+   KiCad project. It never edits the PCB.
+4. Run `{tool_root}/scripts/pcbforge check-brief` and present
+   `docs/placement-brief.md` beside the already-approved CIRCUIT explanatory
+   SVG and final parity evidence.
 5. Run `pcbforge status review brief` and present its packet. Record
-   `status approve brief` only after the user approves `brief.md` beside the
-   current CIRCUIT overview. If that evidence is missing, stale, or
+   `status approve brief` only after the user approves
+   `docs/placement-brief.md` beside the current CIRCUIT overview. If that
+   evidence is missing, stale, or
    inadequate for placement decisions, block BRIEF and do not begin layout.
 
 ## FAB-OUT and order policy

@@ -334,7 +334,7 @@ guidance:
         self.assertTrue(migration.wrote)
         self.assertEqual(migration.reopened_phases, ("architect", "mcu"))
         self.assertEqual(pins["schema"], 14)
-        self.assertEqual(pins["guidance"]["agents_schema"], 14)
+        self.assertEqual(pins["guidance"]["agents_schema"], 15)
         self.assertEqual(pins["guidance"]["approval_schema"], 5)
         self.assertEqual(document.events[0].phase, "spec")
         self.assertEqual(document.events[0].action, "complete")

@@ -89,7 +89,7 @@ checks are offline.
 | 3. ARCHITECT | AI proposes; user approves twice | Approved graph in `docs/architecture.md`, then compiling functional skeleton in `src/` | Artifact-bound proposal approval before code and separate final approval after build/audit |
 | 4. MCU | AI; optional user CubeMX review | Checked `firmware/<project>.ioc`, matching `src/mcu.ato`, and pre-CIRCUIT baseline | Pinmux and one-to-one audit pass, then explicit fingerprint approval |
 | 5. CIRCUIT | AI proposes and implements; tools validate; user approves twice | Authored SVG and exact proposal model, physical source, compiled parity, exact `build-test.yaml`, resolved BOM/connectivity, assertions, and `docs/build-test.md` | Proposal approval before source; then all implementation and deterministic acceptance checks pass before one final fingerprint approval |
-| 6. brief | Tool and AI; user approves | Exact `placement.yaml`, generated `brief.md`, and PCBForge-owned KiCad net classes | Contract check passes and user approves the brief beside the current CIRCUIT overview |
+| 6. brief | Tool and AI; user approves | Exact `placement.yaml`, generated `docs/placement-brief.md`, and PCBForge-owned KiCad net classes | Contract check passes and user approves the brief beside the current CIRCUIT overview |
 | 7. LAYOUT | User | Component placement in KiCad | Placement semantics reviewed and explicitly fingerprint-approved |
 | 8. ROUTE | User | Routed copper in KiCad | Routing semantics reviewed and explicitly fingerprint-approved |
 | 9. verify | Tools and AI | DRC, scripted audits, and render review | Checks pass, then explicit fingerprint approval |
@@ -320,7 +320,7 @@ and the resolved CIRCUIT PCB topology. It defines:
 
 `pcbforge brief` requires current CIRCUIT evidence, validates the complete
 contract against current references, pads, nets, and the pinned JLC profile,
-then atomically generates `brief.md` and merges only classes named
+then atomically generates `docs/placement-brief.md` and merges only classes named
 `pcbforge:<name>` plus their exact patterns into `<project>.kicad_pro`. It
 preserves Default and user-created classes, assignments, unknown project
 settings, and the entire design-rules file. It verifies that
@@ -329,7 +329,7 @@ geometry, coordinates, placement, or copper.
 
 `pcbforge check-brief` performs the same validation without writing. Step 6
 stores this check in `STATUS.md`, but passing machine evidence is not approval:
-the user reviews generated `brief.md` beside the current approved CIRCUIT
+the user reviews generated `docs/placement-brief.md` beside the current approved CIRCUIT
 circuit overview. If that evidence is missing, stale, or inadequate for placement
 decisions, Step 6 is blocked and layout must not begin.
 
@@ -337,7 +337,7 @@ CIRCUIT and BRIEF fingerprints use circuit-owned PCB topology—reference,
 footprint, pad, and net membership—not coordinates, sides, tracks, vias, zones,
 outline, graphics, or user artwork. Circuit/topology changes stale both gates;
 ordinary layout and routing edits do not. Changes to `placement.yaml`,
-`brief.md`, or PCBForge-owned net-class settings stale BRIEF, while unrelated
+`docs/placement-brief.md`, or PCBForge-owned net-class settings stale BRIEF, while unrelated
 user KiCad classes do not.
 
 ## 7–8. LAYOUT and ROUTE
