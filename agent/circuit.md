@@ -1,8 +1,8 @@
 <!-- pcbforge-circuit-schema: 1 -->
 # CIRCUIT playbook
 
-Use this playbook after MCU is complete and before requesting CIRCUIT
-approval.
+Use this playbook after combined ARCHITECT approval, including its MCU
+workstream, and before requesting CIRCUIT approval.
 The goal is an understandable, explicitly approved circuit proposal followed
 by a physical circuit definition whose compiled connectivity and exact parts
 are proven to match that proposal.
@@ -16,7 +16,7 @@ exception gates.
 
 ## Gate A — explanatory circuit proposal before source edits
 
-MCU approval captures `review/circuit/source-baseline.json`. Do not change
+Final ARCHITECT approval captures `review/circuit/source-baseline.json`. Do not change
 physical Atopile module bodies, part definitions, values, footprints,
 connectivity, or the product PCB until the topology proposal below is approved.
 
@@ -115,7 +115,7 @@ pcbforge status review circuit --stage proposal
 
 PCBForge parses the exact model, validates the SVG's semantic coverage and
 model binding, checks that no review PCB exists, proves the product topology
-is unchanged, and binds the packet to the MCU handoff baseline. Present the
+is unchanged, and binds the packet to the ARCHITECT handoff baseline. Present the
 SVG, narrative, exact model summary, and fingerprint. Stop. Only after explicit
 user approval may you run:
 

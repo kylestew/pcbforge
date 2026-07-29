@@ -25,6 +25,7 @@ from pcbforge.status import (
     mark_status,
     migrate_approvals,
     read_status_document,
+    record_initialization_blocker,
     render_dashboard,
     review_phase,
     run_status_checks,
@@ -362,10 +363,27 @@ guidance:
                 now="2026-07-26T12:00:00+00:00",
             )
             self.assertEqual(marked.report.completed_required, 1)
-            self.assertEqual(marked.report.current.phase.key, "init")
+            self.assertEqual(marked.report.current.phase.key, "architect")
+            self.assertEqual(marked.report.current_transition.key, "initialize")
+            self.assertEqual(marked.report.current_transition.state, "Ready")
             document = read_status_document(project)
             self.assertEqual(document.events[-1].phase, "spec")
             self.assertEqual(document.events[-1].action, "complete")
+
+            blocked = record_initialization_blocker(
+                project,
+                "compiler smoke test failed",
+                now="2026-07-26T12:30:00+00:00",
+            )
+            self.assertIsNotNone(blocked)
+            self.assertEqual(
+                blocked.report.current_transition.state,
+                "Blocked",
+            )
+            self.assertIn(
+                "compiler smoke test failed",
+                blocked.report.current_transition.detail,
+            )
 
     def test_changed_approved_spec_is_durably_reopened_before_init(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -415,8 +433,10 @@ guidance:
         self.assertIn("## Blockers", rendered)
         self.assertIn("## Workflow", rendered)
         self.assertIn("## Recent progress", rendered)
-        self.assertEqual(rendered.count("\n| "), 13)
-        self.assertIn("0 of 11 required phases complete", rendered)
+        self.assertEqual(rendered.count("\n| "), 12)
+        self.assertIn("0 of 8 required phases complete", rendered)
+        self.assertIn("SPEC → ARCHITECT: initialize", rendered)
+        self.assertIn("CIRCUIT → LAYOUT: layout handoff", rendered)
 
     def test_completion_requires_order_and_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

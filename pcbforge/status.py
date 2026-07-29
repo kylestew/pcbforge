@@ -91,7 +91,14 @@ UNIVERSAL_APPROVAL_PIN_SCHEMA = 11
 SCHEMATIC_APPROVAL_PIN_SCHEMA = 12
 CIRCUIT_REVIEW_PIN_SCHEMA = 13
 CIRCUIT_PHASE_PIN_SCHEMA = 14
+PHASE_TRANSITIONS_PIN_SCHEMA = 15
 POLICY_ENFORCEMENT_PIN_SCHEMA = 10
+TRANSITION_ACTIONS = {
+    "complete",
+    "approved",
+    "blocked",
+    "reopened",
+}
 POLICY_EVENT_ACTIONS = {
     "baseline-approved",
     "exception-approved",
@@ -118,7 +125,7 @@ LEGACY_CHECK_PHASES = {
     "brief": ("build-test", "brief"),
     "verify": ("build", "policy", "ioc", "drc"),
 }
-CHECK_PHASES = {
+SCHEMA14_CHECK_PHASES = {
     "architect": ("build",),
     "mcu": ("build", "ioc"),
     "circuit": (
@@ -132,6 +139,18 @@ CHECK_PHASES = {
     "brief": ("build-test", "brief"),
     "verify": ("build", "policy", "ioc", "drc"),
 }
+CHECK_PHASES = {
+    "architect": ("build", "ioc"),
+    "circuit": (
+        "build",
+        "parts",
+        "policy",
+        "ioc",
+        "circuit-final",
+        "build-test",
+    ),
+    "verify": ("build", "policy", "ioc", "drc"),
+}
 LEGACY_PHASE_EVIDENCE_CHECKS = {
     "architect": ("build",),
     "mcu": ("build", "ioc"),
@@ -140,11 +159,16 @@ LEGACY_PHASE_EVIDENCE_CHECKS = {
     "brief": ("brief",),
     "verify": ("policy", "drc"),
 }
-PHASE_EVIDENCE_CHECKS = {
+SCHEMA14_PHASE_EVIDENCE_CHECKS = {
     "architect": ("build",),
     "mcu": ("build", "ioc"),
     "circuit": ("build", "parts", "policy", "circuit-final", "build-test"),
     "brief": ("brief",),
+    "verify": ("policy", "drc"),
+}
+PHASE_EVIDENCE_CHECKS = {
+    "architect": ("build", "ioc"),
+    "circuit": ("build", "parts", "policy", "circuit-final", "build-test"),
     "verify": ("policy", "drc"),
 }
 
@@ -247,7 +271,7 @@ LEGACY_PHASES = (
         "Publish or explicitly skip reusable proven modules.",
     ),
 )
-PHASES = (
+CIRCUIT_PHASES = (
     *LEGACY_PHASES[:4],
     Phase(
         "circuit",
@@ -258,9 +282,44 @@ PHASES = (
     ),
     *LEGACY_PHASES[6:],
 )
+PHASES = (
+    LEGACY_PHASES[0],
+    Phase(
+        "architect",
+        "ARCHITECT",
+        "AI + user",
+        True,
+        "Approve the functional graph and exact MCU implementation.",
+    ),
+    CIRCUIT_PHASES[4],
+    LEGACY_PHASES[7],
+    LEGACY_PHASES[8],
+    Phase(
+        "verify",
+        "VERIFY",
+        "Tool + AI",
+        True,
+        "Pass DRC, scripted audits, and the final render review.",
+    ),
+    Phase(
+        "fab-out",
+        "FAB-OUT",
+        "Tool",
+        True,
+        "Generate and review the JLCPCB manufacturing package.",
+    ),
+    Phase("order", "ORDER", "User", True, "Upload the package and place the order."),
+    Phase(
+        "publish",
+        "PUBLISH",
+        "AI + user",
+        False,
+        "Publish or explicitly skip reusable proven modules.",
+    ),
+)
 PHASE_BY_KEY = {
     phase.key: phase
-    for phase in (*LEGACY_PHASES, *PHASES)
+    for phase in (*LEGACY_PHASES, *CIRCUIT_PHASES, *PHASES)
 }
 PHASE_NUMBER = {phase.key: index for index, phase in enumerate(PHASES, start=1)}
 LEGACY_PHASE_NUMBER = {
@@ -278,7 +337,7 @@ LEGACY_APPROVAL_CHECKS = {
     "brief": ("build-test", "brief", "policy"),
     "verify": ("build", "policy", "ioc", "drc"),
 }
-APPROVAL_CHECKS = {
+SCHEMA14_APPROVAL_CHECKS = {
     "spec": ("policy",),
     "init": ("build", "policy"),
     "architect": ("build",),
@@ -292,6 +351,19 @@ APPROVAL_CHECKS = {
         "build-test",
     ),
     "brief": ("build-test", "brief", "policy"),
+    "verify": ("build", "policy", "ioc", "drc"),
+}
+APPROVAL_CHECKS = {
+    "spec": ("policy",),
+    "architect": ("build", "ioc"),
+    "circuit": (
+        "build",
+        "parts",
+        "policy",
+        "ioc",
+        "circuit-final",
+        "build-test",
+    ),
     "verify": ("build", "policy", "ioc", "drc"),
 }
 
@@ -323,16 +395,38 @@ class PolicyEvent:
 
 
 @dataclass(frozen=True)
+class TransitionEvent:
+    at: str
+    transition: str
+    action: str
+    note: str
+    approval_fingerprint: str = ""
+
+
+@dataclass(frozen=True)
 class StatusDocument:
     updated_at: str
     events: tuple[StatusEvent, ...]
     checks: Mapping[str, CheckRecord]
     policy_events: tuple[PolicyEvent, ...] = ()
+    transition_events: tuple[TransitionEvent, ...] = ()
 
 
 @dataclass(frozen=True)
 class PhaseResult:
     phase: Phase
+    state: str
+    detail: str
+    complete: bool
+
+
+@dataclass(frozen=True)
+class TransitionResult:
+    key: str
+    label: str
+    source_phase: str
+    target_phase: str
+    lead: str
     state: str
     detail: str
     complete: bool
@@ -345,6 +439,8 @@ class StatusReport:
     document: StatusDocument
     phases: tuple[PhaseResult, ...]
     current: PhaseResult | None
+    transitions: tuple[TransitionResult, ...]
+    current_transition: TransitionResult | None
     next_actions: tuple[str, ...]
     completed_required: int
     required_total: int
@@ -467,14 +563,15 @@ def read_status_document(project_dir: Path) -> StatusDocument:
         "updated_at",
         "events",
         "policy_events",
+        "transition_events",
         "checks",
     }
     unknown = sorted(set(data) - allowed)
     if unknown:
         errors.append("unknown keys: " + ", ".join(map(str, unknown)))
-    if data.get("pcbforge_status_schema") not in {1, 2, STATUS_SCHEMA}:
+    if data.get("pcbforge_status_schema") not in {1, 2, 3, STATUS_SCHEMA}:
         errors.append(
-            f"pcbforge_status_schema: expected integer 1, 2, or {STATUS_SCHEMA}"
+            f"pcbforge_status_schema: expected integer 1, 2, 3, or {STATUS_SCHEMA}"
         )
     updated_at = _text(data.get("updated_at"), "updated_at", errors, required=False)
 
@@ -560,6 +657,57 @@ def read_status_document(project_dir: Path) -> StatusDocument:
                 )
             )
 
+    transition_events_raw = data.get("transition_events", [])
+    transition_events: list[TransitionEvent] = []
+    if not isinstance(transition_events_raw, list):
+        errors.append("transition_events: expected a list")
+    else:
+        for index, raw in enumerate(transition_events_raw):
+            prefix = f"transition_events[{index}]"
+            if not isinstance(raw, dict):
+                errors.append(f"{prefix}: expected a mapping")
+                continue
+            if set(raw) - {
+                "at",
+                "transition",
+                "action",
+                "note",
+                "approval_fingerprint",
+            }:
+                errors.append(f"{prefix}: contains unknown keys")
+            at = _text(raw.get("at"), f"{prefix}.at", errors)
+            transition = _text(
+                raw.get("transition"),
+                f"{prefix}.transition",
+                errors,
+            )
+            action = _text(raw.get("action"), f"{prefix}.action", errors)
+            note = _text(raw.get("note"), f"{prefix}.note", errors)
+            approval_fingerprint = _text(
+                raw.get("approval_fingerprint"),
+                f"{prefix}.approval_fingerprint",
+                errors,
+                required=False,
+            )
+            if transition and transition not in {
+                "initialize",
+                "layout-handoff",
+            }:
+                errors.append(
+                    f"{prefix}.transition: unknown transition {transition!r}"
+                )
+            if action and action not in TRANSITION_ACTIONS:
+                errors.append(f"{prefix}.action: unknown action {action!r}")
+            transition_events.append(
+                TransitionEvent(
+                    at,
+                    transition,
+                    action,
+                    note,
+                    approval_fingerprint,
+                )
+            )
+
     checks_raw = data.get("checks", {})
     checks: dict[str, CheckRecord] = {}
     if not isinstance(checks_raw, dict):
@@ -573,6 +721,7 @@ def read_status_document(project_dir: Path) -> StatusDocument:
                 "parts",
                 "ioc",
                 "brief",
+                "layout-handoff",
                 "policy",
                 "drc",
                 "schematic-proposal",
@@ -604,6 +753,7 @@ def read_status_document(project_dir: Path) -> StatusDocument:
         events=tuple(events),
         checks=checks,
         policy_events=tuple(policy_events),
+        transition_events=tuple(transition_events),
     )
 
 
@@ -695,8 +845,20 @@ def _circuit_phase_enabled(project_dir: Path) -> bool:
     )
 
 
+def _phase_transitions_enabled(project_dir: Path) -> bool:
+    if not (project_dir / ".pcbforge").exists():
+        return True
+    pins = _project_pins(project_dir)
+    return (
+        type(pins.get("schema")) is int
+        and pins["schema"] >= PHASE_TRANSITIONS_PIN_SCHEMA
+    )
+
+
 def _workflow_phases(project_dir: Path) -> tuple[Phase, ...]:
-    return PHASES if _circuit_phase_enabled(project_dir) else LEGACY_PHASES
+    if _phase_transitions_enabled(project_dir):
+        return PHASES
+    return CIRCUIT_PHASES if _circuit_phase_enabled(project_dir) else LEGACY_PHASES
 
 
 def _workflow_phase_map(project_dir: Path) -> Mapping[str, Phase]:
@@ -707,6 +869,10 @@ def _phase_number(project_dir: Path, phase: str) -> int:
     phases = _workflow_phases(project_dir)
     if phases is PHASES and phase in {"implement", "build"}:
         phase = "circuit"
+    elif phases is PHASES and phase in {"init", "mcu"}:
+        phase = "architect"
+    elif phases is PHASES and phase == "brief":
+        phase = "layout"
     elif phases is LEGACY_PHASES and phase == "circuit":
         phase = "implement"
     return next(
@@ -720,7 +886,15 @@ def _workflow_checks(
     project_dir: Path,
     checks: Mapping[str, tuple[str, ...]],
 ) -> Mapping[str, tuple[str, ...]]:
+    if _phase_transitions_enabled(project_dir):
+        return checks
     if _circuit_phase_enabled(project_dir):
+        if checks is CHECK_PHASES:
+            return SCHEMA14_CHECK_PHASES
+        if checks is PHASE_EVIDENCE_CHECKS:
+            return SCHEMA14_PHASE_EVIDENCE_CHECKS
+        if checks is APPROVAL_CHECKS:
+            return SCHEMA14_APPROVAL_CHECKS
         return checks
     if checks is CHECK_PHASES:
         return LEGACY_CHECK_PHASES
@@ -881,7 +1055,24 @@ def _approval_fingerprint(
             project_dir / "spec.md",
             project_dir / "docs" / "architecture.md",
             *(
-                (project_dir / "src" / "main.ato",)
+                (project_dir / "docs" / "mcu.md",)
+                if _phase_transitions_enabled(project_dir)
+                else ()
+            ),
+            *(
+                (
+                    project_dir / "src" / "main.ato",
+                    *(
+                        (
+                            project_dir / "src" / "mcu.ato",
+                            project_dir
+                            / "firmware"
+                            / f"{read_spec(project_dir / 'spec.md').name}.ioc",
+                        )
+                        if _phase_transitions_enabled(project_dir)
+                        else ()
+                    ),
+                )
                 if action == "complete"
                 else ()
             ),
@@ -1120,7 +1311,7 @@ def _check_inputs(project_dir: Path, spec: ProjectSpec, name: str) -> tuple[Path
         )
     if name == "build-test":
         return build_test_inputs(project_dir)
-    if name == "brief":
+    if name in {"brief", "layout-handoff"}:
         return brief_inputs(project_dir)
     if name == "schematic-proposal":
         return schematic_inputs(project_dir, "proposal")
@@ -1203,7 +1394,7 @@ def _check_fingerprint(
         from pcbforge.build_test import fingerprint_inputs
 
         return fingerprint_inputs(project_dir)
-    if name == "brief":
+    if name in {"brief", "layout-handoff"}:
         return brief_status_fingerprint(project_dir)
     if name == "schematic-proposal":
         return schematic_status_fingerprint(project_dir, "proposal")
@@ -1240,6 +1431,16 @@ def _phase_artifact_paths(
             project_dir / "spec.md",
             project_dir / "docs" / "architecture.md",
             project_dir / "src" / "main.ato",
+            *_files(project_dir, ("src/modules/*.ato",)),
+            *(
+                (
+                    project_dir / "docs" / "mcu.md",
+                    project_dir / "firmware" / f"{spec.name}.ioc",
+                    project_dir / "src" / "mcu.ato",
+                )
+                if _phase_transitions_enabled(project_dir)
+                else ()
+            ),
         )
     elif phase == "mcu":
         candidates = (
@@ -1437,7 +1638,9 @@ def _phase_approval_fingerprint(
     artifacts = _phase_artifact_paths(project_dir, spec, phase)
     payload: dict[str, Any] = {
         "approval_schema": (
-            5
+            6
+            if _phase_transitions_enabled(project_dir)
+            else 5
             if _circuit_phase_enabled(project_dir) and phase == "circuit"
             else 4
             if _circuit_review_enabled(project_dir) and phase == "implement"
@@ -1525,19 +1728,41 @@ def _static_evidence(
         diagram_ok = diagram.is_file() and ARCHITECTURE_MARKER in _read_text(diagram)
         source = _files(project_dir, ("src/**/*.ato",))
         build_ok, build_detail = _current_check(project_dir, spec, document, "build")
+        combined_mcu = _phase_transitions_enabled(project_dir)
+        mcu_doc = project_dir / "docs" / "mcu.md"
+        ioc = project_dir / "firmware" / f"{spec.name}.ioc"
+        mcu_source = project_dir / "src" / "mcu.ato"
+        ioc_ok, ioc_detail = (
+            _current_check(project_dir, spec, document, "ioc")
+            if combined_mcu
+            else (True, "")
+        )
         missing = []
         if not diagram_ok:
             missing.append("tracked architecture diagram")
+        if combined_mcu and not mcu_doc.is_file():
+            missing.append("docs/mcu.md")
+        if combined_mcu and not ioc.is_file():
+            missing.append(ioc.name)
+        if combined_mcu and not mcu_source.is_file():
+            missing.append("src/mcu.ato")
         if len(source) < 2:
             missing.append("architecture source modules")
         if not build_ok:
             missing.append(build_detail)
+        if not ioc_ok:
+            missing.append(ioc_detail)
         return (
             not missing,
-            "diagram, source graph, and build evidence present"
+            (
+                "architecture, exact MCU plan, IOC, source graph, and audit "
+                "evidence present"
+                if combined_mcu
+                else "diagram, source graph, and build evidence present"
+            )
             if not missing
             else "missing: " + ", ".join(missing),
-            diagram.is_file() or len(source) > 1,
+            diagram.is_file() or mcu_doc.is_file() or len(source) > 1,
         )
     if phase == "mcu":
         ioc = project_dir / "firmware" / f"{spec.name}.ioc"
@@ -1728,6 +1953,106 @@ def _latest_events(
     return latest, latest_reopen
 
 
+def _latest_transition_events(
+    events: Sequence[TransitionEvent],
+) -> Mapping[str, TransitionEvent]:
+    latest: dict[str, TransitionEvent] = {}
+    for event in events:
+        latest[event.transition] = event
+    return latest
+
+
+def _initialization_transition_complete(project_dir: Path) -> bool:
+    if not _phase_transitions_enabled(project_dir):
+        return True
+    pins = _project_pins(project_dir)
+    if pins.get("schema") != PHASE_TRANSITIONS_PIN_SCHEMA:
+        return False
+    spec = read_spec(project_dir / "spec.md")
+    return all(
+        path.is_file()
+        for path in (
+            project_dir / ".pcbforge",
+            project_dir / "ato.yaml",
+            project_dir / "src" / "main.ato",
+            project_dir / f"{spec.name}.kicad_pcb",
+        )
+    )
+
+
+def _layout_handoff_fingerprint(
+    project_dir: Path,
+    document: StatusDocument,
+) -> str:
+    latest, _ = _latest_events(document.events)
+    circuit = latest.get("circuit")
+    circuit_approval = (
+        circuit[1].approval_fingerprint
+        if circuit is not None and circuit[1].action == "complete"
+        else ""
+    )
+    paths = _phase_artifact_paths(
+        project_dir,
+        read_spec(project_dir / "spec.md"),
+        "brief",
+    )
+    payload = {
+        "approval_schema": 6,
+        "transition": "layout-handoff",
+        "source_phase": "circuit",
+        "target_phase": "layout",
+        "circuit_approval": circuit_approval,
+        "artifacts": _file_semantics(project_dir, paths),
+        "checks": [
+            {"name": name, "required_outcome": "pass"}
+            for name in ("build-test", "layout-handoff", "policy")
+        ],
+    }
+    return hashlib.sha256(
+        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+    ).hexdigest()
+
+
+def _current_layout_handoff(
+    project_dir: Path,
+    document: StatusDocument,
+) -> TransitionEvent | None:
+    if not _phase_transitions_enabled(project_dir):
+        return None
+    event = _latest_transition_events(document.transition_events).get(
+        "layout-handoff"
+    )
+    if (
+        event is None
+        or event.action != "approved"
+        or not event.approval_fingerprint
+    ):
+        return None
+    try:
+        spec = read_spec(project_dir / "spec.md")
+        latest, _ = _latest_events(document.events)
+        circuit_info = latest.get("circuit")
+        if (
+            circuit_info is None
+            or circuit_info[1].action != "complete"
+            or not _approval_is_current(
+                project_dir,
+                "circuit",
+                circuit_info[1],
+                document,
+            )
+            or not all(
+                _current_check(project_dir, spec, document, name)[0]
+                for name in ("build-test", "layout-handoff", "policy")
+            )
+        ):
+            return None
+        current = _layout_handoff_fingerprint(project_dir, document)
+    except (PlacementError, StatusError, OSError):
+        return None
+    return event if event.approval_fingerprint == current else None
+
+
 def _failed_checks_for_phase(
     project_dir: Path,
     spec: ProjectSpec,
@@ -1766,6 +2091,21 @@ def _derive_phases(
         predecessors_complete = all(
             result.complete for result in results if result.phase.required
         )
+        transition_wait = ""
+        if (
+            _phase_transitions_enabled(project_dir)
+            and phase.key == "architect"
+            and not _initialization_transition_complete(project_dir)
+        ):
+            predecessors_complete = False
+            transition_wait = "waiting for the SPEC → ARCHITECT initialization transition"
+        if (
+            _phase_transitions_enabled(project_dir)
+            and phase.key == "layout"
+            and _current_layout_handoff(project_dir, document) is None
+        ):
+            predecessors_complete = False
+            transition_wait = "waiting for the CIRCUIT → LAYOUT handoff"
 
         if phase.key in reopens:
             predecessor_invalidation = max(predecessor_invalidation, reopens[phase.key])
@@ -1813,7 +2153,7 @@ def _derive_phases(
             detail = event.note
         elif not predecessors_complete:
             state = "Not started"
-            detail = "waiting for the previous required phase"
+            detail = transition_wait or "waiting for the previous required phase"
         elif failed_checks:
             state = "Blocked"
             detail = "; ".join(failed_checks)
@@ -1995,9 +2335,9 @@ def _actions_for(result: PhaseResult) -> tuple[str, ...]:
             "Review the generated scaffold, then request explicit INIT approval.",
         ),
         "architect": (
-            "Draft `docs/architecture.md` without coding the module skeleton.",
-            "Present material options and record explicit proposal approval.",
-            "Then build the skeleton, audit it, and request final approval.",
+            "Draft `docs/architecture.md` and the exact MCU plan in `docs/mcu.md`.",
+            "Present both artifacts and record explicit proposal approval.",
+            "Then build the skeleton and IOC, audit them, and request final approval.",
         ),
         "mcu": (
             "Create the canonical IOC and matching `src/mcu.ato`.",
@@ -2055,6 +2395,146 @@ def _actions_for(result: PhaseResult) -> tuple[str, ...]:
     return actions[phase]
 
 
+def _derive_transitions(
+    project_dir: Path,
+    spec: ProjectSpec,
+    document: StatusDocument,
+    phases: Sequence[PhaseResult],
+) -> tuple[TransitionResult, ...]:
+    if not _phase_transitions_enabled(project_dir):
+        return ()
+    by_phase = {result.phase.key: result for result in phases}
+    latest = _latest_transition_events(document.transition_events)
+
+    initialized = _initialization_transition_complete(project_dir)
+    initialize_event = latest.get("initialize")
+    if initialized:
+        initialize_state = "Complete"
+        initialize_detail = "validated project scaffold present"
+    elif not by_phase["spec"].complete:
+        initialize_state = "Not started"
+        initialize_detail = "waiting for SPEC approval"
+    elif initialize_event is not None and initialize_event.action == "blocked":
+        initialize_state = "Blocked"
+        initialize_detail = initialize_event.note
+    else:
+        initialize_state = "Ready"
+        initialize_detail = "run `pcbforge init` to create the validated scaffold"
+
+    handoff_event = latest.get("layout-handoff")
+    handoff_current = _current_layout_handoff(project_dir, document)
+    if handoff_current is not None:
+        handoff_state = "Complete"
+        handoff_detail = "placement contract and LAYOUT handoff approval are current"
+    elif not by_phase["circuit"].complete:
+        handoff_state = "Not started"
+        handoff_detail = "waiting for CIRCUIT approval"
+    elif handoff_event is not None and handoff_event.action == "approved":
+        handoff_state = "Blocked"
+        handoff_detail = (
+            "handoff approval is stale because CIRCUIT or placement artifacts changed"
+        )
+    elif handoff_event is not None and handoff_event.action == "blocked":
+        handoff_state = "Blocked"
+        handoff_detail = handoff_event.note
+    else:
+        required_checks = ("build-test", "layout-handoff", "policy")
+        check_results = [
+            _current_check(project_dir, spec, document, name)
+            for name in required_checks
+        ]
+        failed = [
+            detail
+            for current, detail in check_results
+            if not current and detail.startswith(
+                tuple(f"{name} failed:" for name in required_checks)
+            )
+        ]
+        if failed:
+            handoff_state = "Blocked"
+            handoff_detail = "; ".join(failed)
+        elif all(current for current, _ in check_results):
+            handoff_state = "Awaiting approval"
+            handoff_detail = (
+                "placement evidence is current; present the LAYOUT handoff packet"
+            )
+        elif (project_dir / PLACEMENT_FILENAME).is_file():
+            handoff_state = "In progress"
+            handoff_detail = next(
+                detail for current, detail in check_results if not current
+            )
+        else:
+            handoff_state = "Ready"
+            handoff_detail = (
+                "author placement.yaml and run `pcbforge prepare-layout`"
+            )
+
+    return (
+        TransitionResult(
+            "initialize",
+            "SPEC → ARCHITECT: initialize",
+            "spec",
+            "architect",
+            "Tool",
+            initialize_state,
+            initialize_detail,
+            initialized,
+        ),
+        TransitionResult(
+            "layout-handoff",
+            "CIRCUIT → LAYOUT: layout handoff",
+            "circuit",
+            "layout",
+            "AI + tool + user",
+            handoff_state,
+            handoff_detail,
+            handoff_current is not None,
+        ),
+    )
+
+
+def _transition_actions(result: TransitionResult) -> tuple[str, ...]:
+    if result.key == "initialize":
+        if result.state == "Blocked":
+            return (
+                f"Resolve the initialization blocker: {result.detail}",
+                "Retry `pcbforge init` after the issue is fixed.",
+            )
+        return (
+            "Run `pcbforge init`.",
+            "If it succeeds, continue directly to ARCHITECT.",
+        )
+    if result.state == "Blocked":
+        return (
+            f"Resolve the LAYOUT handoff blocker: {result.detail}",
+            "Refresh with `pcbforge status --check --write` after the fix.",
+        )
+    if result.state == "Awaiting approval":
+        return (
+            "Run `pcbforge status review layout --stage handoff` and present the packet.",
+            "Wait for unambiguous user approval of that fingerprint.",
+            (
+                "Record it with `pcbforge status approve layout --stage handoff "
+                '--fingerprint <sha256> --note "<approval>"`.'
+            ),
+        )
+    return (
+        "Author the exact placement contract in `placement.yaml`.",
+        "Run `pcbforge prepare-layout`.",
+        "Then review the LAYOUT handoff packet.",
+    )
+
+
+def by_phase_complete(
+    phases: Sequence[PhaseResult],
+    phase: str,
+) -> bool:
+    return next(
+        (result.complete for result in phases if result.phase.key == phase),
+        False,
+    )
+
+
 def inspect_status(
     project_dir: Path,
     *,
@@ -2071,7 +2551,29 @@ def inspect_status(
     )
     if current is None:
         current = next((result for result in phases if not result.complete), None)
-    next_actions = _actions_for(current)[:3] if current is not None else ()
+    transitions = _derive_transitions(project_dir, spec, document, phases)
+    current_transition = next(
+        (
+            transition
+            for transition in transitions
+            if not transition.complete
+            and by_phase_complete(phases, transition.source_phase)
+        ),
+        None,
+    )
+    if (
+        current_transition is not None
+        and current is not None
+        and current.phase.key != current_transition.target_phase
+    ):
+        current_transition = None
+    next_actions = (
+        _transition_actions(current_transition)[:3]
+        if current_transition is not None
+        else _actions_for(current)[:3]
+        if current is not None
+        else ()
+    )
     required = tuple(result for result in phases if result.phase.required)
     checks_failed = False
     for name, record in document.checks.items():
@@ -2095,6 +2597,8 @@ def inspect_status(
         document=document,
         phases=phases,
         current=current,
+        transitions=transitions,
+        current_transition=current_transition,
         next_actions=next_actions,
         completed_required=sum(result.complete for result in required),
         required_total=len(required),
@@ -2280,7 +2784,11 @@ def run_status_checks(
             project_dir / PLACEMENT_FILENAME
         ).is_file() and build_test_ok
         if should_run_brief:
-            name = "brief"
+            name = (
+                "layout-handoff"
+                if _phase_transitions_enabled(project_dir)
+                else "brief"
+            )
             try:
                 result = check_brief(project_dir, tool_root=tool_root)
             except (PlacementInputError, PlacementError) as exc:
@@ -2563,6 +3071,12 @@ def _prepare_phase_review(
             f"current {phase.upper()} circuit proposal approval is missing"
         )
     if (
+        phase == "layout"
+        and _phase_transitions_enabled(project_dir)
+        and _current_layout_handoff(project_dir, checked) is None
+    ):
+        failures.append("current CIRCUIT → LAYOUT handoff approval is missing")
+    if (
         phase != "spec"
         and not _current_policy_baseline(project_dir, checked)
     ):
@@ -2639,18 +3153,29 @@ def _prepare_proposal_review(
 
     if phase == "architect":
         diagram = project_dir / "docs" / "architecture.md"
+        mcu_plan = project_dir / "docs" / "mcu.md"
         if (
             not diagram.is_file()
             or ARCHITECTURE_MARKER not in _read_text(diagram)
         ):
             failures.append("missing current docs/architecture.md")
+        if _phase_transitions_enabled(project_dir) and not mcu_plan.is_file():
+            failures.append("missing current docs/mcu.md")
         if _architecture_source_started(project_dir):
             failures.append(
                 "architecture source exists before current proposal approval"
             )
         artifacts = tuple(
             path.relative_to(project_dir).as_posix()
-            for path in (project_dir / "spec.md", diagram)
+            for path in (
+                project_dir / "spec.md",
+                diagram,
+                *(
+                    (mcu_plan,)
+                    if _phase_transitions_enabled(project_dir)
+                    else ()
+                ),
+            )
             if path.is_file()
         )
     else:
@@ -2798,6 +3323,80 @@ def _prepare_proposal_review(
     )
 
 
+def _prepare_layout_handoff_review(
+    project_dir: Path,
+    *,
+    tool_root: Path | None,
+    runner: CommandRunner,
+    checked_at: str | None,
+) -> tuple[PhaseReview, StatusDocument]:
+    project_dir = _project_dir(project_dir)
+    if not _phase_transitions_enabled(project_dir):
+        raise StatusInputError(
+            "LAYOUT handoff review requires project schema 15"
+        )
+    document = read_status_document(project_dir)
+    report = inspect_status(project_dir, document=document)
+    circuit = next(
+        result for result in report.phases if result.phase.key == "circuit"
+    )
+    failures: list[str] = []
+    if not circuit.complete:
+        failures.append("CIRCUIT is not complete")
+    if _current_layout_handoff(project_dir, document) is not None:
+        failures.append("LAYOUT handoff is already approved")
+
+    checked = run_status_checks(
+        project_dir,
+        document,
+        tool_root=tool_root,
+        runner=runner,
+        checked_at=checked_at,
+    )
+    spec = report.spec
+    check_reviews: list[PhaseReviewCheck] = []
+    for name in ("build-test", "layout-handoff", "policy"):
+        current, detail = _current_check(project_dir, spec, checked, name)
+        record = checked.checks.get(name)
+        check_reviews.append(
+            PhaseReviewCheck(
+                name,
+                record.outcome if record is not None else "missing",
+                record.summary if record is not None else detail,
+                record.fingerprint if record is not None else "",
+            )
+        )
+        if not current:
+            failures.append(detail)
+
+    artifacts = tuple(
+        path.relative_to(project_dir).as_posix()
+        for path in _phase_artifact_paths(
+            project_dir,
+            spec,
+            "brief",
+        )
+    )
+    fingerprint = _layout_handoff_fingerprint(project_dir, checked)
+    return (
+        PhaseReview(
+            project_dir,
+            _workflow_phase_map(project_dir)["layout"],
+            not failures,
+            (
+                "layout handoff evidence passed; explicit user approval is required"
+                if not failures
+                else "; ".join(dict.fromkeys(failures))
+            ),
+            fingerprint,
+            artifacts,
+            tuple(check_reviews),
+            "handoff",
+        ),
+        checked,
+    )
+
+
 def review_phase(
     project_dir: Path,
     phase: str,
@@ -2808,7 +3407,26 @@ def review_phase(
     checked_at: str | None = None,
 ) -> PhaseReview:
     """Build a read-only, deterministic phase packet for user review."""
+    project_dir = _project_dir(project_dir)
     phase = phase.lower()
+    if (
+        _phase_transitions_enabled(project_dir)
+        and phase == "brief"
+    ):
+        phase = "layout"
+        stage = "handoff"
+    if stage == "handoff":
+        if phase != "layout":
+            raise StatusInputError(
+                "handoff review is only valid for layout"
+            )
+        review, _ = _prepare_layout_handoff_review(
+            project_dir,
+            tool_root=tool_root,
+            runner=runner,
+            checked_at=checked_at,
+        )
+        return review
     if stage == "proposal":
         review, _ = _prepare_proposal_review(
             project_dir,
@@ -2819,7 +3437,7 @@ def review_phase(
         )
         return review
     if stage != "final":
-        raise StatusInputError("stage must be proposal or final")
+        raise StatusInputError("stage must be proposal, handoff, or final")
     review, _ = _prepare_phase_review(
         project_dir,
         phase,
@@ -2835,7 +3453,13 @@ def render_phase_review(review: PhaseReview) -> str:
     lines = [
         (
             f"pcbforge phase review: {review.phase.label}"
-            + (" proposal" if review.stage == "proposal" else "")
+            + (
+                " proposal"
+                if review.stage == "proposal"
+                else " handoff"
+                if review.stage == "handoff"
+                else ""
+            )
         ),
         f"readiness: {'AWAITING APPROVAL' if review.ready else 'BLOCKED'}",
         f"detail: {review.detail}",
@@ -2879,6 +3503,12 @@ def approve_phase(
     """Record an explicit user approval of the exact reviewed phase packet."""
     project_dir = _project_dir(project_dir)
     phase = phase.lower()
+    if (
+        _phase_transitions_enabled(project_dir)
+        and phase == "brief"
+    ):
+        phase = "layout"
+        stage = "handoff"
     note = note.strip()
     expected_fingerprint = expected_fingerprint.strip().lower()
     if not note:
@@ -2891,7 +3521,18 @@ def approve_phase(
             "`pcbforge migrate-approvals`"
         )
     event_time = now or _now()
-    if stage == "proposal":
+    if stage == "handoff":
+        if phase != "layout":
+            raise StatusInputError(
+                "handoff approval is only valid for layout"
+            )
+        review, checked = _prepare_layout_handoff_review(
+            project_dir,
+            tool_root=tool_root,
+            runner=runner,
+            checked_at=event_time,
+        )
+    elif stage == "proposal":
         review, checked = _prepare_proposal_review(
             project_dir,
             phase,
@@ -2908,7 +3549,7 @@ def approve_phase(
             checked_at=event_time,
         )
     else:
-        raise StatusInputError("stage must be proposal or final")
+        raise StatusInputError("stage must be proposal, handoff, or final")
     if not review.ready:
         raise StatusInputError(
             f"cannot approve {phase}: {review.detail}"
@@ -2931,15 +3572,41 @@ def approve_phase(
                 f"cannot approve brief: --note must reference {brief_name} and "
                 "contain `schematic review: adequate`"
             )
-    event = StatusEvent(
-        event_time,
-        phase,
-        "proposal-approved" if stage == "proposal" else "complete",
-        note,
-        review.fingerprint,
-    )
-    checked = replace(checked, events=(*checked.events, event))
-    if phase == "mcu" and stage == "final" and _schematic_approval_enabled(project_dir):
+    if stage == "handoff":
+        transition_event = TransitionEvent(
+            event_time,
+            "layout-handoff",
+            "approved",
+            note,
+            review.fingerprint,
+        )
+        checked = replace(
+            checked,
+            transition_events=(
+                *checked.transition_events,
+                transition_event,
+            ),
+        )
+    else:
+        event = StatusEvent(
+            event_time,
+            phase,
+            "proposal-approved" if stage == "proposal" else "complete",
+            note,
+            review.fingerprint,
+        )
+        checked = replace(checked, events=(*checked.events, event))
+    if (
+        stage == "final"
+        and (
+            phase == "mcu"
+            or (
+                phase == "architect"
+                and _phase_transitions_enabled(project_dir)
+            )
+        )
+        and _schematic_approval_enabled(project_dir)
+    ):
         capture_implementation_baseline(project_dir)
     return write_status(
         project_dir,
@@ -2973,11 +3640,23 @@ def _metadata(document: StatusDocument) -> dict[str, Any]:
         if event.approval_fingerprint:
             item["approval_fingerprint"] = event.approval_fingerprint
         policy_events.append(item)
+    transition_events = []
+    for event in document.transition_events:
+        item = {
+            "at": event.at,
+            "transition": event.transition,
+            "action": event.action,
+            "note": event.note,
+        }
+        if event.approval_fingerprint:
+            item["approval_fingerprint"] = event.approval_fingerprint
+        transition_events.append(item)
     return {
         "pcbforge_status_schema": STATUS_SCHEMA,
         "updated_at": document.updated_at,
         "events": events,
         "policy_events": policy_events,
+        "transition_events": transition_events,
         "checks": {
             name: {
                 "at": record.at,
@@ -3002,19 +3681,34 @@ def render_dashboard(report: StatusReport) -> str:
         allow_unicode=True,
     ).rstrip()
     current = report.current
+    current_transition = report.current_transition
     current_text = (
-        f"{_phase_number(report.project_dir, current.phase.key)}. "
-        f"{current.phase.label} — {current.state}"
-        if current is not None
-        else "All phases complete"
+        f"Transition: {current_transition.label} — {current_transition.state}"
+        if current_transition is not None
+        else (
+            f"{_phase_number(report.project_dir, current.phase.key)}. "
+            f"{current.phase.label} — {current.state}"
+            if current is not None
+            else "All phases complete"
+        )
     )
     health = (
         "🔴 Blocked"
         if report.checks_failed
         or (current is not None and current.state == "Blocked")
+        or (
+            current_transition is not None
+            and current_transition.state == "Blocked"
+        )
         else "🟢 On track"
     )
-    focus = current.phase.focus if current is not None else "Workflow complete."
+    focus = (
+        current_transition.detail
+        if current_transition is not None
+        else current.phase.focus
+        if current is not None
+        else "Workflow complete."
+    )
 
     completed = [
         f"- ✅ {result.phase.label}"
@@ -3029,6 +3723,11 @@ def render_dashboard(report: StatusReport) -> str:
         for result in report.phases
         if result.state == "Blocked"
     ]
+    blockers.extend(
+        f"- **{transition.label}:** {transition.detail}"
+        for transition in report.transitions
+        if transition.state == "Blocked"
+    )
     for name, record in sorted(report.document.checks.items()):
         if record.outcome != "fail":
             continue
@@ -3058,6 +3757,14 @@ def render_dashboard(report: StatusReport) -> str:
         )
         for event in report.document.policy_events
     )
+    recent_items.extend(
+        (
+            event.at,
+            f"- **{event.at}:** transition {event.transition} "
+            f"{event.action} — {event.note}",
+        )
+        for event in report.document.transition_events
+    )
     recent = [
         rendered
         for _, rendered in sorted(recent_items, reverse=True)[:5]
@@ -3082,7 +3789,26 @@ def render_dashboard(report: StatusReport) -> str:
         "Blocked": "🔴",
         "Skipped": "➖",
     }
+    transitions_by_target = {
+        transition.target_phase: transition
+        for transition in report.transitions
+    }
     for result in report.phases:
+        transition = transitions_by_target.get(result.phase.key)
+        if transition is not None:
+            rows.append(
+                "| "
+                + " | ".join(
+                    (
+                        "↳",
+                        transition.label,
+                        transition.lead,
+                        f"{icons[transition.state]} {transition.state}",
+                        _escape(transition.detail),
+                    )
+                )
+                + " |"
+            )
         number = _phase_number(report.project_dir, result.phase.key)
         rows.append(
             "| "
@@ -3143,13 +3869,20 @@ _Last updated: {updated}_
 def render_terminal(report: StatusReport) -> str:
     """Render a concise terminal view from the same status model."""
     current = report.current
+    current_transition = report.current_transition
     lines = [
         (
             f"{report.spec.name}: {report.completed_required}/"
             f"{report.required_total} required phases complete"
         )
     ]
-    if current is None:
+    if current_transition is not None:
+        lines.append(
+            f"current: transition — {current_transition.label} — "
+            f"{current_transition.state}"
+        )
+        lines.append(f"status: {current_transition.detail}")
+    elif current is None:
         lines.append("current: workflow complete")
     else:
         lines.append(
@@ -3273,12 +4006,42 @@ def _invalidate_stale_approvals(
                             "Order reopened because sourcing confirmation is stale",
                         )
                     )
-    if not invalidations and not policy_invalidations:
+    transition_invalidations: list[TransitionEvent] = []
+    if _phase_transitions_enabled(project_dir):
+        latest_transitions = _latest_transition_events(
+            document.transition_events
+        )
+        handoff = latest_transitions.get("layout-handoff")
+        if (
+            handoff is not None
+            and handoff.action == "approved"
+            and _current_layout_handoff(project_dir, document) is None
+        ):
+            transition_invalidations.append(
+                TransitionEvent(
+                    at or _now(),
+                    "layout-handoff",
+                    "reopened",
+                    (
+                        "Approval invalidated automatically because CIRCUIT "
+                        "or placement-handoff artifacts changed"
+                    ),
+                )
+            )
+    if (
+        not invalidations
+        and not policy_invalidations
+        and not transition_invalidations
+    ):
         return document
     return replace(
         document,
         events=(*document.events, *invalidations),
         policy_events=(*document.policy_events, *policy_invalidations),
+        transition_events=(
+            *document.transition_events,
+            *transition_invalidations,
+        ),
     )
 
 
@@ -3332,6 +4095,43 @@ def write_status(
     return StatusResult(report=report, wrote=True)
 
 
+def record_initialization_blocker(
+    project_dir: Path,
+    note: str,
+    *,
+    now: str | None = None,
+) -> StatusResult | None:
+    """Record an eligible schema-15 initialization failure without scaffolding."""
+    project_dir = _project_dir(project_dir)
+    if (project_dir / ".pcbforge").exists():
+        return None
+    document = read_status_document(project_dir)
+    report = inspect_status(project_dir, document=document)
+    spec_phase = next(
+        result for result in report.phases if result.phase.key == "spec"
+    )
+    if not spec_phase.complete:
+        return None
+    event_time = now or _now()
+    document = replace(
+        document,
+        transition_events=(
+            *document.transition_events,
+            TransitionEvent(
+                event_time,
+                "initialize",
+                "blocked",
+                note.strip() or "Initialization failed",
+            ),
+        ),
+    )
+    return write_status(
+        project_dir,
+        now=event_time,
+        document=document,
+    )
+
+
 def _placement_brief_migration_move(
     project_dir: Path,
 ) -> tuple[Path, Path] | None:
@@ -3379,13 +4179,14 @@ def migrate_approvals(
         )
 
     from pcbforge.initialize import (
-        AGENTS_SCHEMA,
-        APPROVAL_GUIDE_SCHEMA,
+        SCHEMA14_AGENTS_SCHEMA as AGENTS_SCHEMA,
+        SCHEMA14_APPROVAL_GUIDE_SCHEMA as APPROVAL_GUIDE_SCHEMA,
         BRIEF_GUIDE_SCHEMA,
         CIRCUIT_GUIDE_SCHEMA,
-        MCU_GUIDE_SCHEMA,
+        SCHEMA14_MCU_GUIDE_SCHEMA as MCU_GUIDE_SCHEMA,
         CIRCUIT_REVIEW_SCHEMA,
-        _render_agents,
+        SCHEMA14_STATUS_SCHEMA as STATUS_SCHEMA,
+        _render_schema14_agents as _render_agents,
     )
 
     document = read_status_document(project_dir)
@@ -3549,13 +4350,14 @@ def migrate_schematic_review(
             "AGENTS.md is not the expected generated schema-11 guidance"
         )
     from pcbforge.initialize import (
-        AGENTS_SCHEMA,
-        APPROVAL_GUIDE_SCHEMA,
+        SCHEMA14_AGENTS_SCHEMA as AGENTS_SCHEMA,
+        SCHEMA14_APPROVAL_GUIDE_SCHEMA as APPROVAL_GUIDE_SCHEMA,
         BRIEF_GUIDE_SCHEMA,
         CIRCUIT_GUIDE_SCHEMA,
-        MCU_GUIDE_SCHEMA,
+        SCHEMA14_MCU_GUIDE_SCHEMA as MCU_GUIDE_SCHEMA,
         CIRCUIT_REVIEW_SCHEMA,
-        _render_agents,
+        SCHEMA14_STATUS_SCHEMA as STATUS_SCHEMA,
+        _render_schema14_agents as _render_agents,
     )
 
     guidance = pins.get("guidance")
@@ -3784,14 +4586,14 @@ def migrate_circuit_review(
             "AGENTS.md is not the expected generated schema-12 guidance"
         )
     from pcbforge.initialize import (
-        AGENTS_SCHEMA,
-        APPROVAL_GUIDE_SCHEMA,
+        SCHEMA14_AGENTS_SCHEMA as AGENTS_SCHEMA,
+        SCHEMA14_APPROVAL_GUIDE_SCHEMA as APPROVAL_GUIDE_SCHEMA,
         BRIEF_GUIDE_SCHEMA,
         CIRCUIT_REVIEW_SCHEMA,
         CIRCUIT_GUIDE_SCHEMA,
-        MCU_GUIDE_SCHEMA,
-        STATUS_SCHEMA,
-        _render_agents,
+        SCHEMA14_MCU_GUIDE_SCHEMA as MCU_GUIDE_SCHEMA,
+        SCHEMA14_STATUS_SCHEMA as STATUS_SCHEMA,
+        _render_schema14_agents as _render_agents,
     )
 
     guidance = pins.get("guidance")
@@ -4125,7 +4927,7 @@ def migrate_circuit_phase(
     preserve_complete = implement_current and build_current
 
     old_common_current: dict[str, bool] = {}
-    for phase in PHASES:
+    for phase in CIRCUIT_PHASES:
         if phase.key == "circuit":
             continue
         event_info = latest.get(phase.key)
@@ -4168,15 +4970,15 @@ def migrate_circuit_phase(
         )
 
     from pcbforge.initialize import (
-        AGENTS_SCHEMA,
-        APPROVAL_GUIDE_SCHEMA,
+        SCHEMA14_AGENTS_SCHEMA as AGENTS_SCHEMA,
+        SCHEMA14_APPROVAL_GUIDE_SCHEMA as APPROVAL_GUIDE_SCHEMA,
         BRIEF_GUIDE_SCHEMA,
         BUILD_TEST_GUIDE_SCHEMA,
         CIRCUIT_GUIDE_SCHEMA,
         CIRCUIT_REVIEW_SCHEMA,
-        MCU_GUIDE_SCHEMA,
-        STATUS_SCHEMA,
-        _render_agents,
+        SCHEMA14_MCU_GUIDE_SCHEMA as MCU_GUIDE_SCHEMA,
+        SCHEMA14_STATUS_SCHEMA as STATUS_SCHEMA,
+        _render_schema14_agents as _render_agents,
     )
 
     guidance = pins.get("guidance")
@@ -4533,9 +5335,9 @@ def migrate_placement_brief(
     target = project_dir / BRIEF_FILENAME
 
     from pcbforge.initialize import (
-        AGENTS_SCHEMA,
+        SCHEMA14_AGENTS_SCHEMA as AGENTS_SCHEMA,
         BRIEF_GUIDE_SCHEMA,
-        _render_agents,
+        _render_schema14_agents as _render_agents,
     )
 
     if (
@@ -4578,7 +5380,7 @@ def migrate_placement_brief(
     spec = read_spec(project_dir / "spec.md")
     latest, _ = _latest_events(document.events)
     current_events: dict[str, StatusEvent] = {}
-    for phase in PHASES:
+    for phase in CIRCUIT_PHASES:
         event_info = latest.get(phase.key)
         if (
             event_info is not None
@@ -4768,7 +5570,7 @@ def migrate_placement_brief(
                     migrated_document,
                     events=tuple(events),
                 )
-        for phase in PHASES:
+        for phase in CIRCUIT_PHASES:
             event = current_events.get(phase.key)
             if event is None:
                 continue
@@ -4831,6 +5633,555 @@ def migrate_placement_brief(
             f"could not migrate placement brief atomically: {exc}"
         ) from exc
     return ApprovalMigrationResult(project_dir, True, ())
+
+
+def migrate_phase_transitions(
+    project_dir: Path,
+    *,
+    tool_root: Path | None = None,
+    now: str | None = None,
+) -> ApprovalMigrationResult:
+    """Atomically replace INIT, MCU, and BRIEF phases with schema-15 transitions."""
+    project_dir = _project_dir(project_dir)
+    tool_root = (
+        tool_root.resolve()
+        if tool_root is not None
+        else Path(__file__).resolve().parent.parent
+    )
+    pins_path = project_dir / ".pcbforge"
+    pins = dict(_project_pins(project_dir))
+    schema = pins.get("schema")
+    if schema == PHASE_TRANSITIONS_PIN_SCHEMA:
+        return ApprovalMigrationResult(project_dir, False, ())
+    if schema != CIRCUIT_PHASE_PIN_SCHEMA:
+        raise StatusInputError(
+            "migrate-phase-transitions requires generated .pcbforge schema 14; "
+            f"got {schema!r}"
+        )
+    guidance = pins.get("guidance")
+    if not isinstance(guidance, dict):
+        raise StatusInputError(".pcbforge guidance: expected a mapping")
+    agents_schema = guidance.get("agents_schema")
+    brief_schema = guidance.get("brief_schema")
+    if (agents_schema, brief_schema) not in {(14, 4), (15, 5)}:
+        raise StatusInputError(
+            "migrate-phase-transitions requires schema-14 agent/brief guidance "
+            f"14/4 or 15/5; got {agents_schema!r}/{brief_schema!r}"
+        )
+    agents_path = project_dir / "AGENTS.md"
+    try:
+        agents = agents_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise StatusInputError(f"cannot read {agents_path}: {exc}") from exc
+    if not agents.startswith(
+        f"<!-- pcbforge-agents-schema: {agents_schema} -->"
+    ):
+        raise StatusInputError(
+            "AGENTS.md does not match the pinned schema-14 guidance"
+        )
+
+    legacy_brief = project_dir / LEGACY_BRIEF_FILENAME
+    placement_brief = project_dir / BRIEF_FILENAME
+    if legacy_brief.exists() and placement_brief.exists():
+        raise StatusInputError(
+            f"refusing to overwrite migration target {BRIEF_FILENAME}"
+        )
+    if agents_schema == 14 and not legacy_brief.exists() and placement_brief.exists():
+        raise StatusInputError(
+            "placement brief was moved without updating schema-14 guidance"
+        )
+
+    document = read_status_document(project_dir)
+    spec = read_spec(project_dir / "spec.md")
+    latest, _ = _latest_events(document.events)
+
+    def current_phase(phase: str) -> StatusEvent | None:
+        event_info = latest.get(phase)
+        if (
+            phase == "publish"
+            and event_info is not None
+            and event_info[1].action == "skipped"
+        ):
+            return event_info[1]
+        if (
+            event_info is None
+            or event_info[1].action != "complete"
+            or not event_info[1].approval_fingerprint
+        ):
+            return None
+        return (
+            event_info[1]
+            if _approval_is_current(
+                project_dir,
+                phase,
+                event_info[1],
+                document,
+            )
+            else None
+        )
+
+    old_current = {
+        phase: current_phase(phase)
+        for phase in (
+            "spec",
+            "init",
+            "architect",
+            "mcu",
+            "circuit",
+            "brief",
+            "layout",
+            "route",
+            "verify",
+            "fab-out",
+            "order",
+            "publish",
+        )
+    }
+    old_architect_proposal = _current_architect_proposal(
+        project_dir,
+        document,
+    )
+    old_circuit_proposal = _current_circuit_proposal(
+        project_dir,
+        document,
+    )
+    preserve_spec = old_current["spec"] is not None
+    preserve_architect = bool(
+        preserve_spec
+        and old_architect_proposal is not None
+        and old_current["architect"] is not None
+        and old_current["mcu"] is not None
+    )
+    old_checks_current = {
+        name: _current_check(project_dir, spec, document, name)[0]
+        for name in (
+            "build-test",
+            "brief",
+            "policy",
+            "circuit-proposal",
+            "circuit-final",
+        )
+    }
+
+    from pcbforge.initialize import (
+        AGENTS_SCHEMA,
+        APPROVAL_GUIDE_SCHEMA,
+        ARCHITECT_GUIDE_SCHEMA,
+        LAYOUT_HANDOFF_GUIDE_SCHEMA,
+        MCU_GUIDE_SCHEMA,
+        STATUS_SCHEMA,
+        _render_agents,
+    )
+
+    guidance = dict(guidance)
+    guidance.pop("brief_schema", None)
+    pins["schema"] = PHASE_TRANSITIONS_PIN_SCHEMA
+    pins["guidance"] = {
+        **guidance,
+        "agents_schema": AGENTS_SCHEMA,
+        "architect_schema": ARCHITECT_GUIDE_SCHEMA,
+        "mcu_schema": MCU_GUIDE_SCHEMA,
+        "layout_handoff_schema": LAYOUT_HANDOFF_GUIDE_SCHEMA,
+        "approval_schema": APPROVAL_GUIDE_SCHEMA,
+        "status_schema": STATUS_SCHEMA,
+    }
+    try:
+        revision_result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=tool_root,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        dirty_result = subprocess.run(
+            ["git", "status", "--short"],
+            cwd=tool_root,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        revision = revision_result.stdout.strip()
+        dirty = bool(dirty_result.stdout.strip())
+    except OSError:
+        revision = ""
+        dirty = True
+    pcbforge_pin = pins.get("pcbforge")
+    if isinstance(pcbforge_pin, dict) and revision:
+        pins["pcbforge"] = {
+            **pcbforge_pin,
+            "revision": revision,
+            "dirty": dirty,
+        }
+    try:
+        _, _, profile_hash = load_policy_profile(tool_root)
+    except PolicyError as exc:
+        raise StatusInputError(str(exc)) from exc
+    policy_pin = pins.get("policy")
+    if isinstance(policy_pin, dict):
+        pins["policy"] = {
+            **policy_pin,
+            "profile_sha256": profile_hash,
+        }
+
+    outputs = {
+        pins_path: yaml.safe_dump(pins, sort_keys=False),
+        agents_path: _render_agents(spec, tool_root),
+    }
+    report_path = project_dir / BUILD_TEST_REPORT
+    status_path = _status_path(project_dir)
+    baseline_path = project_dir / BASELINE_PATH
+    evidence_paths = (
+        project_dir / "review" / "circuit" / "proposal" / "evidence.json",
+        project_dir / "review" / "circuit" / "final" / "evidence.json",
+    )
+    tracked_paths = (
+        *outputs,
+        report_path,
+        status_path,
+        baseline_path,
+        placement_brief,
+        *evidence_paths,
+    )
+    originals = {
+        path: path.read_bytes() if path.exists() else None
+        for path in tracked_paths
+    }
+    old_report = (
+        report_path.read_text(encoding="utf-8")
+        if report_path.is_file()
+        else None
+    )
+    old_pin_hash = hashlib.sha256(pins_path.read_bytes()).hexdigest()
+    try:
+        old_build_fingerprint = fingerprint_inputs(project_dir)
+    except (BuildTestError, OSError):
+        old_build_fingerprint = ""
+
+    moved = False
+    event_time = now or _now()
+    reopened: list[str] = []
+    try:
+        if legacy_brief.exists():
+            placement_brief.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(legacy_brief, placement_brief)
+            moved = True
+        for path, contents in outputs.items():
+            _atomic_write(path, contents)
+
+        checks = dict(document.checks)
+        if old_report is not None and old_build_fingerprint:
+            new_build_fingerprint = fingerprint_inputs(project_dir)
+            new_pin_hash = hashlib.sha256(pins_path.read_bytes()).hexdigest()
+            _atomic_write(
+                report_path,
+                old_report.replace(
+                    old_build_fingerprint,
+                    new_build_fingerprint,
+                ).replace(old_pin_hash, new_pin_hash),
+            )
+            build_test = checks.get("build-test")
+            if (
+                build_test is not None
+                and build_test.outcome == "pass"
+                and old_checks_current["build-test"]
+            ):
+                checks["build-test"] = replace(
+                    build_test,
+                    fingerprint=new_build_fingerprint,
+                )
+        if old_checks_current["circuit-proposal"]:
+            proposal = check_circuit_review(project_dir, "proposal", write=True)
+            checks["circuit-proposal"] = CheckRecord(
+                event_time,
+                proposal.fingerprint,
+                "pass",
+                proposal.summary,
+            )
+        if old_checks_current["circuit-final"]:
+            final = check_circuit_review(project_dir, "final", write=True)
+            checks["circuit-final"] = CheckRecord(
+                event_time,
+                final.fingerprint,
+                "pass",
+                final.summary,
+            )
+        policy = checks.get("policy")
+        if (
+            policy is not None
+            and policy.outcome == "pass"
+            and old_checks_current["policy"]
+        ):
+            checks["policy"] = replace(
+                policy,
+                fingerprint=policy_status_fingerprint(project_dir),
+            )
+        checks.pop("brief", None)
+        if (
+            old_checks_current["brief"]
+            and (project_dir / PLACEMENT_FILENAME).is_file()
+            and placement_brief.is_file()
+        ):
+            old_brief = document.checks["brief"]
+            checks["layout-handoff"] = replace(
+                old_brief,
+                fingerprint=brief_status_fingerprint(project_dir),
+            )
+
+        migrated = replace(document, checks=checks)
+        events = list(migrated.events)
+        transition_events = list(migrated.transition_events)
+        transition_events.append(
+            TransitionEvent(
+                event_time,
+                "initialize",
+                "complete",
+                "Schema-15 recognized the existing validated scaffold",
+            )
+        )
+
+        predecessor_current = preserve_spec
+        if predecessor_current:
+            fingerprint = _approval_fingerprint(
+                project_dir,
+                "spec",
+                "complete",
+                migrated,
+            )
+            events.append(
+                StatusEvent(
+                    event_time,
+                    "spec",
+                    "complete",
+                    "Schema-15 preserved equivalent SPEC approval",
+                    fingerprint,
+                )
+            )
+
+        architect_current = preserve_architect
+        if architect_current:
+            proposal_fingerprint = _approval_fingerprint(
+                project_dir,
+                "architect",
+                "proposal-approved",
+                migrated,
+            )
+            events.append(
+                StatusEvent(
+                    event_time,
+                    "architect",
+                    "proposal-approved",
+                    (
+                        "Schema-15 combined the approved architecture and "
+                        "exact MCU plan"
+                    ),
+                    proposal_fingerprint,
+                )
+            )
+            migrated = replace(migrated, events=tuple(events))
+            events.append(
+                StatusEvent(
+                    event_time,
+                    "architect",
+                    "complete",
+                    (
+                        "Schema-15 combined current ARCHITECT and MCU "
+                        "approvals"
+                    ),
+                    _approval_fingerprint(
+                        project_dir,
+                        "architect",
+                        "complete",
+                        migrated,
+                    ),
+                )
+            )
+        elif any(
+            old_current[key] is not None for key in ("architect", "mcu")
+        ):
+            events.append(
+                StatusEvent(
+                    event_time,
+                    "architect",
+                    "reopened",
+                    (
+                        "Schema-15 requires one current combined ARCHITECT "
+                        "and MCU approval"
+                    ),
+                )
+            )
+            reopened.append("architect")
+        migrated = replace(migrated, events=tuple(events))
+
+        circuit_current = bool(
+            architect_current
+            and old_circuit_proposal is not None
+            and old_current["circuit"] is not None
+        )
+        if circuit_current:
+            events.append(
+                StatusEvent(
+                    event_time,
+                    "circuit",
+                    "proposal-approved",
+                    "Schema-15 preserved equivalent CIRCUIT proposal approval",
+                    _approval_fingerprint(
+                        project_dir,
+                        "circuit",
+                        "proposal-approved",
+                        migrated,
+                    ),
+                )
+            )
+            migrated = replace(migrated, events=tuple(events))
+            events.append(
+                StatusEvent(
+                    event_time,
+                    "circuit",
+                    "complete",
+                    "Schema-15 preserved equivalent CIRCUIT approval",
+                    _approval_fingerprint(
+                        project_dir,
+                        "circuit",
+                        "complete",
+                        migrated,
+                    ),
+                )
+            )
+        elif old_current["circuit"] is not None:
+            events.append(
+                StatusEvent(
+                    event_time,
+                    "circuit",
+                    "reopened",
+                    "Schema-15 upstream ARCHITECT boundary changed",
+                )
+            )
+            reopened.append("circuit")
+        migrated = replace(migrated, events=tuple(events))
+
+        handoff_current = bool(
+            circuit_current
+            and old_current["brief"] is not None
+            and old_checks_current["brief"]
+            and "layout-handoff" in checks
+        )
+        if handoff_current:
+            transition_events.append(
+                TransitionEvent(
+                    event_time,
+                    "layout-handoff",
+                    "approved",
+                    "Schema-15 preserved equivalent BRIEF approval",
+                    _layout_handoff_fingerprint(project_dir, migrated),
+                )
+            )
+        elif old_current["brief"] is not None:
+            transition_events.append(
+                TransitionEvent(
+                    event_time,
+                    "layout-handoff",
+                    "reopened",
+                    "Schema-15 could not preserve the prior BRIEF approval",
+                )
+            )
+            reopened.append("layout-handoff")
+
+        predecessor_current = handoff_current
+        for phase in (
+            "layout",
+            "route",
+            "verify",
+            "fab-out",
+            "order",
+            "publish",
+        ):
+            old_event = old_current[phase]
+            if old_event is None:
+                if phase != "publish":
+                    predecessor_current = False
+                continue
+            if predecessor_current:
+                action = (
+                    "skipped"
+                    if old_event.action == "skipped"
+                    else "complete"
+                )
+                fingerprint = (
+                    ""
+                    if action == "skipped"
+                    else _approval_fingerprint(
+                        project_dir,
+                        phase,
+                        "complete",
+                        migrated,
+                    )
+                )
+                events.append(
+                    StatusEvent(
+                        event_time,
+                        phase,
+                        action,
+                        f"Schema-15 preserved equivalent {phase} approval",
+                        fingerprint,
+                    )
+                )
+                migrated = replace(migrated, events=tuple(events))
+            else:
+                events.append(
+                    StatusEvent(
+                        event_time,
+                        phase,
+                        "reopened",
+                        "Schema-15 predecessor approval was not preserved",
+                    )
+                )
+                reopened.append(phase)
+            if phase != "publish":
+                predecessor_current = predecessor_current and old_event is not None
+
+        migrated = replace(
+            migrated,
+            events=tuple(events),
+            transition_events=tuple(transition_events),
+        )
+        write_status(
+            project_dir,
+            tool_root=tool_root,
+            now=event_time,
+            document=migrated,
+        )
+    except (
+        OSError,
+        BuildTestError,
+        CircuitReviewError,
+        PlacementError,
+        PolicyError,
+        StatusError,
+    ) as exc:
+        for path in reversed(tracked_paths):
+            original = originals[path]
+            try:
+                if original is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(original)
+            except OSError:
+                pass
+        if moved:
+            try:
+                if placement_brief.exists():
+                    os.replace(placement_brief, legacy_brief)
+            except OSError:
+                pass
+        raise StatusError(
+            f"could not migrate phase transitions atomically: {exc}"
+        ) from exc
+    return ApprovalMigrationResult(
+        project_dir,
+        True,
+        tuple(dict.fromkeys(reopened)),
+    )
 
 
 def _validate_transition(
@@ -5111,6 +6462,42 @@ def mark_status(
 
     document = read_status_document(project_dir)
     pins = _project_pins(project_dir)
+    handoff_alias = (
+        _phase_transitions_enabled(project_dir)
+        and phase == "brief"
+    )
+    if handoff_alias:
+        phase = "layout"
+    if (
+        _phase_transitions_enabled(project_dir)
+        and phase == "layout"
+        and _current_layout_handoff(project_dir, document) is None
+        and action in {"blocked", "reopened"}
+    ):
+        event = TransitionEvent(
+            now or _now(),
+            "layout-handoff",
+            action,
+            note,
+        )
+        return write_status(
+            project_dir,
+            tool_root=tool_root,
+            runner=runner,
+            now=event.at,
+            document=replace(
+                document,
+                transition_events=(
+                    *document.transition_events,
+                    event,
+                ),
+            ),
+        )
+    if handoff_alias:
+        raise StatusInputError(
+            "BRIEF is now the LAYOUT handoff; use `status review layout "
+            "--stage handoff` and matching `status approve`"
+        )
     if pins.get("schema") == 10:
         raise StatusInputError(
             "project approval workflow is schema 10; run "

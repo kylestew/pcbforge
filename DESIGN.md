@@ -54,10 +54,12 @@ implementation and final approval follows presentation plus validation.
 Approval events are bound to artifact fingerprints. A changed approved
 artifact becomes stale; a dashboard write durably reopens its phase so tool
 reruns or later content restoration cannot silently revive the approval.
-Every phase, including tool-led work, requires final user approval. Passing
-checks produce `Awaiting approval`, not completion. The agent presents the
-exact `status review` packet and may record its fingerprint with
-`status approve` only after the user unambiguously accepts it.
+Every numbered phase requires final user approval. Passing checks produce
+`Awaiting approval`, not completion. Initialization is a checked automatic
+transition after SPEC; the CIRCUIT-to-LAYOUT handoff is a checked transition
+with explicit transfer approval. The agent presents the exact `status review`
+packet and may record its fingerprint with `status approve` only after the
+user unambiguously accepts it.
 
 ### Manufacturing-policy invariant
 
@@ -82,6 +84,17 @@ exception approval reopens the profile-mapped completed phase.
 
 ## Decision record
 
+- **2026-07-29 — schema-15 streamlines phase boundaries.** INIT becomes the
+  visible, automatic SPEC-to-ARCHITECT transition; MCU becomes a subordinate
+  ARCHITECT workstream; BRIEF becomes the visible CIRCUIT-to-LAYOUT handoff.
+  The dashboard therefore has nine numbered phases, eight required, while
+  retaining both transition states and their append-only events. ARCHITECT
+  proposal approval now binds `docs/architecture.md` and `docs/mcu.md`; its
+  final approval requires build, IOC round-trip, and one-to-one MCU evidence.
+  The layout handoff uses `prepare-layout`, `check-layout-handoff`, and
+  `status ... layout --stage handoff`. Schema-14 projects opt in through the
+  atomic, conservative `migrate-phase-transitions`; no board is migrated by
+  tool rollout alone.
 - **2026-07-29 — generated placement briefs live under `docs/`.**
   `placement.yaml` remains the root-level machine and human contract;
   `pcbforge brief` writes its generated review derivative to
@@ -246,32 +259,29 @@ for whichever compiler wins:
 1. SPEC       chat interview → spec.md + policy.yaml + tracked STATUS.md;
               U approves requirements/policy baseline, AI records through status.
               Not a CLI verb — chat is the medium (see Spec).
-2. init       T: approved spec/policy → compiler project + KiCad shell +
-              pinned JLC rules and manufacturing-policy profiles
-3. ARCHITECT  AI proposes module graph before code (power tree, MCU,
-              peripherals, typed interfaces), showing block renders for
-              proposed reuse. U approves proposal; AI writes/builds/audits
-              skeleton; U gives separate final approval.
-4. MCU        AI selects exact STM32 + pins → creates .ioc → T: check-ioc;
-              U may review/edit in CubeMX. AI derives the MCU module manually
-              with a one-to-one audit until ioc2code is implemented.
-5. CIRCUIT    AI creates an explanatory SVG plus exact proposal model; T:
+   transition T: atomic init creates and smoke-tests the project scaffold,
+              then opens ARCHITECT without separate approval.
+2. ARCHITECT  AI proposes module graph plus exact STM32/package, resource, and
+              provisional pin plan. U approves proposal; AI writes/builds the
+              skeleton, creates and round-trips the IOC, derives src/mcu.ato,
+              and performs diagram + one-to-one audits; U gives final approval.
+3. CIRCUIT    AI creates an explanatory SVG plus exact proposal model; T:
               semantic binding; U approves before source. AI implements exact
               parts; T validates identity/pin/topology parity, parts, policy,
               exact build-test.yaml, assertions, BOM/connectivity, and no-op
               spatial preservation; U gives one final approval.
-6. brief      AI: exact placement.yaml from reviewed intent; T validates
+   transition AI: exact placement.yaml from reviewed intent; T validates
               complete footprint/ref/pad/net coverage, generates
               docs/placement-brief.md,
               and seeds PCBForge-owned classes in .kicad_pro without touching
-              .kicad_pcb; U approves brief beside current CIRCUIT view.
-7. LAYOUT     U — THE ART. AI spotter on request (see Layout copilot).
-8. ROUTE      U — the art continues. AI sanity checks on request.
-9. verify     T: DRC vs JLC rules + scripted layout audits; AI render review.
-10. fab-out   T: JLC Gerbers + drill + BOM + CPL → fab/board.zip
-11. order     post-FAB sourcing confirmation → U uploads to JLCPCB
+              .kicad_pcb; U approves the handoff beside current CIRCUIT view.
+4. LAYOUT     U — THE ART. AI spotter on request (see Layout copilot).
+5. ROUTE      U — the art continues. AI sanity checks on request.
+6. verify     T: DRC vs JLC rules + scripted layout audits; AI render review.
+7. fab-out    T: JLC Gerbers + drill + BOM + CPL → fab/board.zip
+8. order      post-FAB sourcing confirmation → U uploads to JLCPCB
               (tool never touches money/orders)
-12. publish   proven modules: version tag + generated schematic render;
+9. publish    proven modules: version tag + generated schematic render;
               U optional prettify (the surviving drawing act).
 ```
 

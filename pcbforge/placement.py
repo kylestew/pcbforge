@@ -1,4 +1,4 @@
-"""Structured Step 6 placement brief generation and validation."""
+"""Structured CIRCUIT-to-LAYOUT handoff generation and validation."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ from pcbforge.initialize import InitInputError, read_spec
 
 PLACEMENT_SCHEMA = 1
 BRIEF_SCHEMA = 1
-PROJECT_PIN_SCHEMA = 14
+PROJECT_PIN_SCHEMA = 15
 PLACEMENT_FILENAME = "placement.yaml"
 BRIEF_FILENAME = "docs/placement-brief.md"
 LEGACY_BRIEF_FILENAME = "brief.md"
@@ -63,7 +63,7 @@ EDGES = {"any", "north", "east", "south", "west"}
 
 
 class PlacementError(RuntimeError):
-    """Step 6 generation or verification failed."""
+    """Layout-handoff generation or verification failed."""
 
 
 class PlacementInputError(PlacementError):
@@ -295,9 +295,9 @@ def _read_rules(
 def _read_project_pins(project_dir: Path) -> Mapping[str, Any]:
     data = _load_yaml(project_dir / ".pcbforge", ".pcbforge")
     errors = []
-    if data.get("schema") not in {11, 12, 13, PROJECT_PIN_SCHEMA}:
+    if data.get("schema") not in {11, 12, 13, 14, PROJECT_PIN_SCHEMA}:
         errors.append(
-            f"schema: expected integer 11, 12, 13, or {PROJECT_PIN_SCHEMA}"
+            f"schema: expected integer 11, 12, 13, 14, or {PROJECT_PIN_SCHEMA}"
         )
     guidance = data.get("guidance")
     if not isinstance(guidance, dict):
@@ -305,8 +305,13 @@ def _read_project_pins(project_dir: Path) -> Mapping[str, Any]:
     else:
         schema = data.get("schema")
         expected_brief = {11: 1, 12: 2, 13: 3, 14: 5}.get(schema)
-        expected_approval = {11: 2, 12: 3, 13: 4, 14: 5}.get(schema)
-        if guidance.get("brief_schema") != expected_brief:
+        expected_approval = {11: 2, 12: 3, 13: 4, 14: 5, 15: 6}.get(schema)
+        if schema == 15:
+            if guidance.get("layout_handoff_schema") != 1:
+                errors.append(
+                    "guidance.layout_handoff_schema: expected integer 1"
+                )
+        elif guidance.get("brief_schema") != expected_brief:
             errors.append(
                 f"guidance.brief_schema: expected integer {expected_brief}"
             )
@@ -318,7 +323,8 @@ def _read_project_pins(project_dir: Path) -> Mapping[str, Any]:
             errors.append("guidance.policy_schema: expected integer 1")
     if errors:
         raise PlacementInputError(
-            "project guidance is not migrated for Step 6:\n  - " + "\n  - ".join(errors)
+            "project guidance is not migrated for the layout handoff:\n  - "
+            + "\n  - ".join(errors)
         )
     return data
 
@@ -1050,7 +1056,7 @@ def brief_status_fingerprint(
     *,
     tool_root: Path | None = None,
 ) -> str:
-    """Fingerprint Step 6 inputs/outputs without board positions or user classes."""
+    """Fingerprint handoff inputs/outputs without board positions or user classes."""
     project_dir = project_dir.expanduser().resolve()
     tool_root = (
         tool_root.resolve()
@@ -1114,7 +1120,7 @@ def brief_status_fingerprint(
 
 
 def brief_inputs(project_dir: Path) -> tuple[Path, ...]:
-    """Return visible Step 6 inputs and outputs for dashboard diagnostics."""
+    """Return visible handoff inputs and outputs for dashboard diagnostics."""
     project_dir = project_dir.expanduser().resolve()
     paths = [
         project_dir / PLACEMENT_FILENAME,
@@ -1271,12 +1277,12 @@ begin with `pcbforge:`; user-created classes remain untouched.
 
 ## Human approval gate
 
-Before Step 6 completes, review this brief beside the current approved CIRCUIT
-overview. Run `pcbforge status review brief`, present its exact fingerprint,
+Before LAYOUT begins, review this handoff beside the current approved CIRCUIT
+overview. Run `pcbforge status review layout --stage handoff`, present its exact fingerprint,
 and wait for explicit user approval. Record that approval with
-`pcbforge status approve brief --fingerprint <sha256> --note "Approved
+`pcbforge status approve layout --stage handoff --fingerprint <sha256> --note "Approved
 docs/placement-brief.md beside the current CIRCUIT overview"`. If the circuit evidence is
-missing, stale, or inadequate for placement decisions, block Step 6.
+missing, stale, or inadequate for placement decisions, block the handoff.
 """
 
 
@@ -1313,7 +1319,7 @@ def _commit_outputs(outputs: Sequence[tuple[Path, bytes]]) -> tuple[bool, ...]:
             path: path.read_bytes() if path.exists() else None for path, _ in outputs
         }
     except OSError as exc:
-        raise PlacementError(f"cannot stage Step 6 outputs: {exc}") from exc
+        raise PlacementError(f"cannot stage layout-handoff outputs: {exc}") from exc
     changed = tuple(originals[path] != contents for path, contents in outputs)
     staged: dict[Path, Path] = {}
     replaced: list[Path] = []
@@ -1338,7 +1344,7 @@ def _commit_outputs(outputs: Sequence[tuple[Path, bytes]]) -> tuple[bool, ...]:
             else ""
         )
         raise PlacementError(
-            f"could not atomically write Step 6 outputs: {exc}{detail}"
+            f"could not atomically write layout-handoff outputs: {exc}{detail}"
         ) from exc
     finally:
         for temporary in staged.values():
@@ -1440,7 +1446,7 @@ def check_brief(
     *,
     tool_root: Path | None = None,
 ) -> BriefResult:
-    """Validate current Step 6 outputs without changing project files."""
+    """Validate current layout-handoff outputs without changing project files."""
     project_dir = project_dir.expanduser().resolve()
     _require_circuit_acceptance(project_dir)
     spec, board, contract, project_path, project = _project_context(
@@ -1451,7 +1457,7 @@ def check_brief(
     if _owned_project_semantics(project) != _owned_project_semantics(expected_project):
         raise PlacementError(
             f"{project_path.name}: PCBForge-owned net classes are missing or stale; "
-            "run `pcbforge brief`"
+            "run `pcbforge prepare-layout`"
         )
     fingerprint = _contract_fingerprint(project_dir, board, expected_project)
     expected_brief = _render_brief(spec.name, contract, fingerprint)
@@ -1460,13 +1466,16 @@ def check_brief(
         actual_brief = brief_path.read_text(encoding="utf-8")
     except FileNotFoundError as exc:
         relative = brief_path.relative_to(project_dir).as_posix()
-        raise PlacementError(f"missing {relative}; run `pcbforge brief`") from exc
+        raise PlacementError(
+            f"missing {relative}; run `pcbforge prepare-layout`"
+        ) from exc
     except (OSError, UnicodeError) as exc:
         raise PlacementError(f"cannot read {brief_path}: {exc}") from exc
     if actual_brief != expected_brief:
         relative = brief_path.relative_to(project_dir).as_posix()
         raise PlacementError(
-            f"{relative} is missing, modified, or stale; run `pcbforge brief`"
+            f"{relative} is missing, modified, or stale; "
+            "run `pcbforge prepare-layout`"
         )
     return BriefResult(
         project_dir,

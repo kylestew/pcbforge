@@ -22,6 +22,7 @@ MIGRATION_COMMANDS = {
     "migrate-circuit-review",
     "migrate-circuit-phase",
     "migrate-placement-brief",
+    "migrate-phase-transitions",
 }
 OPTIONS_WITH_VALUES = {"--stage", "--note", "--fingerprint"}
 SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -123,6 +124,8 @@ def project_argument(argv: Sequence[str], cwd: Path) -> Path | None:
         "check-build-test",
         "brief",
         "check-brief",
+        "prepare-layout",
+        "check-layout-handoff",
         "check-policy",
         *MIGRATION_COMMANDS,
     }:

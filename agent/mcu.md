@@ -1,7 +1,7 @@
-<!-- pcbforge-mcu-schema: 3 -->
-# pcbforge — MCU playbook
+<!-- pcbforge-mcu-schema: 4 -->
+# pcbforge — MCU workstream inside ARCHITECT
 
-This playbook operationalizes the MCU phase in
+This subordinate playbook operationalizes the MCU portion of ARCHITECT in
 [`DESIGN.md`](../DESIGN.md). The AI selects the exact STM32 and its pin
 mapping, creates the CubeMX configuration, and proves that CubeMX can consume
 it. The user may review the result in CubeMX, but does not have to author it.
@@ -9,10 +9,9 @@ it. The user may review the result in CubeMX, but does not have to author it.
 ## Preconditions
 
 1. Read the project-local `AGENTS.md`, the complete `spec.md`, `STATUS.md`,
-   `agent/operating-manual.md`, and the approved ARCHITECT source.
-2. Run `pcbforge status` and require ARCHITECT to be complete. If its explicit
-   approval event or current evidence is missing, stop at the gate rather than
-   inferring approval from source files.
+   `agent/operating-manual.md`, and the proposed architecture graph.
+2. Before source work, record the exact device/package and provisional resource
+   plan in `docs/mcu.md`; it is part of the ARCHITECT proposal packet.
 3. Run the pinned `scripts/ato build` and record the KiCad board hash. MCU work
    may change connectivity later, but it must never change spatial board data.
 4. Treat `src/mcu.ato` as an interface contract at the start of this phase.
@@ -25,7 +24,8 @@ grounds, SWD, debug UART when enabled, buses, ADC/DAC channels, timer/PWM
 channels, USB/CAN, interrupts, DMA needs, clocks, boot/reset behavior, and
 spare capacity.
 
-Choose the exact orderable STM32 and package. Check current availability and
+Choose the exact orderable STM32 and package before ARCHITECT proposal
+approval. Check current availability and
 price, the official datasheet, package pinout, errata where relevant, and the
 pinned CubeMX database. Prefer a device that:
 
@@ -40,6 +40,14 @@ Ask the user only when a material tradeoff remains, such as cost versus spare
 capacity, package size versus routability, oscillator strategy, availability,
 or mutually exclusive peripheral mappings. Show the concrete alternatives and
 your recommendation.
+
+## Write the proposal plan
+
+Before proposal approval, `docs/mcu.md` must present the exact device/package,
+interface-to-peripheral allocation, provisional physical pin map, clocks,
+DMA/timer/interrupt use, debug access, spare resources, sourcing evidence, and
+every material tradeoff. Do not create or revise the IOC or `src/mcu.ato`
+before that packet is approved.
 
 ## Allocate pins and create the `.ioc`
 
@@ -129,13 +137,13 @@ Perform a one-to-one audit after transcription:
 - no pin or signal exists only in `src/mcu.ato`;
 - no required `.ioc` assignment is absent from `src/mcu.ato`.
 
-Run the pinned compiler and present the source diff and audit result. The MCU
-phase is technically ready only when the `.ioc` passes, the derived module
-matches it, and the approved architecture contract is still satisfied. Run
-`pcbforge status review mcu`, present the exact packet and fingerprint, and
-stop. After explicit user approval, record
-`pcbforge status approve mcu --fingerprint <sha256> --note "<part and audit summary>"`,
-then report CIRCUIT as the next phase. Schema 14 captures
-`review/circuit/source-baseline.json` with that approval; the CIRCUIT
-proposal checker blocks if physical Atopile source or board topology changes
-before proposal approval.
+Run the pinned compiler and present the source diff and audit result as part of
+the final ARCHITECT packet. ARCHITECT is technically ready only when the IOC
+passes, the derived module matches it, and the approved functional graph is
+still satisfied. Run `pcbforge status review architect`, present the combined
+packet and fingerprint, and stop. After explicit approval, record
+`pcbforge status approve architect --fingerprint <sha256> --note "<architecture,
+part, and audit summary>"`. That approval captures
+`review/circuit/source-baseline.json`; CIRCUIT blocks if physical source or
+board topology changes before its proposal approval, and CIRCUIT becomes the
+next phase.

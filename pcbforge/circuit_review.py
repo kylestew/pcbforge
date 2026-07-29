@@ -26,7 +26,7 @@ from pcbforge.schematic import BASELINE_PATH, baseline_is_current
 
 CIRCUIT_REVIEW_SCHEMA = 2
 CIRCUIT_MODEL_SCHEMA = 1
-PROJECT_PIN_SCHEMA = 14
+PROJECT_PIN_SCHEMA = 15
 CONTRACT_FILENAME = "circuit-review.yaml"
 STAGES = {"proposal", "final"}
 
@@ -232,7 +232,7 @@ def _safe_path(value: Any, field: str, *, suffix: str, prefix: Path) -> Path:
 
 def _read_pins(project_dir: Path) -> None:
     pins = _load_yaml(project_dir / ".pcbforge")
-    if pins.get("schema") != PROJECT_PIN_SCHEMA:
+    if pins.get("schema") not in {14, PROJECT_PIN_SCHEMA}:
         raise CircuitReviewInputError(
             "project is not migrated for circuit review; run "
             "`pcbforge migrate-circuit-review`"
@@ -243,7 +243,8 @@ def _read_pins(project_dir: Path) -> None:
         or guidance.get("circuit_review_schema") != CIRCUIT_REVIEW_SCHEMA
     ):
         raise CircuitReviewInputError(
-            "project guidance does not pin circuit review schema 1"
+            f"project guidance does not pin circuit review schema "
+            f"{CIRCUIT_REVIEW_SCHEMA}"
         )
 
 

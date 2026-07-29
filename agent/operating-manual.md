@@ -59,8 +59,10 @@ User approval is explicit, artifact-specific, and one-time:
   invalidates it, and rerunning checks cannot revive it;
 - checked dashboard writes durably reopen changed approved phases.
 
-Every phase requires final user approval, including SPEC, init, MCU, CIRCUIT,
-LAYOUT, ROUTE, verify, fab-out, and order. Tool
+Every numbered phase requires final user approval, including SPEC, ARCHITECT,
+CIRCUIT, LAYOUT, ROUTE, VERIFY, FAB-OUT, and ORDER. Initialization and the
+layout handoff are visible, machine-checked transitions rather than separate
+approval phases. Tool
 success or agent ownership never grants completion. A phase with current
 technical evidence is `Awaiting approval`, not `Complete`.
 
@@ -72,21 +74,20 @@ may be selected autonomously, and those assumptions must be stated.
 
 ```
 1. SPEC        you — interview → approved spec.md + policy.yaml
-2. init        validates approved spec/policy + scaffolds and smoke-builds
-3. ARCHITECT   USER approves proposed graph; then code skeleton + audit;
-               USER gives separate final approval
-4. MCU         follow agent/mcu.md; AI selects pins → checked .ioc → MCU module
-5. CIRCUIT     authored SVG + exact model + USER proposal approval before
+   transition  pcbforge init validates + scaffolds; no separate approval
+2. ARCHITECT   USER approves graph + exact MCU/resource plan; then skeleton,
+               checked IOC, MCU module, audit, and separate final approval
+3. CIRCUIT     authored SVG + exact model + USER proposal approval before
                source; then exact parts, compiled parity, frozen build,
                deterministic acceptance, and one final approval
-6. brief       agent/brief.md; exact placement contract + generated
+   transition  agent/layout-handoff.md; exact placement contract + generated
                docs/placement-brief.md beside the approved CIRCUIT overview
-7. LAYOUT      USER. You spot on request only.
-8. ROUTE       USER. Sanity checks on request.
-9. verify      DRC (scripts/kicad-cli) + audits + render review
-10. fab-out    JLC Gerbers/BOM/CPL → fab/
-11. order      USER
-12. publish    proven modules → library, with render
+4. LAYOUT      USER. You spot on request only.
+5. ROUTE       USER. Sanity checks on request.
+6. verify      DRC (scripts/kicad-cli) + audits + render review
+7. fab-out     JLC Gerbers/BOM/CPL → fab/
+8. order       USER
+9. publish     proven modules → library, with render (optional)
 ```
 
 ## Session resume (run this on every cold start in a project)
@@ -95,7 +96,7 @@ may be selected autonomously, and those assumptions must be stated.
    `STATUS.md`.
 2. Run `pcbforge status --check --write`. The dashboard combines live file
    evidence, compiler, build-test, parts-policy, technology-policy,
-   placement-brief, IOC, and DRC check fingerprints, and explicit human gates;
+   layout-handoff, IOC, and DRC check fingerprints, and explicit human gates;
    a note never overrides missing evidence.
 3. Report the current focus, blockers, and next actions, then wait for the
    user where the workflow requires a gate.
@@ -126,15 +127,17 @@ it.
 ## Current build state (honest — board 1 carries scaffolding debt)
 
 Exists today: pinned toolchain (`scripts/ato`, `scripts/kicad-cli`,
-`scripts/cubemx`), `pcbforge init`, spec + ARCHITECT + MCU + CIRCUIT
+`scripts/cubemx`), `pcbforge init`, SPEC + combined ARCHITECT/MCU + CIRCUIT
 playbooks, `pcbforge check-ioc`, `pcbforge check-parts`,
 `pcbforge check-build-test`, the tracked CIRCUIT acceptance report, an explicit
-empty module catalog, `pcbforge brief` / `pcbforge check-brief`, the Step 6
-placement schema and approval gate, schema-14 authored circuit SVG/model,
+empty module catalog, `pcbforge prepare-layout` /
+`pcbforge check-layout-handoff`, the placement schema and handoff gate,
+schema-15 authored circuit SVG/model,
 compiled-parity, deterministic acceptance, and universal phase approvals,
 `policy.yaml`,
 `pcbforge check-policy`, explicit policy approval commands, and
-`pcbforge migrate-policy` / `pcbforge migrate-approvals`.
+`pcbforge migrate-policy` / `pcbforge migrate-approvals` /
+`pcbforge migrate-phase-transitions`.
 
 Not built yet (do manually, per DESIGN.md, and say you're doing it manually):
 `ioc2code` (derive `src/mcu.ato` from the checked `.ioc` yourself and perform
@@ -145,7 +148,7 @@ gate. The module catalog is empty — propose architecture from
 scratch and say so; don't invent library modules.
 
 Board-1 gates you must respect (DESIGN.md → Pilot): CIRCUIT establishes
-circuit comprehension before implementation and Step 6 confirms the
+circuit comprehension before implementation and the LAYOUT handoff confirms the
 same approved evidence before layout; run the
 sync drill after first placement (no-op rebuild + controlled deltas must
 preserve placement — fingerprint scripts in `pilots/*/scripts/`).

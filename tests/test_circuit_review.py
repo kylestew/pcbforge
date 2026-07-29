@@ -31,6 +31,7 @@ from pcbforge.status import (
     inspect_status,
     migrate_circuit_phase,
     migrate_circuit_review,
+    migrate_phase_transitions,
     migrate_placement_brief,
     read_status_document,
     run_status_checks,
@@ -123,12 +124,26 @@ def svg(model_hash: str, *, include_path: bool = True) -> str:
 
 
 class CircuitReviewFixture(unittest.TestCase):
-    def project(self, root: Path, *, schema: int = 14) -> Path:
+    def project(self, root: Path, *, schema: int = 15) -> Path:
         project = root / "garden-logger"
         project.mkdir()
         (project / "spec.md").write_text(SPEC, encoding="utf-8")
         guidance = (
             (
+                "  agents_schema: 16\n"
+                "  architect_schema: 5\n"
+                "  architecture_diagram_schema: 1\n"
+                "  mcu_schema: 4\n"
+                "  circuit_schema: 1\n"
+                "  circuit_review_schema: 2\n"
+                "  build_test_schema: 1\n"
+                "  layout_handoff_schema: 1\n"
+                "  approval_schema: 6\n"
+                "  policy_schema: 1\n"
+                "  status_schema: 4\n"
+            )
+            if schema == 15
+            else (
                 "  agents_schema: 15\n"
                 "  architect_schema: 4\n"
                 "  architecture_diagram_schema: 1\n"
@@ -173,7 +188,7 @@ guidance:
 {guidance}""",
             encoding="utf-8",
         )
-        agents_schema = 15 if schema == 14 else schema
+        agents_schema = 16 if schema == 15 else 15 if schema == 14 else schema
         (project / "AGENTS.md").write_text(
             f"<!-- pcbforge-agents-schema: {agents_schema} -->\n# generated\n",
             encoding="utf-8",
@@ -193,7 +208,7 @@ guidance:
             "# architecture\n",
             encoding="utf-8",
         )
-        current = schema == 14
+        current = schema in {14, 15}
         proposal_name = (
             "circuit-proposal.md" if current else "implementation-proposal.md"
         )
@@ -244,12 +259,52 @@ final_narrative: docs/{final_name}
             ),
             encoding="utf-8",
         )
-        if schema == 14:
+        if schema in {14, 15}:
             capture_implementation_baseline(project)
         return project
 
 
 class CircuitReviewTests(CircuitReviewFixture):
+    def test_schema_fourteen_migrates_to_phase_transitions(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), schema=14)
+            write_status(project)
+
+            migration = migrate_phase_transitions(
+                project,
+                tool_root=TOOL_ROOT,
+                now="2026-07-29T12:00:00+00:00",
+            )
+            pins = yaml.safe_load(
+                (project / ".pcbforge").read_text(encoding="utf-8")
+            )
+            document = read_status_document(project)
+            report = inspect_status(project)
+            second = migrate_phase_transitions(project, tool_root=TOOL_ROOT)
+
+        self.assertTrue(migration.wrote)
+        self.assertFalse(second.wrote)
+        self.assertEqual(pins["schema"], 15)
+        self.assertEqual(pins["guidance"]["agents_schema"], 16)
+        self.assertEqual(pins["guidance"]["layout_handoff_schema"], 1)
+        self.assertNotIn("brief_schema", pins["guidance"])
+        self.assertEqual(document.transition_events[-1].transition, "initialize")
+        self.assertEqual(document.transition_events[-1].action, "complete")
+        self.assertEqual(
+            tuple(result.phase.key for result in report.phases),
+            (
+                "spec",
+                "architect",
+                "circuit",
+                "layout",
+                "route",
+                "verify",
+                "fab-out",
+                "order",
+                "publish",
+            ),
+        )
+
     def test_phase_migration_preserves_only_both_legacy_approvals(self) -> None:
         outcomes = {}
         for include_build in (False, True):
@@ -393,7 +448,7 @@ class CircuitReviewTests(CircuitReviewFixture):
 
     def test_schema_fourteen_migrates_placement_brief_into_docs(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            project = self.project(Path(temporary))
+            project = self.project(Path(temporary), schema=14)
             pins_path = project / ".pcbforge"
             pins = yaml.safe_load(pins_path.read_text(encoding="utf-8"))
             pins["guidance"]["agents_schema"] = 14
@@ -439,7 +494,7 @@ class CircuitReviewTests(CircuitReviewFixture):
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            project = self.project(Path(temporary))
+            project = self.project(Path(temporary), schema=14)
             pins_path = project / ".pcbforge"
             pins = yaml.safe_load(pins_path.read_text(encoding="utf-8"))
             pins["guidance"]["agents_schema"] = 14

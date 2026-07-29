@@ -11,7 +11,7 @@ import shutil
 import subprocess
 import tempfile
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
@@ -29,18 +29,29 @@ from pcbforge.policy import (
 ATO_VERSION = "0.15.7"
 KICAD_VERSION = "9.0.9"
 SPEC_SCHEMA = 1
-PIN_SCHEMA = 14
-AGENTS_SCHEMA = 15
-ARCHITECT_GUIDE_SCHEMA = 4
+PIN_SCHEMA = 15
+AGENTS_SCHEMA = 16
+ARCHITECT_GUIDE_SCHEMA = 5
 ARCHITECTURE_DIAGRAM_SCHEMA = 1
-MCU_GUIDE_SCHEMA = 3
+MCU_GUIDE_SCHEMA = 4
 CIRCUIT_GUIDE_SCHEMA = 1
 BUILD_TEST_GUIDE_SCHEMA = 1
-BRIEF_GUIDE_SCHEMA = 5
-APPROVAL_GUIDE_SCHEMA = 5
+LAYOUT_HANDOFF_GUIDE_SCHEMA = 1
+APPROVAL_GUIDE_SCHEMA = 6
 CIRCUIT_REVIEW_SCHEMA = 2
 POLICY_GUIDE_SCHEMA = POLICY_SCHEMA
-STATUS_SCHEMA = 3
+STATUS_SCHEMA = 4
+
+# Schema-14 migration constants. Older migration entry points deliberately
+# produce the last schema-14 shape before `migrate-phase-transitions` performs
+# the final schema-15 boundary change.
+SCHEMA14_AGENTS_SCHEMA = 15
+SCHEMA14_ARCHITECT_GUIDE_SCHEMA = 4
+SCHEMA14_MCU_GUIDE_SCHEMA = 3
+SCHEMA14_BRIEF_GUIDE_SCHEMA = 5
+SCHEMA14_APPROVAL_GUIDE_SCHEMA = 5
+SCHEMA14_STATUS_SCHEMA = 3
+BRIEF_GUIDE_SCHEMA = SCHEMA14_BRIEF_GUIDE_SCHEMA
 BOARD_ORIGIN_MM = 100.0
 
 REQUIRED_KEYS = {
@@ -680,14 +691,14 @@ saved workflow gates, compiler output, and the KiCad board.
 1. This file, `spec.md`, `policy.yaml`, and `STATUS.md`.
 2. `{tool_root}/agent/operating-manual.md`.
 3. `{tool_root}/agent/architect.md` before doing ARCHITECT work.
-4. `{tool_root}/agent/mcu.md` before doing MCU work.
+4. `{tool_root}/agent/mcu.md` for the MCU workstream inside ARCHITECT.
 5. `{tool_root}/agent/circuit.md` before doing CIRCUIT work.
-6. `{tool_root}/agent/brief.md` before doing placement-brief work.
+6. `{tool_root}/agent/layout-handoff.md` before preparing LAYOUT.
 
 ## Ownership
 
-- The user owns acceptance of every phase, plus intent, optional CubeMX review,
-  layout, routing, and ordering.
+- The user owns acceptance of every numbered phase and the LAYOUT handoff, plus intent,
+  optional CubeMX review, layout, routing, and ordering.
 - The agent owns circuit code, exact MCU and pin selection, part selection,
   checks, written layout audits, and preparation of review packets. Tool or
   agent ownership of work never grants completion authority.
@@ -709,8 +720,9 @@ saved workflow gates, compiler output, and the KiCad board.
   infer, self-approve, or reuse it.
 - Proposal approval precedes implementation. Final approval follows artifact
   presentation and validation.
-- Every phase requires an explicit final user approval after technical evidence
-  passes. Passing checks means `Awaiting approval`, never `Complete`.
+- Every phase requires an explicit final user approval after technical
+  evidence passes. Initialization is the sole non-approval transition; the
+  LAYOUT handoff has its own explicit approval.
 - Before requesting approval, run `pcbforge status review <phase>` and present
   its exact artifacts, check results, and fingerprint. After an unambiguous
   approval of that packet, record the same fingerprint with
@@ -764,7 +776,7 @@ saved workflow gates, compiler output, and the KiCad board.
   Markdown body is generated. Never edit the body manually.
 - Use `{tool_root}/scripts/pcbforge status --write` after meaningful project
   changes. Use `--check` when compiler, build-test, parts-policy,
-  placement-brief, IOC, or DRC evidence must be refreshed.
+  layout-handoff, IOC, or DRC evidence must be refreshed.
 - Never use `status mark <phase> complete`. After checks pass, run
   `{tool_root}/scripts/pcbforge status review <phase>`, present the packet, and
   stop. Only after explicit user approval, run
@@ -780,9 +792,10 @@ saved workflow gates, compiler output, and the KiCad board.
 
 ## ARCHITECT gate
 
-Once STATUS reports SPEC and init complete, the scaffold is ready for
-ARCHITECT. This is a code-skeleton and human-review phase, not component
-implementation:
+After SPEC approval, immediately run `pcbforge init`. A successful atomic
+initialization opens ARCHITECT directly without another approval. ARCHITECT
+combines the functional graph, exact MCU plan, code skeleton, IOC, and MCU
+audit:
 
 1. Map every spec requirement to a functional block and typed interface:
    power input and every rail, MCU family, SWD, optional debug UART, every
@@ -796,20 +809,19 @@ implementation:
    and `ElectricSignal`/`Electrical` over raw nets. Clarify `other` interfaces.
 5. Draft `docs/architecture.md` with marker
    `pcbforge-architecture-diagram-schema: {ARCHITECTURE_DIAGRAM_SCHEMA}` and a
-   Mermaid `flowchart LR` before writing the skeleton. Present material
-   alternatives and the proposed graph, then stop for explicit user approval.
+   Mermaid `flowchart LR`. Also draft `docs/mcu.md` with the exact
+   STM32/package, peripheral allocation, provisional pin/resource plan,
+   sourcing, and material tradeoffs. Do both before writing source or the IOC.
 6. Run `pcbforge status review architect --stage proposal`, present the exact
    packet, and stop. After approval, record
    `{tool_root}/scripts/pcbforge status approve architect --stage proposal --fingerprint <sha256> --note "<approved choices>; diagram: docs/architecture.md"`.
-   A diagram or spec change invalidates this approval and stops coding until
-   the changed proposal is approved again. The dashboard treats architecture
-   source created before this current gate as a blocker.
-7. Only after current proposal approval, write the module skeleton and keep it
-   synchronized with the approved diagram.
-8. Do not choose parts, footprints, LCSC numbers, resistor values, exact MCU
-   pins, or layout geometry. Do not begin the MCU or CIRCUIT phase.
-9. Build with the pinned compiler and require the PCB bytes/spatial content to
-   remain unchanged because an architecture skeleton has no physical parts.
+   A spec, diagram, or MCU-plan change invalidates this approval.
+7. Only after proposal approval, write the module skeleton, create
+   `firmware/{spec.name}.ioc`, and derive `src/mcu.ato` from it.
+8. Follow `{tool_root}/agent/mcu.md`; preserve SWD, check every pin/resource,
+   offer optional CubeMX review, and run `pcbforge check-ioc`.
+9. Do not choose non-MCU parts, footprints, LCSC numbers, passive values, or
+   layout geometry. Build with the pinned compiler and preserve spatial data.
 10. Audit every functional `App` instance, typed top-level connection, and
    external boundary against the diagram. Present the tracked Mermaid diagram
    with the interface table, spec coverage, reuse status, risks, source diff,
@@ -817,29 +829,8 @@ implementation:
 11. Run `pcbforge status review architect`, present its exact packet, and stop.
    After final approval of that fingerprint, run
    `{tool_root}/scripts/pcbforge status approve architect --fingerprint <sha256> --note "<summary>; diagram: docs/architecture.md"`,
-   optionally retain the design rationale in the `spec.md` Decisions log, then
-   stop at the MCU handoff. The STATUS event is the durable workflow gate.
-   Never infer approval.
-
-## MCU phase
-
-After explicit ARCHITECT approval and a new MCU request, follow
-`{tool_root}/agent/mcu.md`:
-
-1. Select the exact STM32 and package, asking only when a material tradeoff is
-   unresolved.
-2. Assign every required interface, preserve SWD, label application pins, and
-   create the authoritative `firmware/{spec.name}.ioc`.
-3. Run `{tool_root}/scripts/pcbforge check-ioc` from this project and present
-   the exact part, pin table, clocks, peripherals, spare pins, and assumptions.
-4. Offer optional CubeMX 6.18 review. If the user saves changes, show the
-   semantic change and rerun the check.
-5. Until `ioc2code` exists, manually derive `src/mcu.ato` from the checked
-   `.ioc` and perform an explicit one-to-one audit. Never let it silently
-   diverge from the `.ioc`.
-6. Run `pcbforge status review mcu`, present the exact device, pin map,
-   artifacts, checks, and fingerprint, then stop. Record `status approve mcu`
-   only after the user explicitly approves that fingerprint.
+   optionally retain design rationale in `spec.md`, then continue directly to
+   CIRCUIT. Final approval captures the pre-CIRCUIT source baseline.
 
 ## CIRCUIT gate
 
@@ -881,24 +872,25 @@ Before adding physical parts, follow `{tool_root}/agent/circuit.md`:
     `status approve circuit` only after the user explicitly accepts that exact
     implementation-and-test fingerprint.
 
-## Placement brief gate
+## CIRCUIT-to-LAYOUT handoff
 
-After CIRCUIT completes, follow `{tool_root}/agent/brief.md`:
+After CIRCUIT completes, follow `{tool_root}/agent/layout-handoff.md`:
 
 1. Write the exact qualitative placement contract in `placement.yaml`.
 2. Assign every PCB footprint to exactly one group and reference only current
    PCB references, pads, and exact net names.
-3. Run `{tool_root}/scripts/pcbforge brief`; it generates
+3. Run `{tool_root}/scripts/pcbforge prepare-layout`; it generates
    `docs/placement-brief.md` and merges only `pcbforge:` net classes into the
    KiCad project. It never edits the PCB.
-4. Run `{tool_root}/scripts/pcbforge check-brief` and present
+4. Run `{tool_root}/scripts/pcbforge check-layout-handoff` and present
    `docs/placement-brief.md` beside the already-approved CIRCUIT explanatory
    SVG and final parity evidence.
-5. Run `pcbforge status review brief` and present its packet. Record
-   `status approve brief` only after the user approves
+5. Run `pcbforge status review layout --stage handoff` and present its packet.
+   Record `status approve layout --stage handoff` only after the user approves
    `docs/placement-brief.md` beside the current CIRCUIT overview. If that
    evidence is missing, stale, or
-   inadequate for placement decisions, block BRIEF and do not begin layout.
+   inadequate for placement decisions, block the handoff and do not begin
+   LAYOUT.
 
 ## FAB-OUT and order policy
 
@@ -923,6 +915,92 @@ bom/*
 *-backups/
 _autosave-*
 *.kicad_prl
+"""
+
+
+def _render_schema14_agents(spec: ProjectSpec, tool_root: Path) -> str:
+    """Render honest legacy guidance until the explicit schema-15 migration."""
+    return f"""<!-- pcbforge-agents-schema: {SCHEMA14_AGENTS_SCHEMA} -->
+# pcbforge project: {spec.name}
+
+This project is pinned to the schema-14 workflow. Do not use the streamlined
+phase model until the user explicitly runs `pcbforge migrate-phase-transitions`.
+Read `spec.md`, `policy.yaml`, and `STATUS.md` first on every cold start.
+
+## Authority and ownership
+
+- Every phase requires explicit, artifact-bound user approval. Never infer,
+  originate, self-approve, or reuse approval.
+- Present materially different reasonable designs, recommendation, tradeoffs,
+  and consequences, then wait before changing the affected artifact.
+- The user owns intent, optional CubeMX review, placement, routing, ordering,
+  and all approval decisions.
+- The agent owns capture code, exact MCU/pins, parts, checks, review packets,
+  and layout audits. Never place, route, move, or fix copper.
+- `{spec.name}.kicad_pcb` owns all spatial work. Circuit source owns identity,
+  fields, footprints, and connectivity.
+
+## Pinned workflow
+
+1. SPEC — approved requirements and policy.
+2. init — generated scaffold, build evidence, and explicit approval.
+3. ARCHITECT — proposal approval before skeleton code, then build/audit and
+   final approval.
+4. MCU — exact STM32/package/pins, checked IOC, matching `src/mcu.ato`,
+   one-to-one audit, and final approval.
+5. CIRCUIT — authored proposal approval before physical source; exact parts,
+   compiled parity, acceptance evidence, and final approval.
+6. brief — exact placement contract, generated brief, and explicit approval.
+7. LAYOUT.
+8. ROUTE.
+9. verify.
+10. fab-out.
+11. order.
+12. publish, optional.
+
+Resume with `{tool_root}/scripts/pcbforge status --check --write`, report the
+current phase and blockers, and follow only the matching gate below.
+
+## ARCHITECT
+
+Before skeleton source, draft `docs/architecture.md`, run
+`pcbforge status review architect --stage proposal`, present it, and wait.
+After proposal approval, write and build the typed functional skeleton without
+choosing parts or exact MCU pins. Audit diagram/source coverage, present
+`pcbforge status review architect`, and record final approval only after the
+user accepts that fingerprint.
+
+## MCU
+
+Follow `{tool_root}/agent/mcu.md` for device selection, `firmware/{spec.name}.ioc`,
+`pcbforge check-ioc`, optional CubeMX review, `src/mcu.ato`, and the one-to-one
+audit. In schema 14 this remains a separately approved phase:
+`pcbforge status review mcu`, then `status approve mcu` only after explicit
+user approval. Final MCU approval captures the pre-CIRCUIT source baseline.
+
+## CIRCUIT
+
+Follow `{tool_root}/agent/circuit.md`. Obtain proposal approval before physical
+source edits. Use official KiCad assets for commodity parts, run
+`pcbforge check-parts`, policy, IOC, compiled-parity, and build-test checks,
+then present one final CIRCUIT packet for explicit approval.
+
+## Placement brief
+
+Follow `{tool_root}/agent/brief.md`. Author `placement.yaml`, run
+`pcbforge brief` and `pcbforge check-brief`, and present
+`pcbforge status review brief`. Record `status approve brief` only after the
+user approves `docs/placement-brief.md` beside the current CIRCUIT overview.
+The tool must not change `{spec.name}.kicad_pcb`.
+
+## Policy and release
+
+JLCPCB, STM32, 2/4 layers, SWD, pinned tools, exact identity, canonical
+commodity libraries, spatial ownership, and human ordering authority are hard
+constraints. Use `{tool_root}/scripts/pcbforge check-policy`; project policy
+may request but never grant exceptions. VERIFY, FAB-OUT, and ORDER retain
+separate review and approval gates, and ORDER requires current post-FAB
+sourcing confirmation.
 """
 
 
@@ -961,7 +1039,7 @@ def _render_pins(
             "mcu_schema": MCU_GUIDE_SCHEMA,
             "circuit_schema": CIRCUIT_GUIDE_SCHEMA,
             "build_test_schema": BUILD_TEST_GUIDE_SCHEMA,
-            "brief_schema": BRIEF_GUIDE_SCHEMA,
+            "layout_handoff_schema": LAYOUT_HANDOFF_GUIDE_SCHEMA,
             "approval_schema": APPROVAL_GUIDE_SCHEMA,
             "circuit_review_schema": CIRCUIT_REVIEW_SCHEMA,
             "policy_schema": POLICY_GUIDE_SCHEMA,
@@ -1087,6 +1165,21 @@ def _commit_scaffold(stage: Path, project_dir: Path, spec: ProjectSpec) -> None:
         raise InitError(f"could not commit scaffold atomically: {exc}") from exc
 
 
+def _rollback_scaffold(project_dir: Path, spec: ProjectSpec) -> tuple[str, ...]:
+    """Remove only paths proven absent by preflight and created by this init."""
+    failures: list[str] = []
+    for relative in reversed(_generated_paths(spec)):
+        target = project_dir / relative
+        try:
+            if target.is_dir():
+                shutil.rmtree(target)
+            elif target.exists():
+                target.unlink()
+        except OSError as exc:
+            failures.append(f"{relative}: {exc}")
+    return tuple(failures)
+
+
 def initialize_project(
     project_dir: Path,
     *,
@@ -1111,6 +1204,8 @@ def initialize_project(
     from pcbforge.status import (
         StatusError,
         StatusInputError as DashboardInputError,
+        TransitionEvent,
+        _now,
         inspect_status,
         read_status_document,
         write_status,
@@ -1187,14 +1282,33 @@ def initialize_project(
     finally:
         shutil.rmtree(stage, ignore_errors=True)
 
-    # STATUS.md may already exist from the conversational SPEC phase. Refresh it
-    # only after the create-only scaffold commits successfully so a failed init
-    # never mutates the pre-init dashboard.
+    # STATUS.md may already exist from the conversational SPEC phase. Treat its
+    # transition write as part of initialization: if it fails, remove only the
+    # create-only scaffold paths that preflight proved were absent.
     try:
+        status_document = replace(
+            status_document,
+            transition_events=(
+                *status_document.transition_events,
+                TransitionEvent(
+                    _now(),
+                    "initialize",
+                    "complete",
+                    "Validated create-only scaffold and compiler smoke test passed",
+                ),
+            ),
+        )
         write_status(project_dir, document=status_document)
-    except StatusError as exc:
+    except (StatusError, OSError) as exc:
+        rollback_failures = _rollback_scaffold(project_dir, spec)
+        detail = (
+            "; rollback failures: " + "; ".join(rollback_failures)
+            if rollback_failures
+            else ""
+        )
         raise InitError(
-            f"project initialized but STATUS.md refresh failed: {exc}"
+            f"initialization transition could not be recorded; scaffold rolled back: "
+            f"{exc}{detail}"
         ) from exc
 
     return InitResult(name=spec.name, project_dir=project_dir)

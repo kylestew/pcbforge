@@ -118,7 +118,7 @@ class PolicyFixture(unittest.TestCase):
   profile_sha256: {policy_hash}
   baseline_approval: spec
 """
-            if schema in {10, 11, 14}
+            if schema in {10, 11, 14, 15}
             else ""
         )
         pcbforge_pin = (
@@ -126,7 +126,7 @@ class PolicyFixture(unittest.TestCase):
   revision: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
   dirty: false
 """
-            if schema == 14
+            if schema in {14, 15}
             else ""
         )
         guidance = (
@@ -143,6 +143,19 @@ class PolicyFixture(unittest.TestCase):
   status_schema: 3
 """
             if schema == 14
+            else """  agents_schema: 16
+  architect_schema: 5
+  architecture_diagram_schema: 1
+  mcu_schema: 4
+  circuit_schema: 1
+  circuit_review_schema: 2
+  policy_schema: 1
+  build_test_schema: 1
+  layout_handoff_schema: 1
+  approval_schema: 6
+  status_schema: 4
+"""
+            if schema == 15
             else f"""  agents_schema: {schema}
   policy_schema: 1
   build_test_schema: 1
@@ -192,7 +205,7 @@ guidance:
 class PolicyCheckerTests(PolicyFixture):
     def test_standard_policy_passes_offline(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            project = self.project(Path(temporary), schema=14)
+            project = self.project(Path(temporary), schema=15)
             result = check_policy(
                 project,
                 tool_root=TOOL_ROOT,
@@ -473,6 +486,9 @@ class PolicyApprovalAndMigrationTests(PolicyFixture):
         )
         self.assertFalse(second.wrote)
         self.assertIn("pcbforge-agents-schema: 15", migrated_agents)
+        self.assertIn("schema-14 workflow", migrated_agents)
+        self.assertIn("MCU — exact STM32", migrated_agents)
+        self.assertNotIn("opens ARCHITECT directly", migrated_agents)
 
     def test_schema_seven_migrates_directly_and_reopens_unbound_spec(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -674,7 +690,7 @@ class PolicyApprovalAndMigrationTests(PolicyFixture):
 class PolicyCliTests(PolicyFixture):
     def test_check_policy_exit_categories(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            project = self.project(Path(temporary), schema=14)
+            project = self.project(Path(temporary), schema=15)
             with mock.patch("builtins.print"):
                 self.assertEqual(main(["check-policy", str(project)]), 0)
 
@@ -691,7 +707,7 @@ class PolicyCliTests(PolicyFixture):
             pins = project / ".pcbforge"
             pins.write_text(
                 pins.read_text(encoding="utf-8").replace(
-                    "schema: 14",
+                    "schema: 15",
                     "schema: 9",
                     1,
                 ),

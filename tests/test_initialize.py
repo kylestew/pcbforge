@@ -22,6 +22,7 @@ from pcbforge.initialize import (
 )
 from pcbforge.policy import render_default_policy
 from pcbforge.status import (
+    StatusError,
     StatusInputError,
     approve_phase,
     read_status_document,
@@ -333,21 +334,22 @@ class InitializeTests(unittest.TestCase):
             self.assertIn("kicad: 9.0.9", pins)
             self.assertIn("jlc-2layer-conservative-v1", pins)
             pin_data = yaml.safe_load(pins)
-            self.assertEqual(pin_data["schema"], 14)
-            self.assertEqual(pin_data["guidance"]["brief_schema"], 5)
-            self.assertEqual(pin_data["guidance"]["approval_schema"], 5)
-            self.assertEqual(pin_data["guidance"]["agents_schema"], 15)
+            self.assertEqual(pin_data["schema"], 15)
+            self.assertNotIn("brief_schema", pin_data["guidance"])
+            self.assertEqual(pin_data["guidance"]["layout_handoff_schema"], 1)
+            self.assertEqual(pin_data["guidance"]["approval_schema"], 6)
+            self.assertEqual(pin_data["guidance"]["agents_schema"], 16)
             self.assertEqual(pin_data["guidance"]["policy_schema"], 1)
-            self.assertEqual(pin_data["guidance"]["architect_schema"], 4)
+            self.assertEqual(pin_data["guidance"]["architect_schema"], 5)
             self.assertEqual(
                 pin_data["guidance"]["architecture_diagram_schema"],
                 1,
             )
-            self.assertEqual(pin_data["guidance"]["mcu_schema"], 3)
+            self.assertEqual(pin_data["guidance"]["mcu_schema"], 4)
             self.assertEqual(pin_data["guidance"]["circuit_schema"], 1)
             self.assertNotIn("implement_schema", pin_data["guidance"])
             self.assertEqual(pin_data["guidance"]["build_test_schema"], 1)
-            self.assertEqual(pin_data["guidance"]["status_schema"], 3)
+            self.assertEqual(pin_data["guidance"]["status_schema"], 4)
             self.assertEqual(
                 pin_data["guidance"]["circuit_review_schema"],
                 2,
@@ -366,10 +368,10 @@ class InitializeTests(unittest.TestCase):
             )
 
             agents = (project / "AGENTS.md").read_text(encoding="utf-8")
-            self.assertIn("pcbforge-agents-schema: 15", agents)
-            self.assertIn("agent/brief.md", agents)
+            self.assertIn("pcbforge-agents-schema: 16", agents)
+            self.assertIn("agent/layout-handoff.md", agents)
             self.assertIn("Never place, route, move", agents)
-            self.assertIn("ready for\nARCHITECT", agents)
+            self.assertIn("opens ARCHITECT directly", agents)
             self.assertIn("/agent/architect.md", agents)
             self.assertIn("/agent/mcu.md", agents)
             self.assertIn("/agent/circuit.md", agents)
@@ -378,7 +380,7 @@ class InitializeTests(unittest.TestCase):
             self.assertIn("## Decision authority", agents)
             self.assertIn("never originate", agents)
             self.assertIn("status review architect --stage proposal", agents)
-            self.assertIn("source created before this current gate", agents)
+            self.assertIn("Final approval captures the pre-CIRCUIT source baseline", agents)
             self.assertIn("status approve architect", agents)
             self.assertIn("## Manufacturing and technology policy", agents)
             self.assertIn("pcbforge check-policy", agents)
@@ -386,13 +388,13 @@ class InitializeTests(unittest.TestCase):
             self.assertIn("Do not generate a KiCad schematic", agents)
             self.assertIn("check-circuit-review --stage proposal", agents)
             self.assertIn("review/circuit/circuit.svg", agents)
-            self.assertIn("Do not choose parts", agents)
+            self.assertIn("Do not choose non-MCU parts", agents)
             self.assertIn("docs/architecture.md", agents)
             self.assertIn("pcbforge-architecture-diagram-schema: 1", agents)
             self.assertIn("Audit every functional `App` instance", agents)
             self.assertIn("diagram:", agents)
             self.assertIn("check-ioc", agents)
-            self.assertIn("optional CubeMX 6.18 review", agents)
+            self.assertIn("optional CubeMX review", agents)
             self.assertIn("check-parts", agents)
             self.assertIn(
                 "CIRCUIT cannot\n    become ready while build, IOC, parts, policy",
@@ -592,26 +594,12 @@ class InitializeTests(unittest.TestCase):
             self.assertEqual(len(report.events), 1)
             self.assertEqual(report.events[0].phase, "spec")
             dashboard = (project / "STATUS.md").read_text(encoding="utf-8")
-            self.assertIn("1 of 11 required phases complete", dashboard)
-            self.assertIn("2. init — In progress", dashboard)
-
-            init_review = review_phase(
-                project,
-                "init",
-                tool_root=TOOL_ROOT,
-                runner=FakeRunner(),
+            self.assertIn("1 of 8 required phases complete", dashboard)
+            self.assertIn("**Phase:** 2. ARCHITECT — Ready", dashboard)
+            self.assertIn(
+                "SPEC → ARCHITECT: initialize | Tool | ✅ Complete",
+                dashboard,
             )
-            self.assertTrue(init_review.ready)
-            approved = approve_phase(
-                project,
-                "init",
-                init_review.fingerprint,
-                "User explicitly approved the generated scaffold",
-                tool_root=TOOL_ROOT,
-                runner=FakeRunner(),
-            )
-            self.assertEqual(approved.report.completed_required, 2)
-            self.assertEqual(approved.report.current.phase.key, "architect")
 
     def test_failed_init_does_not_mutate_pre_init_dashboard(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -626,6 +614,33 @@ class InitializeTests(unittest.TestCase):
                 )
 
             self.assertEqual((project / "STATUS.md").read_bytes(), before)
+
+    def test_status_failure_rolls_back_committed_scaffold(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self._project(Path(temporary), "garden-logger")
+            dashboard_before = (project / "STATUS.md").read_bytes()
+
+            with (
+                mock.patch(
+                    "pcbforge.status.write_status",
+                    side_effect=StatusError("simulated dashboard failure"),
+                ),
+                self.assertRaisesRegex(InitError, "scaffold rolled back"),
+            ):
+                initialize_project(
+                    project,
+                    tool_root=TOOL_ROOT,
+                    runner=FakeRunner(),
+                )
+
+            self.assertEqual(
+                sorted(path.name for path in project.iterdir()),
+                ["STATUS.md", "policy.yaml", "spec.md"],
+            )
+            self.assertEqual(
+                (project / "STATUS.md").read_bytes(),
+                dashboard_before,
+            )
 
     def test_invalid_pre_init_dashboard_blocks_before_scaffolding(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -690,7 +705,7 @@ class GuidanceTests(unittest.TestCase):
     def test_architect_playbook_and_empty_catalog_are_explicit(self) -> None:
         playbook = (TOOL_ROOT / "agent" / "architect.md").read_text(encoding="utf-8")
         for required in (
-            "pcbforge-architect-schema: 4",
+            "pcbforge-architect-schema: 5",
             "src/modules/<snake_case>.ato",
             "src/mcu.ato",
             "ElectricPower",
@@ -699,7 +714,7 @@ class GuidanceTests(unittest.TestCase):
             "board hash",
             "status review architect --stage proposal",
             "status approve architect",
-            "AI-led MCU workflow",
+            "MCU workstream",
             "docs/architecture.md",
             "pcbforge-architecture-diagram-schema: 1",
             "source-to-diagram audit",
@@ -709,13 +724,14 @@ class GuidanceTests(unittest.TestCase):
 
         mcu_playbook = (TOOL_ROOT / "agent" / "mcu.md").read_text(encoding="utf-8")
         for required in (
-            "pcbforge-mcu-schema: 3",
+            "pcbforge-mcu-schema: 4",
             "firmware/<project>.ioc",
             "DEBUG_UART_TX",
             "check-ioc",
             "optional and is not an approval gate",
             "one-to-one audit",
-            "CIRCUIT as the next phase",
+            "CIRCUIT becomes the",
+            "next phase",
             "source-baseline.json",
         ):
             self.assertIn(required, mcu_playbook)

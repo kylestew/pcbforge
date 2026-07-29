@@ -58,10 +58,12 @@ from pcbforge.status import (
     migrate_approvals,
     migrate_circuit_phase,
     migrate_circuit_review,
+    migrate_phase_transitions,
     migrate_placement_brief,
     migrate_schematic_review,
     policy_approval_context,
     read_status_document,
+    record_initialization_blocker,
     render_phase_review,
     render_terminal,
     review_phase,
@@ -156,7 +158,7 @@ def _parser() -> argparse.ArgumentParser:
 
     check_circuit_review_parser = subcommands.add_parser(
         "check-circuit-review",
-        help="validate the schema-14 CIRCUIT review gate",
+        help="validate the authored CIRCUIT review gate",
         description=(
             "Validate the exact proposal model and authored explanatory SVG. "
             "Final checks compare the approved model directly with the compiled "
@@ -205,7 +207,7 @@ def _parser() -> argparse.ArgumentParser:
 
     brief_parser = subcommands.add_parser(
         "brief",
-        help="generate the Step 6 placement brief and KiCad net classes",
+        help="deprecated alias for prepare-layout",
         description=(
             "Validate placement.yaml against the current CIRCUIT PCB topology, "
             "generate docs/placement-brief.md, and merge only PCBForge-owned net "
@@ -222,7 +224,7 @@ def _parser() -> argparse.ArgumentParser:
 
     check_brief_parser = subcommands.add_parser(
         "check-brief",
-        help="validate the current Step 6 placement outputs without writing",
+        help="deprecated alias for check-layout-handoff",
         description=(
             "Read-only validation of placement.yaml, docs/placement-brief.md, "
             "the current non-spatial PCB topology, and PCBForge-owned KiCad "
@@ -230,6 +232,33 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     check_brief_parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+        help="initialized pcbforge project (default: current directory)",
+    )
+    prepare_layout_parser = subcommands.add_parser(
+        "prepare-layout",
+        help="prepare the CIRCUIT-to-LAYOUT handoff",
+        description=(
+            "Validate placement.yaml against the approved CIRCUIT topology, "
+            "generate docs/placement-brief.md, and merge only PCBForge-owned "
+            "net classes. Never changes the PCB."
+        ),
+    )
+    prepare_layout_parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+        help="initialized pcbforge project (default: current directory)",
+    )
+    check_handoff_parser = subcommands.add_parser(
+        "check-layout-handoff",
+        help="validate the CIRCUIT-to-LAYOUT handoff without writing",
+    )
+    check_handoff_parser.add_argument(
         "project_dir",
         nargs="?",
         default=".",
@@ -383,6 +412,17 @@ def _parser() -> argparse.ArgumentParser:
         metavar="PROJECT_DIR",
         help="initialized schema-14 project (default: current directory)",
     )
+    migrate_transitions_parser = subcommands.add_parser(
+        "migrate-phase-transitions",
+        help="replace INIT, MCU, and BRIEF phases with schema-15 transitions",
+    )
+    migrate_transitions_parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+        help="initialized schema-14 project (default: current directory)",
+    )
 
     status_parser = subcommands.add_parser(
         "status",
@@ -426,7 +466,7 @@ def _status_show_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "run stage-appropriate compiler, policy, build-test, parts, "
-            "placement-brief, IOC, and DRC checks"
+            "layout-handoff, IOC, and DRC checks"
         ),
     )
     return parser
@@ -468,12 +508,12 @@ def _status_review_parser() -> argparse.ArgumentParser:
             "packet and fingerprint that may be presented for user approval."
         ),
     )
-    parser.add_argument("phase", help="workflow phase key, such as mcu or circuit")
+    parser.add_argument("phase", help="workflow phase key, such as architect or circuit")
     parser.add_argument(
         "--stage",
-        choices=("proposal", "final"),
+        choices=("proposal", "handoff", "final"),
         default="final",
-        help="review an ARCHITECT/CIRCUIT proposal or the final phase packet",
+        help="review a proposal, the LAYOUT handoff, or a final phase packet",
     )
     parser.add_argument(
         "project_dir",
@@ -493,12 +533,12 @@ def _status_approve_parser() -> argparse.ArgumentParser:
             "previously presented by `pcbforge status review`."
         ),
     )
-    parser.add_argument("phase", help="workflow phase key, such as mcu or circuit")
+    parser.add_argument("phase", help="workflow phase key, such as architect or circuit")
     parser.add_argument(
         "--stage",
-        choices=("proposal", "final"),
+        choices=("proposal", "handoff", "final"),
         default="final",
-        help="approve an ARCHITECT/CIRCUIT proposal or the final phase packet",
+        help="approve a proposal, the LAYOUT handoff, or a final phase packet",
     )
     parser.add_argument(
         "project_dir",
@@ -612,6 +652,7 @@ def main(argv: list[str] | None = None) -> int:
         "migrate-circuit-review",
         "migrate-circuit-phase",
         "migrate-placement-brief",
+        "migrate-phase-transitions",
     }:
         try:
             validate_project_compatibility(Path(args.project_dir))
@@ -623,9 +664,23 @@ def main(argv: list[str] | None = None) -> int:
         try:
             result = initialize_project(Path(args.project_dir))
         except InitInputError as exc:
+            try:
+                record_initialization_blocker(
+                    Path(args.project_dir),
+                    str(exc).splitlines()[0],
+                )
+            except StatusError:
+                pass
             print(f"pcbforge init: {exc}", file=sys.stderr)
             return 2
         except InitError as exc:
+            try:
+                record_initialization_blocker(
+                    Path(args.project_dir),
+                    str(exc).splitlines()[0],
+                )
+            except StatusError:
+                pass
             print(f"pcbforge init: {exc}", file=sys.stderr)
             return 1
 
@@ -885,6 +940,27 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
+    if args.command == "migrate-phase-transitions":
+        try:
+            migration = migrate_phase_transitions(Path(args.project_dir))
+        except StatusInputError as exc:
+            print(f"pcbforge migrate-phase-transitions: {exc}", file=sys.stderr)
+            return 2
+        except StatusError as exc:
+            print(f"pcbforge migrate-phase-transitions: {exc}", file=sys.stderr)
+            return 1
+        state = "migrated" if migration.wrote else "already migrated"
+        print(
+            f"pcbforge: {state} streamlined workflow in "
+            f"{migration.project_dir}"
+        )
+        if migration.reopened_phases:
+            print(
+                "pcbforge: explicit reapproval required for "
+                + ", ".join(migration.reopened_phases)
+            )
+        return 0
+
     if args.command == "check-build-test":
         try:
             result = check_build_test(
@@ -904,11 +980,27 @@ def main(argv: list[str] | None = None) -> int:
             print(f"pcbforge: {state} {result.report_path.as_posix()}")
         return 0
 
-    if args.command in {"brief", "check-brief"}:
+    if args.command in {
+        "prepare-layout",
+        "check-layout-handoff",
+        "brief",
+        "check-brief",
+    }:
+        if args.command in {"brief", "check-brief"}:
+            replacement = (
+                "prepare-layout"
+                if args.command == "brief"
+                else "check-layout-handoff"
+            )
+            print(
+                f"pcbforge: `{args.command}` is deprecated; use "
+                f"`pcbforge {replacement}`",
+                file=sys.stderr,
+            )
         try:
             result = (
                 generate_brief(Path(args.project_dir))
-                if args.command == "brief"
+                if args.command in {"brief", "prepare-layout"}
                 else check_brief(Path(args.project_dir))
             )
         except PlacementInputError as exc:
@@ -919,7 +1011,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
         print(f"pcbforge: placement brief passed — {result.summary}")
-        if args.command == "brief":
+        if args.command in {"brief", "prepare-layout"}:
             brief_state = "updated" if result.wrote_brief else "unchanged"
             project_state = "updated" if result.wrote_project else "unchanged"
             print(

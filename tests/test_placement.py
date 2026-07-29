@@ -361,7 +361,7 @@ fingerprint: {fingerprint_inputs(project)}
             )
             with self.assertRaisesRegex(
                 PlacementInputError,
-                "not migrated for Step 6",
+                "not migrated for the layout handoff",
             ):
                 generate_brief(project, tool_root=TOOL_ROOT)
 
@@ -732,7 +732,7 @@ class StatusAndCliTests(PlacementFixture):
             mock.patch("pcbforge.cli.generate_brief", return_value=result),
             mock.patch("builtins.print") as output,
         ):
-            exit_code = main(["brief", "/tmp/project"])
+            exit_code = main(["prepare-layout", "/tmp/project"])
         rendered = "\n".join(str(call.args[0]) for call in output.call_args_list)
         self.assertEqual(exit_code, 0)
         self.assertIn("PCB unchanged", rendered)
@@ -744,7 +744,7 @@ class StatusAndCliTests(PlacementFixture):
             ),
             mock.patch("builtins.print"),
         ):
-            self.assertEqual(main(["check-brief", "/tmp/project"]), 2)
+            self.assertEqual(main(["check-layout-handoff", "/tmp/project"]), 2)
 
         with (
             mock.patch(
@@ -753,7 +753,7 @@ class StatusAndCliTests(PlacementFixture):
             ),
             mock.patch("builtins.print"),
         ):
-            self.assertEqual(main(["check-brief", "/tmp/project"]), 1)
+            self.assertEqual(main(["check-layout-handoff", "/tmp/project"]), 1)
 
 
 class ContractFormattingTests(unittest.TestCase):

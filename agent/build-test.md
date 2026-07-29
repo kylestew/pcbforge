@@ -2,7 +2,7 @@
 <!-- Legacy standalone phase: build + test is now CIRCUIT's final gate. -->
 # Build + test playbook
 
-For schema-14 projects, follow `agent/circuit.md`; this file remains for older
+For schema-14-or-newer projects, follow `agent/circuit.md`; this file remains for older
 generated guidance. The deterministic gate proves that the pinned
 compiler resolves the intended exact BOM and PCB connectivity, executes the
 declared electrical assertions, emits the required artifacts, and preserves

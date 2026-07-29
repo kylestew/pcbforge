@@ -21,7 +21,7 @@ from pcbforge.initialize import InitInputError, read_spec
 
 BUILD_TEST_SCHEMA = 1
 BUILD_TEST_REPORT_SCHEMA = 1
-PROJECT_PIN_SCHEMA = 14
+PROJECT_PIN_SCHEMA = 15
 BUILD_TEST_FILENAME = "build-test.yaml"
 BUILD_TEST_REPORT = Path("docs/build-test.md")
 
@@ -290,9 +290,9 @@ def read_build_test_contract(project_dir: Path) -> BuildTestContract:
 def _read_pin_metadata(project_dir: Path) -> Mapping[str, Any]:
     data = _load_yaml(project_dir / ".pcbforge", label=".pcbforge")
     errors = []
-    if data.get("schema") not in {11, 12, 13, PROJECT_PIN_SCHEMA}:
+    if data.get("schema") not in {11, 12, 13, 14, PROJECT_PIN_SCHEMA}:
         errors.append(
-            f"schema: expected integer 11, 12, 13, or {PROJECT_PIN_SCHEMA}"
+            f"schema: expected integer 11, 12, 13, 14, or {PROJECT_PIN_SCHEMA}"
         )
     toolchain = data.get("toolchain")
     if not isinstance(toolchain, dict):
@@ -548,7 +548,7 @@ def _find_assertions(
 def ato_source_semantic_bytes(path: Path) -> bytes:
     """Return source semantics without valid Step-6 marker/assert pairs.
 
-    Acceptance assertions are added during CIRCUIT after MCU and proposal
+    Acceptance assertions are added during CIRCUIT after ARCHITECT and proposal
     approval. Excluding the exact adjacent pair keeps those earlier approval
     fingerprints stable while preserving every other source byte, including
     malformed or unmarked assertions.

@@ -7,20 +7,20 @@ from typing import Any, Mapping
 
 import yaml
 
-PIN_SCHEMA = 14
-STATUS_SCHEMA = 3
+PIN_SCHEMA = 15
+STATUS_SCHEMA = 4
 EXPECTED_GUIDANCE = {
-    "agents_schema": 15,
-    "architect_schema": 4,
+    "agents_schema": 16,
+    "architect_schema": 5,
     "architecture_diagram_schema": 1,
-    "mcu_schema": 3,
+    "mcu_schema": 4,
     "circuit_schema": 1,
     "build_test_schema": 1,
-    "brief_schema": 5,
-    "approval_schema": 5,
+    "layout_handoff_schema": 1,
+    "approval_schema": 6,
     "circuit_review_schema": 2,
     "policy_schema": 1,
-    "status_schema": 3,
+    "status_schema": 4,
 }
 STRUCTURED_ARTIFACT_SCHEMAS = {
     "policy.yaml": ("policy_schema", 1),

@@ -69,14 +69,14 @@ reproducible pin.
    Initialization requires the current artifact-bound SPEC/policy approval,
    validates both contracts, creates the atopile/KiCad 9 project, applies
    conservative JLC rules, and smoke-builds it before installing any generated files. The
-   generated `AGENTS.md` then directs the AI to present the initialized
-   scaffold for your explicit INIT approval before beginning ARCHITECT.
-   ARCHITECT retains separate approvals before coding and after the compiled
-   architecture audit.
-4. After ARCHITECT approval, the AI follows `agent/mcu.md`: it selects the
-   exact STM32 and pin mapping, creates `firmware/<project>.ioc`, and runs
-   `pcbforge check-ioc`. You may open the file in CubeMX 6.18 to review or
-   edit it, but CubeMX authoring is not required.
+   generated `AGENTS.md` opens ARCHITECT directly; initialization is a visible
+   transition, not a separately approved phase.
+4. Inside ARCHITECT, the AI follows `agent/architect.md` and `agent/mcu.md`.
+   The proposal covers both the functional graph and exact STM32/package,
+   resource, and provisional pin plan. After proposal approval the AI creates
+   the source skeleton, `firmware/<project>.ioc`, and `src/mcu.ato`, then runs
+   the build, CubeMX round-trip, and one-to-one audit before final ARCHITECT
+   approval. You may optionally inspect the IOC in CubeMX 6.18.
 5. Your time concentrates at the end of the middle: **layout and routing in
    KiCad 9**, with the agent as spotter (briefs, audits, render review).
 6. `fab/` outputs upload to JLCPCB. Ordering stays human.
@@ -88,7 +88,9 @@ next actions. No chat history is needed.
 Across every phase, the AI may derive consequences of approved requirements
 but may not silently choose between materially different reasonable designs.
 It must present options and stop before changing the affected artifact. Human
-approval is required before every phase completes, including tool-led phases.
+approval is required before every numbered phase completes. Initialization is
+automatic after SPEC approval, while the CIRCUIT-to-LAYOUT handoff has its own
+explicit transfer approval.
 Passing evidence moves a phase to `Awaiting approval`. The AI presents the
 phase-specific review packet and fingerprint, waits for an unambiguous
 conversational approval, and only then records it. Changed approved artifacts
@@ -110,16 +112,19 @@ pcbforge check-circuit-review --stage proposal --write
 pcbforge status review circuit --stage proposal
 pcbforge check-build-test
 pcbforge check-build-test --write-report
-pcbforge brief
-pcbforge check-brief
+pcbforge prepare-layout
+pcbforge check-layout-handoff
+pcbforge status review layout --stage handoff
 ```
 
 Static status is read-only and fast. `--check` runs applicable pinned build,
-Step 5 CIRCUIT acceptance, placement-brief, parts-policy, CubeMX, and KiCad DRC
+CIRCUIT acceptance, layout-handoff, parts-policy, CubeMX, and KiCad DRC
 validation before rendering the same status model.
 
-Schema 14 merges physical implementation and build + test into one CIRCUIT
-phase. It combines authored circuit review, deterministic acceptance,
+Schema 15 has nine numbered phases, eight required. MCU work is inside
+ARCHITECT; physical implementation and build + test form one CIRCUIT phase;
+initialization and the layout handoff are visible transitions. CIRCUIT combines
+authored circuit review, deterministic acceptance,
 manufacturing policy, and universal phase approvals. The
 tool-owned `policies/pcbforge-standard-v1.yaml` hard-locks JLCPCB, STM32,
 2/4-layer boards, SWD, pinned tools, exact part identity, spatial ownership,
@@ -158,16 +163,22 @@ JSON and excludes only the compiler's volatile top-level `build_id`. All
 electrically meaningful BOM fields remain approval-bound, while the other
 compiler artifacts retain raw byte hashes.
 
-For Step 6, follow `agent/brief.md` and write the authoritative
-`placement.yaml`: every PCB reference appears in exactly one ordered group;
+For the CIRCUIT-to-LAYOUT handoff, follow `agent/layout-handoff.md` and write
+the authoritative `placement.yaml`: every PCB reference appears in exactly one ordered group;
 typed constraints use current `REF` / `REF.PAD` endpoints; routing classes use
-exact current nets and safe JLC dimensions. `pcbforge brief` generates
+exact current nets and safe JLC dimensions. `pcbforge prepare-layout` generates
 `docs/placement-brief.md` and merges only `pcbforge:` classes into the KiCad
 project. It preserves user classes and verifies the PCB is byte-identical.
-`pcbforge check-brief` is read-only. Step 6 completes only after the user
+`pcbforge check-layout-handoff` is read-only. LAYOUT cannot begin until the user
 approves `docs/placement-brief.md` beside the approved current CIRCUIT overview;
-record that gate with
-`pcbforge status approve brief --fingerprint <sha256> --note "..."`.
+record that gate with:
+
+```bash
+pcbforge status approve layout --stage handoff \
+  --fingerprint <sha256> --note "..."
+```
+
+The old brief commands remain deprecated aliases for one migration cycle.
 
 After FAB-OUT, refresh live JLC availability and lifecycle evidence for the
 exact BOM. Once the user confirms it, record
@@ -181,7 +192,7 @@ fabrication outputs.
 |---|---|
 | `WORKFLOW.md` | concise phase sequence, ownership, outputs, and gates |
 | `DESIGN.md` | the contract — philosophy, workflow, invariants, decisions |
-| `agent/` | AI manuals (`operating-manual`, `spec-interview`, `architect`, `mcu`, `circuit`, `build-test`, `brief`) |
+| `agent/` | AI manuals (`operating-manual`, `spec-interview`, `architect`, `mcu`, `circuit`, `build-test`, `layout-handoff`) |
 | `toolchain/` | pinned compiler env (atopile 0.15.7, Python 3.14, uv.lock) |
 | `scripts/` | public `pcbforge` CLI + pinned wrappers (`ato`, `kicad-cli`, `cubemx`) |
 | `pcbforge/` | CLI implementation and project scaffold generator |
@@ -262,3 +273,15 @@ pcbforge migrate-placement-brief /path/to/project
 The migration is atomic and idempotent. If a current root `brief.md` exists,
 its bytes move unchanged to `docs/placement-brief.md`; missing briefs are not
 invented.
+
+Then adopt the streamlined phase model:
+
+```bash
+pcbforge migrate-phase-transitions /path/to/project
+```
+
+This atomic, idempotent migration removes INIT, MCU, and BRIEF from the
+numbered sequence, combines current ARCHITECT/MCU approvals only when their
+equivalence is provable, converts current BRIEF evidence to the LAYOUT handoff,
+and preserves downstream approvals only while the entire predecessor chain is
+current. It does not automatically migrate Blinky, Temper, or any other board.

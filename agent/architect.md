@@ -1,10 +1,11 @@
-<!-- pcbforge-architect-schema: 4 -->
+<!-- pcbforge-architect-schema: 5 -->
 # pcbforge — ARCHITECT playbook
 
 This playbook operationalizes the ARCHITECT phase in
 [`DESIGN.md`](../DESIGN.md). The AI leads, the user approves, and the pinned
-compiler validates. ARCHITECT defines the circuit's functional boundaries; it
-does not select or implement physical parts.
+compiler validates. ARCHITECT defines the circuit's functional boundaries and
+locks the exact MCU configuration through its MCU workstream. Other physical
+parts remain CIRCUIT work.
 
 ## Preconditions
 
@@ -22,7 +23,7 @@ does not select or implement physical parts.
 Build a coverage checklist from both spec frontmatter and prose:
 
 - power input and every rail;
-- MCU family and system responsibilities, without choosing the exact part;
+- MCU family, exact device/package candidates, and system responsibilities;
 - SWD always, plus debug UART when enabled;
 - every peripheral and connector;
 - board-level special constraints and open risks.
@@ -46,11 +47,13 @@ architecture approval.
 
 ## Proposal approval before code
 
-Draft `docs/architecture.md` before writing the module skeleton. At this point
-it is the proposed graph: functional modules, external boundaries, typed
-interfaces, material options, recommendation, and unresolved risks. Do not
-write or revise architecture source until the user explicitly approves this
-proposal.
+Draft `docs/architecture.md` and `docs/mcu.md` before writing the module
+skeleton, IOC, or MCU source. The first is the proposed functional graph. The
+second records the exact STM32/package, peripheral allocation, provisional pin
+and resource plan, sourcing, material options, recommendation, and unresolved
+risks. Follow `agent/mcu.md` for that companion artifact. Do not write or
+revise architecture source or `firmware/<project>.ioc` until the user
+explicitly approves both proposal artifacts.
 
 Generate and present the exact proposal packet first:
 
@@ -66,11 +69,9 @@ After explicit proposal approval, record that exact fingerprint:
   --note "<user-approved graph and material choices>; diagram: docs/architecture.md"
 ```
 
-This approval is bound to the current `spec.md` and
-`docs/architecture.md` fingerprints. Any change to either artifact invalidates
-it and requires another presentation and approval before coding continues. The
-agent may record approval already given by the user, but must never originate,
-infer, or reuse it.
+This approval is bound to the current `spec.md`, `docs/architecture.md`, and
+`docs/mcu.md` fingerprints. Any change to one of those artifacts invalidates
+it and requires another presentation and approval before coding continues.
 
 On schema-9-or-newer projects, creating architecture source before this event makes the
 dashboard report ARCHITECT blocked. Stop source changes and present the current
@@ -82,9 +83,8 @@ diagram rather than attempting to work through that blocker.
   blocks.
 - Put functional blocks in `src/modules/<snake_case>.ato`, using PascalCase
   module names and snake_case instances.
-- Reserve `src/mcu.ato` for an interface-only `Mcu` placeholder. The AI-led
-  MCU phase replaces its body from a checked `.ioc` while preserving the
-  approved public contract.
+- Derive `firmware/<project>.ioc` and `src/mcu.ato` from the approved MCU plan,
+  following `agent/mcu.md` and preserving every approved public interface.
 - Give each module one clear responsibility. Connect modules with typed
   interfaces, not naming conventions:
 
@@ -101,9 +101,9 @@ diagram rather than attempting to work through that blocker.
 Encode only interface constraints already established by the spec. Connectors
 are boundaries during ARCHITECT, not selected components.
 
-Do not add physical components, footprints, LCSC numbers, passive values,
-exact MCU pins, CubeMX output, copper, placement, routing, zones, or board
-geometry. Do not hide implementation decisions inside placeholder modules.
+Do not add non-MCU physical components, LCSC numbers, passive values, copper,
+placement, routing, zones, or board geometry. Exact MCU pins and CubeMX output
+are permitted only after proposal approval and must match `docs/mcu.md`.
 
 ## Maintain the architecture diagram
 
@@ -162,7 +162,8 @@ Run the pinned compiler after writing the skeleton. Require:
 - successful compilation using atopile `0.15.7`;
 - every spec requirement mapped exactly once in the coverage checklist;
 - SWD present and debug UART consistent with the spec;
-- no physical parts or footprints emitted;
+- a passing CubeMX round trip and one-to-one IOC-to-`src/mcu.ato` audit;
+- only the approved MCU boundary and support contract emitted;
 - the KiCad board hash and spatial fingerprint unchanged.
 
 Perform an explicit source-to-diagram audit:
@@ -176,12 +177,12 @@ Perform an explicit source-to-diagram audit:
 Present one review package:
 
 1. the tracked `docs/architecture.md` Mermaid graph, rendered inline;
-2. module responsibility and typed-interface table;
-3. spec-to-module coverage checklist;
-4. reused versus new modules, with indexed renders when any exist;
-5. unresolved risks and explicit tradeoffs;
-6. source-to-diagram audit;
-7. meaningful source diff and compiler result.
+2. `docs/mcu.md`, exact device/package, and final pin/resource table;
+3. module responsibility and typed-interface table;
+4. spec-to-module coverage checklist;
+5. successful CubeMX round trip and one-to-one MCU audit;
+6. unresolved risks and explicit tradeoffs;
+7. source-to-diagram audit, meaningful diff, and compiler result.
 
 Ask for explicit final architecture approval and stop. This is separate from
 proposal approval: it confirms that the compiled skeleton, diagram, coverage,
@@ -210,9 +211,9 @@ dashboard write automatically records a reopen event when approved artifacts
 change, so restoring old contents later does not silently restore workflow
 approval.
 
-Keep design rationale in the `spec.md` Decisions log when it is useful, but do
-not use prose as workflow state. A later change to the module graph or a public
-interface requires an updated proposal, renewed proposal approval, updated
-skeleton and audit, and renewed final approval. Report that the next phase is
-the AI-led MCU workflow in `agent/mcu.md` and do not begin it without a new user
-request.
+Keep design rationale in the `spec.md` Decisions log when useful, but do not
+use prose as workflow state. A later change to the module graph, exact MCU,
+resource plan, pin mapping, or public interface requires an updated proposal,
+renewed proposal approval, updated implementation and audit, and renewed final
+approval. Final ARCHITECT approval captures the pre-CIRCUIT baseline and opens
+CIRCUIT directly.

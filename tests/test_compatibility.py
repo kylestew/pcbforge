@@ -22,30 +22,31 @@ def _tree_hash(root: Path) -> str:
 
 def _pins() -> dict[str, object]:
     return {
-        "schema": 14,
+        "schema": 15,
         "pcbforge": {"revision": "a" * 40, "dirty": False},
         "guidance": {
-            "agents_schema": 15,
-            "architect_schema": 4,
+            "agents_schema": 16,
+            "architect_schema": 5,
             "architecture_diagram_schema": 1,
-            "mcu_schema": 3,
+            "mcu_schema": 4,
             "circuit_schema": 1,
             "build_test_schema": 1,
-            "brief_schema": 5,
-            "approval_schema": 5,
+            "layout_handoff_schema": 1,
+            "approval_schema": 6,
             "circuit_review_schema": 2,
             "policy_schema": 1,
-            "status_schema": 3,
+            "status_schema": 4,
         },
     }
 
 
-def _status(schema: int = 3) -> str:
+def _status(schema: int = 4) -> str:
     return f"""---
 pcbforge_status_schema: {schema}
 updated_at: ''
 events: []
 policy_events: []
+transition_events: []
 checks: {{}}
 ---
 # Status

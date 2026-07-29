@@ -237,10 +237,10 @@ not guessed during SPEC.
 ## After the gate
 
 User declares the spec and initial policy good and their fingerprint-bound
-STATUS gate is recorded → next phase is `init`
-(project scaffold), then ARCHITECT per `agent/architect.md` (module graph
-proposal in code). Not this playbook's job — stop at the approved spec and
-refreshed dashboard.
+STATUS gate is recorded. The agent immediately runs `pcbforge init`; a
+successful atomic scaffold opens ARCHITECT directly without another approval.
+Continue per `agent/architect.md`. Not this playbook's job—stop at the approved
+spec and refreshed dashboard.
 
 Session-resume note: any later session re-reads `spec.md` first. Keep the
 prose good enough that a cold agent recovers full intent from it.

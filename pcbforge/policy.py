@@ -19,7 +19,7 @@ POLICY_PROFILE_SCHEMA = 1
 POLICY_PROFILE_ID = "pcbforge-standard-v1"
 POLICY_FILENAME = "policy.yaml"
 POLICY_PROFILE_PATH = Path("policies") / f"{POLICY_PROFILE_ID}.yaml"
-PROJECT_PIN_SCHEMA = 14
+PROJECT_PIN_SCHEMA = 15
 
 ASSURANCE_RULES = (
     "reverse-polarity",
@@ -861,7 +861,7 @@ def _pinned_policy(
         return "spec", []
     data = _load_yaml(path, ".pcbforge")
     schema = data.get("schema")
-    if schema not in {10, 11, 12, 13, PROJECT_PIN_SCHEMA}:
+    if schema not in {10, 11, 12, 13, 14, PROJECT_PIN_SCHEMA}:
         raise PolicyInputError(
             "project policy is not migrated: run `pcbforge migrate-policy`"
         )
@@ -1522,18 +1522,18 @@ def migrate_policy(
         else Path(__file__).resolve().parent.parent
     )
     from pcbforge.initialize import (
-        AGENTS_SCHEMA,
-        APPROVAL_GUIDE_SCHEMA,
-        ARCHITECT_GUIDE_SCHEMA,
+        SCHEMA14_AGENTS_SCHEMA as AGENTS_SCHEMA,
+        SCHEMA14_APPROVAL_GUIDE_SCHEMA as APPROVAL_GUIDE_SCHEMA,
+        SCHEMA14_ARCHITECT_GUIDE_SCHEMA as ARCHITECT_GUIDE_SCHEMA,
         ARCHITECTURE_DIAGRAM_SCHEMA,
         BRIEF_GUIDE_SCHEMA,
         BUILD_TEST_GUIDE_SCHEMA,
         CIRCUIT_GUIDE_SCHEMA,
-        MCU_GUIDE_SCHEMA,
+        SCHEMA14_MCU_GUIDE_SCHEMA as MCU_GUIDE_SCHEMA,
         POLICY_GUIDE_SCHEMA,
-        STATUS_SCHEMA,
+        SCHEMA14_STATUS_SCHEMA as STATUS_SCHEMA,
         CIRCUIT_REVIEW_SCHEMA,
-        _render_agents,
+        _render_schema14_agents as _render_agents,
         read_spec,
     )
 
@@ -1544,7 +1544,7 @@ def migrate_policy(
     pins_path = project_dir / ".pcbforge"
     pins = dict(_load_yaml(pins_path, ".pcbforge"))
     schema = pins.get("schema")
-    if schema == PROJECT_PIN_SCHEMA:
+    if schema in {14, PROJECT_PIN_SCHEMA}:
         check_policy(
             project_dir,
             tool_root=tool_root,
@@ -1587,7 +1587,7 @@ def migrate_policy(
         advanced_packages=advanced_packages,
         advanced_vias=advanced_vias,
     )
-    pins["schema"] = PROJECT_PIN_SCHEMA
+    pins["schema"] = 14
     pins["policy"] = {
         "profile": POLICY_PROFILE_ID,
         "profile_sha256": profile_hash,

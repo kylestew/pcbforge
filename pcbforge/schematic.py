@@ -383,9 +383,20 @@ def source_baseline_path(project_dir: Path) -> Path:
 
 
 def capture_implementation_baseline(project_dir: Path) -> Path:
-    """Capture the source/board handoff immediately after MCU approval."""
+    """Capture the source/board handoff after MCU or combined ARCHITECT approval."""
     project_dir = project_dir.expanduser().resolve()
-    _read_pins(project_dir, allow_circuit_review=True)
+    pins = _load_yaml(project_dir / ".pcbforge")
+    if pins.get("schema") == 15:
+        guidance = pins.get("guidance")
+        if (
+            not isinstance(guidance, dict)
+            or guidance.get("circuit_review_schema") != 2
+        ):
+            raise SchematicInputError(
+                "project guidance does not pin the expected circuit review schema"
+            )
+    else:
+        _read_pins(project_dir, allow_circuit_review=True)
     payload = _source_baseline_payload(project_dir)
     relative = source_baseline_path(project_dir)
     path = project_dir / relative
@@ -402,7 +413,10 @@ def baseline_is_current(project_dir: Path) -> tuple[bool, str]:
     try:
         saved = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        return False, f"missing {relative.as_posix()}; reapprove MCU"
+        return (
+            False,
+            f"missing {relative.as_posix()}; reapprove final ARCHITECT/MCU work",
+        )
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         return False, f"invalid {relative.as_posix()}: {exc}"
     current = _source_baseline_payload(
