@@ -19,7 +19,7 @@ POLICY_PROFILE_SCHEMA = 1
 POLICY_PROFILE_ID = "pcbforge-standard-v1"
 POLICY_FILENAME = "policy.yaml"
 POLICY_PROFILE_PATH = Path("policies") / f"{POLICY_PROFILE_ID}.yaml"
-PROJECT_PIN_SCHEMA = 13
+PROJECT_PIN_SCHEMA = 14
 
 ASSURANCE_RULES = (
     "reverse-polarity",
@@ -38,15 +38,16 @@ PHASE_ORDER = {
     "init": 2,
     "architect": 3,
     "mcu": 4,
+    "circuit": 5,
     "implement": 5,
-    "build": 6,
-    "brief": 7,
-    "layout": 8,
-    "route": 9,
-    "verify": 10,
-    "fab-out": 11,
-    "order": 12,
-    "publish": 13,
+    "build": 5,
+    "brief": 6,
+    "layout": 7,
+    "route": 8,
+    "verify": 9,
+    "fab-out": 10,
+    "order": 11,
+    "publish": 12,
 }
 ID_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 LCSC_RE = re.compile(r"^C[1-9][0-9]*$")
@@ -860,7 +861,7 @@ def _pinned_policy(
         return "spec", []
     data = _load_yaml(path, ".pcbforge")
     schema = data.get("schema")
-    if schema not in {10, 11, 12, PROJECT_PIN_SCHEMA}:
+    if schema not in {10, 11, 12, 13, PROJECT_PIN_SCHEMA}:
         raise PolicyInputError(
             "project policy is not migrated: run `pcbforge migrate-policy`"
         )
@@ -1513,7 +1514,7 @@ def migrate_policy(
     *,
     tool_root: Path | None = None,
 ) -> PolicyMigrationResult:
-    """Explicitly migrate a generated schema-7-through-9 project to schema 13."""
+    """Explicitly migrate a generated schema-7-through-9 project to schema 14."""
     project_dir = project_dir.expanduser().resolve()
     tool_root = (
         tool_root.resolve()
@@ -1527,7 +1528,7 @@ def migrate_policy(
         ARCHITECTURE_DIAGRAM_SCHEMA,
         BRIEF_GUIDE_SCHEMA,
         BUILD_TEST_GUIDE_SCHEMA,
-        IMPLEMENT_GUIDE_SCHEMA,
+        CIRCUIT_GUIDE_SCHEMA,
         MCU_GUIDE_SCHEMA,
         POLICY_GUIDE_SCHEMA,
         STATUS_SCHEMA,
@@ -1600,7 +1601,8 @@ def migrate_policy(
     guidance["architect_schema"] = ARCHITECT_GUIDE_SCHEMA
     guidance["architecture_diagram_schema"] = ARCHITECTURE_DIAGRAM_SCHEMA
     guidance["mcu_schema"] = MCU_GUIDE_SCHEMA
-    guidance["implement_schema"] = IMPLEMENT_GUIDE_SCHEMA
+    guidance.pop("implement_schema", None)
+    guidance["circuit_schema"] = CIRCUIT_GUIDE_SCHEMA
     guidance["build_test_schema"] = BUILD_TEST_GUIDE_SCHEMA
     guidance["brief_schema"] = BRIEF_GUIDE_SCHEMA
     guidance["approval_schema"] = APPROVAL_GUIDE_SCHEMA

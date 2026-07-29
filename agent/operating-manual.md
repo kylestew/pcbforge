@@ -34,7 +34,7 @@ Non-negotiable rules:
 4. **Ordering/money is human.** Generate `fab/` outputs; stop there.
 5. The user reviews capture at their chosen depth — surface meaningful
    diffs; don't bury decisions in bulk edits.
-6. **The schema-13 workflow and its policy are binding.** Read `policy.yaml`; run
+6. **The schema-14 workflow and its policy are binding.** Read `policy.yaml`; run
    `pcbforge check-policy`; never invent or self-approve an exception.
 
 ## Decision authority (global constraint)
@@ -59,8 +59,8 @@ User approval is explicit, artifact-specific, and one-time:
   invalidates it, and rerunning checks cannot revive it;
 - checked dashboard writes durably reopen changed approved phases.
 
-Every phase requires final user approval, including SPEC, init, MCU,
-IMPLEMENT, build + test, LAYOUT, ROUTE, verify, fab-out, and order. Tool
+Every phase requires final user approval, including SPEC, init, MCU, CIRCUIT,
+LAYOUT, ROUTE, verify, fab-out, and order. Tool
 success or agent ownership never grants completion. A phase with current
 technical evidence is `Awaiting approval`, not `Complete`.
 
@@ -76,17 +76,17 @@ may be selected autonomously, and those assumptions must be stated.
 3. ARCHITECT   USER approves proposed graph; then code skeleton + audit;
                USER gives separate final approval
 4. MCU         follow agent/mcu.md; AI selects pins → checked .ioc → MCU module
-5. IMPLEMENT   authored explanatory SVG + exact model + USER approval before
-               source; then exact parts, compiled parity, and final approval
-6. build+test  agent/build-test.md; exact contract + frozen build + tracked report
-7. brief       agent/brief.md; exact placement contract + generated brief beside
-               the already-approved Step 5 circuit overview
-8. LAYOUT      USER. You spot on request only.
-9. ROUTE       USER. Sanity checks on request.
-10. verify     DRC (scripts/kicad-cli) + audits + render review
-11. fab-out    JLC Gerbers/BOM/CPL → fab/
-12. order      USER
-13. publish    proven modules → library, with render
+5. CIRCUIT     authored SVG + exact model + USER proposal approval before
+               source; then exact parts, compiled parity, frozen build,
+               deterministic acceptance, and one final approval
+6. brief       agent/brief.md; exact placement contract + generated brief beside
+               the already-approved CIRCUIT overview
+7. LAYOUT      USER. You spot on request only.
+8. ROUTE       USER. Sanity checks on request.
+9. verify      DRC (scripts/kicad-cli) + audits + render review
+10. fab-out    JLC Gerbers/BOM/CPL → fab/
+11. order      USER
+12. publish    proven modules → library, with render
 ```
 
 ## Session resume (run this on every cold start in a project)
@@ -108,7 +108,7 @@ after receiving an unambiguous approval of that packet, record it with
 The command persists approval but never constitutes it. Never use
 `status mark <phase> complete`, and never infer approval for any phase. Use
 `blocked` for an actionable blocker, `reopened` when earlier work changes, and
-`skipped` only for optional publish. ARCHITECT and IMPLEMENT proposals use
+`skipped` only for optional publish. ARCHITECT and CIRCUIT proposals use
 `status review <phase> --stage proposal` and
 `status approve <phase> --stage proposal --fingerprint ...` before affected
 source coding begins.
@@ -126,12 +126,12 @@ it.
 ## Current build state (honest — board 1 carries scaffolding debt)
 
 Exists today: pinned toolchain (`scripts/ato`, `scripts/kicad-cli`,
-`scripts/cubemx`), `pcbforge init`, spec + ARCHITECT + MCU + IMPLEMENT +
-build/test playbooks, `pcbforge check-ioc`, `pcbforge check-parts`,
-`pcbforge check-build-test`, the tracked Step 6 report gate, an explicit empty
-module catalog, `pcbforge brief` / `pcbforge check-brief`, the Step 7
-placement schema and approval gate, schema-13 authored circuit SVG/model/
-compiled-parity gates and universal phase approvals,
+`scripts/cubemx`), `pcbforge init`, spec + ARCHITECT + MCU + CIRCUIT
+playbooks, `pcbforge check-ioc`, `pcbforge check-parts`,
+`pcbforge check-build-test`, the tracked CIRCUIT acceptance report, an explicit
+empty module catalog, `pcbforge brief` / `pcbforge check-brief`, the Step 6
+placement schema and approval gate, schema-14 authored circuit SVG/model,
+compiled-parity, deterministic acceptance, and universal phase approvals,
 `policy.yaml`,
 `pcbforge check-policy`, explicit policy approval commands, and
 `pcbforge migrate-policy` / `pcbforge migrate-approvals`.
@@ -140,12 +140,12 @@ Not built yet (do manually, per DESIGN.md, and say you're doing it manually):
 `ioc2code` (derive `src/mcu.ato` from the checked `.ioc` yourself and perform
 the one-to-one audit in `agent/mcu.md`), `verify` audits, `fab-out`,
 automated live `verify-stock` lookup. Live sourcing research is performed
-during IMPLEMENT and again after FAB-OUT, then recorded through the policy
+during CIRCUIT and again after FAB-OUT, then recorded through the policy
 gate. The module catalog is empty — propose architecture from
 scratch and say so; don't invent library modules.
 
-Board-1 gates you must respect (DESIGN.md → Pilot): Step 5 establishes
-circuit comprehension before implementation and Step 7 confirms the
+Board-1 gates you must respect (DESIGN.md → Pilot): CIRCUIT establishes
+circuit comprehension before implementation and Step 6 confirms the
 same approved evidence before layout; run the
 sync drill after first placement (no-op rebuild + controlled deltas must
 preserve placement — fingerprint scripts in `pilots/*/scripts/`).

@@ -1,4 +1,4 @@
-<!-- pcbforge-mcu-schema: 2 -->
+<!-- pcbforge-mcu-schema: 3 -->
 # pcbforge — MCU playbook
 
 This playbook operationalizes the MCU phase in
@@ -107,7 +107,7 @@ already exists: supplies and grounds, local decoupling, reset, boot, clock,
 SWD, and assigned application pins. If exact support components or topology
 remain undecided, label the view provisional and state clearly that the
 complete authored circuit overview and passive-purpose explanations are mandatory at
-the first IMPLEMENT proposal gate before any physical source edits.
+the first CIRCUIT proposal gate before any physical source edits.
 
 Offer to pause while the user opens `firmware/<project>.ioc` in CubeMX 6.18.
 This review is optional and is not an approval gate. If the user saves any
@@ -135,7 +135,7 @@ matches it, and the approved architecture contract is still satisfied. Run
 `pcbforge status review mcu`, present the exact packet and fingerprint, and
 stop. After explicit user approval, record
 `pcbforge status approve mcu --fingerprint <sha256> --note "<part and audit summary>"`,
-then report IMPLEMENT as the next phase. Schema 12 captures
-`review/implement/source-baseline.json` with that approval; the IMPLEMENT
+then report CIRCUIT as the next phase. Schema 14 captures
+`review/circuit/source-baseline.json` with that approval; the CIRCUIT
 proposal checker blocks if physical Atopile source or board topology changes
 before proposal approval.

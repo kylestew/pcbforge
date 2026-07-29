@@ -231,7 +231,7 @@ artifact fingerprints.
 Safe defaults are FR4, 1.6 mm, 1 oz outer copper, conventional vias, no
 controlled impedance, ordinary R/C/LED packages of 0603 or larger, and no
 BGA, WLCSP, or QFN pitch below 0.5 mm. A deviation is not forbidden, but it
-must be declared and approved. Sourcing entries are added during IMPLEMENT,
+must be declared and approved. Sourcing entries are added during CIRCUIT,
 not guessed during SPEC.
 
 ## After the gate

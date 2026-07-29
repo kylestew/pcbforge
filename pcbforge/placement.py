@@ -1,4 +1,4 @@
-"""Structured Step 7 placement brief generation and validation."""
+"""Structured Step 6 placement brief generation and validation."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ from pcbforge.initialize import InitInputError, read_spec
 
 PLACEMENT_SCHEMA = 1
 BRIEF_SCHEMA = 1
-PROJECT_PIN_SCHEMA = 13
+PROJECT_PIN_SCHEMA = 14
 PLACEMENT_FILENAME = "placement.yaml"
 BRIEF_FILENAME = "brief.md"
 OWNED_CLASS_PREFIX = "pcbforge:"
@@ -62,7 +62,7 @@ EDGES = {"any", "north", "east", "south", "west"}
 
 
 class PlacementError(RuntimeError):
-    """Step 7 generation or verification failed."""
+    """Step 6 generation or verification failed."""
 
 
 class PlacementInputError(PlacementError):
@@ -294,15 +294,17 @@ def _read_rules(
 def _read_project_pins(project_dir: Path) -> Mapping[str, Any]:
     data = _load_yaml(project_dir / ".pcbforge", ".pcbforge")
     errors = []
-    if data.get("schema") not in {11, 12, PROJECT_PIN_SCHEMA}:
-        errors.append(f"schema: expected integer 11, 12, or {PROJECT_PIN_SCHEMA}")
+    if data.get("schema") not in {11, 12, 13, PROJECT_PIN_SCHEMA}:
+        errors.append(
+            f"schema: expected integer 11, 12, 13, or {PROJECT_PIN_SCHEMA}"
+        )
     guidance = data.get("guidance")
     if not isinstance(guidance, dict):
         errors.append("guidance: expected a mapping")
     else:
         schema = data.get("schema")
-        expected_brief = 3 if schema == 13 else 2 if schema == 12 else BRIEF_SCHEMA
-        expected_approval = 4 if schema == 13 else 3 if schema == 12 else 2
+        expected_brief = {11: 1, 12: 2, 13: 3, 14: 4}.get(schema)
+        expected_approval = {11: 2, 12: 3, 13: 4, 14: 5}.get(schema)
         if guidance.get("brief_schema") != expected_brief:
             errors.append(
                 f"guidance.brief_schema: expected integer {expected_brief}"
@@ -315,7 +317,7 @@ def _read_project_pins(project_dir: Path) -> Mapping[str, Any]:
             errors.append("guidance.policy_schema: expected integer 1")
     if errors:
         raise PlacementInputError(
-            "project guidance is not migrated for Step 7:\n  - " + "\n  - ".join(errors)
+            "project guidance is not migrated for Step 6:\n  - " + "\n  - ".join(errors)
         )
     return data
 
@@ -1021,7 +1023,7 @@ def _contract_fingerprint(
 ) -> str:
     digest = hashlib.sha256()
     digest.update((project_dir / PLACEMENT_FILENAME).read_bytes())
-    digest.update(b"\0step-6\0")
+    digest.update(b"\0circuit-acceptance\0")
     digest.update(fingerprint_inputs(project_dir).encode())
     digest.update(b"\0pcb-topology\0")
     digest.update(
@@ -1047,7 +1049,7 @@ def brief_status_fingerprint(
     *,
     tool_root: Path | None = None,
 ) -> str:
-    """Fingerprint Step 7 inputs/outputs without board positions or user classes."""
+    """Fingerprint Step 6 inputs/outputs without board positions or user classes."""
     project_dir = project_dir.expanduser().resolve()
     tool_root = (
         tool_root.resolve()
@@ -1063,7 +1065,7 @@ def brief_status_fingerprint(
             digest.update(hashlib.sha256(path.read_bytes()).digest())
         else:
             digest.update(b"<missing>")
-    digest.update(b"\0step-6\0")
+    digest.update(b"\0circuit-acceptance\0")
     try:
         digest.update(fingerprint_inputs(project_dir).encode())
     except (BuildTestError, OSError) as exc:
@@ -1110,7 +1112,7 @@ def brief_status_fingerprint(
 
 
 def brief_inputs(project_dir: Path) -> tuple[Path, ...]:
-    """Return visible Step 7 inputs and outputs for dashboard diagnostics."""
+    """Return visible Step 6 inputs and outputs for dashboard diagnostics."""
     project_dir = project_dir.expanduser().resolve()
     paths = [
         project_dir / PLACEMENT_FILENAME,
@@ -1250,12 +1252,12 @@ begin with `pcbforge:`; user-created classes remain untouched.
 
 ## Human approval gate
 
-Before Step 7 completes, review this brief beside the current approved Step 5
-schematic. Run `pcbforge status review brief`, present its exact fingerprint,
+Before Step 6 completes, review this brief beside the current approved CIRCUIT
+overview. Run `pcbforge status review brief`, present its exact fingerprint,
 and wait for explicit user approval. Record that approval with
 `pcbforge status approve brief --fingerprint <sha256> --note "Approved
-brief.md beside the current Step 5 schematic"`. If the schematic evidence is
-missing, stale, or inadequate for placement decisions, block Step 7.
+brief.md beside the current CIRCUIT overview"`. If the circuit evidence is
+missing, stale, or inadequate for placement decisions, block Step 6.
 """
 
 
@@ -1292,7 +1294,7 @@ def _commit_outputs(outputs: Sequence[tuple[Path, bytes]]) -> tuple[bool, ...]:
             path: path.read_bytes() if path.exists() else None for path, _ in outputs
         }
     except OSError as exc:
-        raise PlacementError(f"cannot stage Step 7 outputs: {exc}") from exc
+        raise PlacementError(f"cannot stage Step 6 outputs: {exc}") from exc
     changed = tuple(originals[path] != contents for path, contents in outputs)
     staged: dict[Path, Path] = {}
     replaced: list[Path] = []
@@ -1317,7 +1319,7 @@ def _commit_outputs(outputs: Sequence[tuple[Path, bytes]]) -> tuple[bool, ...]:
             else ""
         )
         raise PlacementError(
-            f"could not atomically write Step 7 outputs: {exc}{detail}"
+            f"could not atomically write Step 6 outputs: {exc}{detail}"
         ) from exc
     finally:
         for temporary in staged.values():
@@ -1351,14 +1353,16 @@ def _project_context(
     return spec, board, contract, project_path, project
 
 
-def _require_step6(project_dir: Path) -> None:
+def _require_circuit_acceptance(project_dir: Path) -> None:
     try:
         fingerprint = fingerprint_inputs(project_dir)
         ok, detail = saved_report_status(project_dir, fingerprint)
     except (BuildTestInputError, BuildTestError, OSError) as exc:
-        raise PlacementInputError(f"Step 6 is not current: {exc}") from exc
+        raise PlacementInputError(
+            f"CIRCUIT acceptance is not current: {exc}"
+        ) from exc
     if not ok:
-        raise PlacementInputError(f"Step 6 is not current: {detail}")
+        raise PlacementInputError(f"CIRCUIT acceptance is not current: {detail}")
 
 
 def generate_brief(
@@ -1368,7 +1372,7 @@ def generate_brief(
 ) -> BriefResult:
     """Generate brief.md and merge only PCBForge-owned KiCad net classes."""
     project_dir = project_dir.expanduser().resolve()
-    _require_step6(project_dir)
+    _require_circuit_acceptance(project_dir)
     spec, board, contract, project_path, project = _project_context(
         project_dir,
         tool_root,
@@ -1416,9 +1420,9 @@ def check_brief(
     *,
     tool_root: Path | None = None,
 ) -> BriefResult:
-    """Validate current Step 7 outputs without changing project files."""
+    """Validate current Step 6 outputs without changing project files."""
     project_dir = project_dir.expanduser().resolve()
-    _require_step6(project_dir)
+    _require_circuit_acceptance(project_dir)
     spec, board, contract, project_path, project = _project_context(
         project_dir,
         tool_root,

@@ -1,4 +1,4 @@
-"""Native KiCad schematic review checks for the Step 5 IMPLEMENT gate."""
+"""Legacy native KiCad review checks for the schema-12 IMPLEMENT gate."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 import yaml
 
+from pcbforge.artifact_hash import ArtifactHashError, semantic_bom_bytes
 from pcbforge.build_test import (
     BuildTestError,
     ato_source_semantic_bytes,
@@ -26,7 +27,8 @@ from pcbforge.initialize import InitInputError, read_spec
 SCHEMATIC_REVIEW_SCHEMA = 1
 PROJECT_PIN_SCHEMA = 12
 CONTRACT_FILENAME = "schematic-review.yaml"
-BASELINE_PATH = Path("review/implement/source-baseline.json")
+BASELINE_PATH = Path("review/circuit/source-baseline.json")
+LEGACY_BASELINE_PATH = Path("review/implement/source-baseline.json")
 STAGES = {"proposal", "final"}
 
 CommandRunner = Callable[..., subprocess.CompletedProcess[str]]
@@ -180,7 +182,11 @@ def _read_pins(
 ) -> Mapping[str, Any]:
     data = _load_yaml(project_dir / ".pcbforge")
     schema = data.get("schema")
-    allowed = {PROJECT_PIN_SCHEMA, 13} if allow_circuit_review else {PROJECT_PIN_SCHEMA}
+    allowed = (
+        {PROJECT_PIN_SCHEMA, 13, 14}
+        if allow_circuit_review
+        else {PROJECT_PIN_SCHEMA}
+    )
     if schema not in allowed:
         raise SchematicInputError(
             "native KiCad schematic review is available only to schema-12 "
@@ -363,27 +369,42 @@ def _source_baseline_payload(
     return payload
 
 
+def source_baseline_path(project_dir: Path) -> Path:
+    """Return the schema-appropriate MCU-to-circuit baseline path."""
+    try:
+        pins = _load_yaml(project_dir / ".pcbforge")
+    except SchematicInputError:
+        return BASELINE_PATH
+    return (
+        BASELINE_PATH
+        if type(pins.get("schema")) is int and pins["schema"] >= 14
+        else LEGACY_BASELINE_PATH
+    )
+
+
 def capture_implementation_baseline(project_dir: Path) -> Path:
     """Capture the source/board handoff immediately after MCU approval."""
     project_dir = project_dir.expanduser().resolve()
     _read_pins(project_dir, allow_circuit_review=True)
     payload = _source_baseline_payload(project_dir)
-    path = project_dir / BASELINE_PATH
+    relative = source_baseline_path(project_dir)
+    path = project_dir / relative
     path.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write_text(path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
-    return BASELINE_PATH
+    return relative
 
 
 def baseline_is_current(project_dir: Path) -> tuple[bool, str]:
     """Check that physical circuit source did not change before proposal approval."""
     project_dir = project_dir.expanduser().resolve()
-    path = project_dir / BASELINE_PATH
+    relative = source_baseline_path(project_dir)
+    path = project_dir / relative
     try:
         saved = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        return False, f"missing {BASELINE_PATH.as_posix()}; reapprove MCU"
+        return False, f"missing {relative.as_posix()}; reapprove MCU"
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        return False, f"invalid {BASELINE_PATH.as_posix()}: {exc}"
+        return False, f"invalid {relative.as_posix()}: {exc}"
     current = _source_baseline_payload(
         project_dir,
         legacy="schematic_review_schema" in saved,
@@ -393,7 +414,7 @@ def baseline_is_current(project_dir: Path) -> tuple[bool, str]:
             False,
             "physical source or board topology changed before proposal approval",
         )
-    return True, "pre-IMPLEMENT source baseline is unchanged"
+    return True, "pre-CIRCUIT source baseline is unchanged"
 
 
 def schematic_inputs(project_dir: Path, stage: str) -> tuple[Path, ...]:
@@ -414,7 +435,7 @@ def schematic_inputs(project_dir: Path, stage: str) -> tuple[Path, ...]:
         project_dir / CONTRACT_FILENAME,
         project_dir / "spec.md",
         project_dir / "docs" / "architecture.md",
-        project_dir / BASELINE_PATH,
+        project_dir / source_baseline_path(project_dir),
         project_dir / root,
         project_dir / narrative,
     }
@@ -449,11 +470,18 @@ def schematic_inputs(project_dir: Path, stage: str) -> tuple[Path, ...]:
 
 
 def schematic_status_fingerprint(project_dir: Path, stage: str) -> str:
+    project_dir = project_dir.expanduser().resolve()
     digest = hashlib.sha256()
     for path in schematic_inputs(project_dir, stage):
         digest.update(path.relative_to(project_dir).as_posix().encode())
         digest.update(b"\0")
-        digest.update(hashlib.sha256(path.read_bytes()).digest())
+        if path.name.endswith(".bom.json"):
+            try:
+                digest.update(hashlib.sha256(semantic_bom_bytes(path)).digest())
+            except ArtifactHashError as exc:
+                raise SchematicInputError(str(exc)) from exc
+        else:
+            digest.update(hashlib.sha256(path.read_bytes()).digest())
     return digest.hexdigest()
 
 

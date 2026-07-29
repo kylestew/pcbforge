@@ -361,7 +361,7 @@ fingerprint: {fingerprint_inputs(project)}
             )
             with self.assertRaisesRegex(
                 PlacementInputError,
-                "not migrated for Step 7",
+                "not migrated for Step 6",
             ):
                 generate_brief(project, tool_root=TOOL_ROOT)
 
@@ -518,7 +518,7 @@ class GeneratorTests(PlacementFixture):
             )
             with self.assertRaisesRegex(
                 PlacementInputError,
-                "Step 6 is not current",
+                "CIRCUIT acceptance is not current",
             ):
                 check_brief(project, tool_root=TOOL_ROOT)
 
@@ -589,7 +589,7 @@ fingerprint: {step6}
             project = self.project(Path(temporary), current_step6=False)
             with self.assertRaisesRegex(
                 PlacementInputError,
-                "Step 6 is not current",
+                "CIRCUIT acceptance is not current",
             ):
                 generate_brief(project, tool_root=TOOL_ROOT)
 

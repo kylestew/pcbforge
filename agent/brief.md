@@ -1,7 +1,7 @@
-<!-- pcbforge-brief-schema: 3 -->
+<!-- pcbforge-brief-schema: 4 -->
 # Placement brief playbook
 
-Use this playbook only after Step 6 build + test is complete. Step 7 turns the
+Use this playbook only after CIRCUIT is complete. Step 6 turns the
 known circuit topology into a complete, reviewable placement contract. It does
 not place footprints, create keepout geometry, route copper, or modify the
 KiCad PCB.
@@ -134,7 +134,7 @@ The schema rules are:
 8. At least one PCBForge net class, one board rule, and one checklist item are
    required. Constraints may be empty only when the reviewed circuit genuinely
    has no typed spatial relationship.
-9. Keepouts remain written instructions in Step 7; the tool never draws
+9. Keepouts remain written instructions in Step 6; the tool never draws
    geometry or changes the board.
 
 ## Procedure
@@ -155,8 +155,8 @@ The schema rules are:
    `brief.md`, placement coverage, class dimensions, exact net assignments, and
    the `.kicad_pro` diff. PCBForge may replace its own `pcbforge:` entries; it
    must preserve every non-PCBForge entry.
-5. Present `brief.md` beside the current, approved Step 5 explanatory circuit
-   SVG. PCBForge has already compared its exact approved proposal model with
+5. Present `brief.md` beside the current, approved CIRCUIT explanatory SVG.
+   PCBForge has already compared its exact approved proposal model with
    the compiled BOM and PCB topology; BRIEF checks that this evidence is still
    current before layout.
    Confirm the `polarity-marking` and `pin1-marking` policy assurances have
@@ -175,22 +175,22 @@ The schema rules are:
 
    ```sh
    pcbforge status approve brief --fingerprint <sha256> \
-     --note "Approved brief.md beside the current Step 5 circuit overview"
+     --note "Approved brief.md beside the current CIRCUIT overview"
    ```
 
 Passing generation alone never records human approval. The approval event is
-bound to the current Step 5 circuit review evidence, Step 6,
+bound to the current CIRCUIT review and deterministic acceptance evidence,
 `placement.yaml`, generated brief, rules profile, topology, and PCBForge-owned
 net-class fingerprint. Regeneration after a material change requires renewed
 user review and approval; rerunning the checker cannot revive the old event.
 
 ## Staleness contract
 
-- Circuit identity, footprint, pad, or connectivity changes stale Steps 6 and
-  7 and require regeneration/review.
+- Circuit identity, footprint, pad, or connectivity changes stale CIRCUIT
+  evidence and BRIEF and require regeneration/review.
 - Changes to `placement.yaml`, generated `brief.md`, or PCBForge-owned net
-  classes stale Step 7.
+  classes stale BRIEF.
 - Footprint positions/sides, tracks, vias, zones, outline, graphics, and other
-  user spatial edits do not stale Step 6 or Step 7.
+  user spatial edits do not stale CIRCUIT or BRIEF.
 - User-created KiCad net classes and unrelated project settings do not stale
-  Step 7.
+  BRIEF.

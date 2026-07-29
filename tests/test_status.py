@@ -204,6 +204,10 @@ class DashboardTests(StatusFixture):
     def test_schema_eleven_rejects_direct_completion_for_every_phase(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))
+            (project / ".pcbforge").write_text(
+                "schema: 11\n",
+                encoding="utf-8",
+            )
             for phase in (
                 "spec",
                 "init",
@@ -329,9 +333,9 @@ guidance:
 
         self.assertTrue(migration.wrote)
         self.assertEqual(migration.reopened_phases, ("architect", "mcu"))
-        self.assertEqual(pins["schema"], 13)
-        self.assertEqual(pins["guidance"]["agents_schema"], 13)
-        self.assertEqual(pins["guidance"]["approval_schema"], 4)
+        self.assertEqual(pins["schema"], 14)
+        self.assertEqual(pins["guidance"]["agents_schema"], 14)
+        self.assertEqual(pins["guidance"]["approval_schema"], 5)
         self.assertEqual(document.events[0].phase, "spec")
         self.assertEqual(document.events[0].action, "complete")
         self.assertEqual(document.events[-2].action, "reopened")
@@ -411,8 +415,8 @@ guidance:
         self.assertIn("## Blockers", rendered)
         self.assertIn("## Workflow", rendered)
         self.assertIn("## Recent progress", rendered)
-        self.assertEqual(rendered.count("\n| "), 14)
-        self.assertIn("0 of 12 required phases complete", rendered)
+        self.assertEqual(rendered.count("\n| "), 13)
+        self.assertIn("0 of 11 required phases complete", rendered)
 
     def test_completion_requires_order_and_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -1,4 +1,4 @@
-"""Deterministic Step 6 build-and-test acceptance checks."""
+"""Deterministic CIRCUIT build-and-test acceptance checks."""
 
 from __future__ import annotations
 
@@ -16,11 +16,12 @@ from typing import Any, Callable, Mapping, Sequence
 
 import yaml
 
+from pcbforge.artifact_hash import ArtifactHashError, semantic_bom_sha256
 from pcbforge.initialize import InitInputError, read_spec
 
 BUILD_TEST_SCHEMA = 1
 BUILD_TEST_REPORT_SCHEMA = 1
-PROJECT_PIN_SCHEMA = 13
+PROJECT_PIN_SCHEMA = 14
 BUILD_TEST_FILENAME = "build-test.yaml"
 BUILD_TEST_REPORT = Path("docs/build-test.md")
 
@@ -57,7 +58,7 @@ class BuildTestError(RuntimeError):
 
 
 class BuildTestInputError(BuildTestError):
-    """The project or Step 6 contract is malformed."""
+    """The project or CIRCUIT acceptance contract is malformed."""
 
 
 @dataclass(frozen=True)
@@ -289,8 +290,10 @@ def read_build_test_contract(project_dir: Path) -> BuildTestContract:
 def _read_pin_metadata(project_dir: Path) -> Mapping[str, Any]:
     data = _load_yaml(project_dir / ".pcbforge", label=".pcbforge")
     errors = []
-    if data.get("schema") not in {11, 12, PROJECT_PIN_SCHEMA}:
-        errors.append(f"schema: expected integer 11, 12, or {PROJECT_PIN_SCHEMA}")
+    if data.get("schema") not in {11, 12, 13, PROJECT_PIN_SCHEMA}:
+        errors.append(
+            f"schema: expected integer 11, 12, 13, or {PROJECT_PIN_SCHEMA}"
+        )
     toolchain = data.get("toolchain")
     if not isinstance(toolchain, dict):
         errors.append("toolchain: expected a mapping")
@@ -309,13 +312,14 @@ def _read_pin_metadata(project_dir: Path) -> Mapping[str, Any]:
         errors.append("guidance.policy_schema: expected integer 1")
     if errors:
         raise BuildTestInputError(
-            "project guidance is not migrated for Step 6:\n  - " + "\n  - ".join(errors)
+            "project guidance is not migrated for CIRCUIT acceptance:\n  - "
+            + "\n  - ".join(errors)
         )
     return data
 
 
 def build_test_inputs(project_dir: Path) -> tuple[Path, ...]:
-    """Return non-spatial tracked inputs for saved Step 6 evidence."""
+    """Return non-spatial tracked inputs for saved CIRCUIT evidence."""
     project_dir = project_dir.expanduser().resolve()
     patterns = (
         "spec.md",
@@ -337,7 +341,7 @@ def build_test_inputs(project_dir: Path) -> tuple[Path, ...]:
 
 
 def fingerprint_inputs(project_dir: Path) -> str:
-    """Fingerprint Step 6 circuit identity and topology, never spatial artwork."""
+    """Fingerprint CIRCUIT identity and topology, never spatial artwork."""
     project_dir = project_dir.expanduser().resolve()
     digest = hashlib.sha256()
     for path in build_test_inputs(project_dir):
@@ -544,10 +548,10 @@ def _find_assertions(
 def ato_source_semantic_bytes(path: Path) -> bytes:
     """Return source semantics without valid Step-6 marker/assert pairs.
 
-    Build + test assertions are added only after MCU and IMPLEMENT approval.
-    Excluding the exact adjacent pair keeps those earlier approval fingerprints
-    stable while preserving every other source byte, including malformed or
-    unmarked assertions.
+    Acceptance assertions are added during CIRCUIT after MCU and proposal
+    approval. Excluding the exact adjacent pair keeps those earlier approval
+    fingerprints stable while preserving every other source byte, including
+    malformed or unmarked assertions.
     """
     try:
         with path.open("r", encoding="utf-8", newline="") as stream:
@@ -895,11 +899,24 @@ def _render_report(
         for item in assertions
     )
     project_dir = (artifacts["Compiler manifest"]).parents[1]
-    artifact_rows = "\n".join(
-        f"| {label} | `{path.relative_to(project_dir).as_posix()}` | "
-        f"`{hashlib.sha256(path.read_bytes()).hexdigest()}` |"
-        for label, path in artifacts.items()
-    )
+    artifact_rows = []
+    for label, path in artifacts.items():
+        try:
+            if label == "BOM JSON":
+                hash_mode = "Semantic BOM"
+                artifact_hash = semantic_bom_sha256(path)
+            else:
+                hash_mode = "Raw bytes"
+                artifact_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+        except ArtifactHashError as exc:
+            raise BuildTestError(str(exc)) from exc
+        except OSError as exc:
+            raise BuildTestError(f"cannot hash compiler artifact {path}: {exc}") from exc
+        artifact_rows.append(
+            f"| {label} | `{path.relative_to(project_dir).as_posix()}` | "
+            f"{hash_mode} | `{artifact_hash}` |"
+        )
+    artifact_rows_text = "\n".join(artifact_rows)
     input_rows = "\n".join(
         f"| `{path.relative_to(project_dir).as_posix()}` | "
         f"`{hashlib.sha256(path.read_bytes()).hexdigest()}` |"
@@ -962,9 +979,9 @@ and no-op spatial preservation all passed.
 
 ## Compiler artifacts
 
-| Artifact | Path | SHA-256 |
-|---|---|---|
-{artifact_rows}
+| Artifact | Path | Hash mode | SHA-256 |
+|---|---|---|---|
+{artifact_rows_text}
 
 ## Inputs
 
@@ -1009,7 +1026,7 @@ def check_build_test(
     runner: CommandRunner = subprocess.run,
     write_report: bool = False,
 ) -> BuildTestResult:
-    """Run the complete deterministic Step 6 gate."""
+    """Run the complete deterministic CIRCUIT acceptance gate."""
     project_dir = project_dir.expanduser().resolve()
     if not project_dir.is_dir():
         raise BuildTestInputError(f"project directory does not exist: {project_dir}")

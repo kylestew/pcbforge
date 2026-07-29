@@ -15,6 +15,9 @@ been changed and exercised on a real board project.
 | `PC-002` | Ready for pilot | High | 2026-07-28 | A generated KiCad schematic is the wrong human-review artifact |
 | `PC-003` | Ready for merge | High | 2026-07-28 | Build + Test rejects intentional unfitted PCB features as rogue BOM parts |
 | `PC-004` | Ready for merge | High | 2026-07-28 | Required Step-6 assertions invalidate approved MCU and IMPLEMENT gates |
+| `PC-005` | Ready for pilot | Medium | 2026-07-28 | IMPLEMENT and Build + Test create two approvals for one unfinished circuit |
+| `PC-006` | Ready for pilot | High | 2026-07-29 | Volatile compiler run IDs make approval fingerprints change after every no-op build |
+| `PC-007` | Ready for pilot | High | 2026-07-29 | An incompatible dirty tool checkout can rewrite a pinned project's workflow state |
 
 ## PC-001 — A topology approval needs a schematic
 
@@ -664,3 +667,280 @@ generation. Separate near-duplicate filters are too likely to drift.
 | 2026-07-28 | Open | Blinky reproduced the contradiction: 13 required passing assertions reopened MCU and IMPLEMENT and made the approved proposal baseline fail. |
 | 2026-07-28 | Ready for merge | A shared semantic-source helper now removes only valid adjacent Step-6 marker/assert pairs from earlier approval and review hashes. Real source changes remain significant. |
 | 2026-07-28 | Ready for merge | Sixty-nine focused Build Test, schematic, circuit-review, and status regression tests pass. Blinky reproduced the original MCU and IMPLEMENT fingerprints and the repaired full gate reached Build + Test Awaiting approval without reopening prior phases. |
+| 2026-07-28 | Ready for merge | Schema 14 keeps assertions inside CIRCUIT, after proposal approval but before its single final approval. The semantic normalization still protects the approved proposal and MCU boundary. |
+
+## PC-005 — Implementation and acceptance are one circuit phase
+
+### Report
+
+The schema-13 dashboard treated physical IMPLEMENT and Build + Test as
+separate required phases with separate final approvals. In practice, the
+circuit was not ready for downstream placement work until exact compiled
+parity, assertions, BOM/PCB agreement, and spatial-preservation evidence had
+all passed. The first approval therefore certified an intermediate state that
+the next phase was required to modify and validate.
+
+### Why this is a process defect
+
+The split created avoidable user ceremony and an ambiguous claim: IMPLEMENT
+could display `Complete` while the implemented circuit had not yet passed its
+board-specific acceptance contract. It also made ownership look inconsistent,
+because the AI-led implementation and tool-led checks were separate dashboard
+phases even though both produced one reviewable outcome.
+
+### Required process change
+
+Schema 14 defines one CIRCUIT phase:
+
+1. The AI creates `review/circuit/circuit.yaml`,
+   `review/circuit/circuit.svg`, and `docs/circuit-proposal.md`.
+2. The user approves that exact proposal before physical source changes.
+3. The AI implements the circuit and resolves parts, policy, IOC, and compiled
+   parity.
+4. The internal `build-test.yaml` gate runs assertions, exact BOM/PCB and
+   connectivity checks, and the no-op spatial-preservation audit, producing
+   `docs/build-test.md`.
+5. The user gives one final CIRCUIT approval covering the implemented and
+   tested result.
+
+The internal `check-build-test` command and files remain independently useful,
+but `build` is no longer a workflow phase. BRIEF becomes Step 6 and all later
+phase numbers move up by one.
+
+### Migration contract
+
+- New projects use `.pcbforge` schema 14 and the `circuit` phase key.
+- Active review files use `review/circuit` and `docs/circuit-*`.
+- `pcbforge migrate-circuit-phase` upgrades generated schema-13 projects.
+- Migration preserves CIRCUIT completion only when both legacy IMPLEMENT and
+  Build + Test approvals are current.
+- If either approval is missing or stale, CIRCUIT reopens; migration never
+  invents user approval.
+- The legacy playbooks and phase reader remain only for unmigrated projects.
+
+### Acceptance criteria
+
+- A schema-14 dashboard contains CIRCUIT and no standalone build phase.
+- CIRCUIT cannot reach `Awaiting approval` without current proposal, build,
+  IOC, parts, policy, final parity, and build-test evidence.
+- There is one final CIRCUIT fingerprint and approval after all those checks.
+- BRIEF is Step 6 and requires the current CIRCUIT evidence.
+- Schema-13 migration is atomic, idempotent, renames active artifacts, and
+  follows the two-old-approvals preservation rule.
+- Generated `AGENTS.md`, the playbooks, public workflow, and CLI help agree.
+
+### Resolution log
+
+| Date | State | Note |
+|---|---|---|
+| 2026-07-28 | Open | The phase split was challenged because both phases describe one circuit implementation lifecycle. |
+| 2026-07-28 | Ready for pilot | Schema 14 introduces the combined CIRCUIT phase, Step-6 BRIEF, current artifact names, an explicit schema-13 migration, and compatibility handling for legacy dashboards. |
+
+## PC-006 — Approval evidence must exclude volatile compiler run IDs
+
+### Report
+
+**Project context:** Blinky schema-13 replay, after the Build + Test contract,
+compiled circuit, assertions, BOM/PCB parity, and spatial-preservation check
+had passed.
+
+**Workflow point:** The user explicitly approved a presented Build + Test
+fingerprint. A later required `pcbforge status --check --write` performed
+another no-op frozen build and regenerated `docs/build-test.md`.
+
+The semantic Build + Test fingerprint remained:
+
+```text
+fcf80d0135fa6aca59a73afe45264eaa2b68399ae55166ae9652836de2129cf2
+```
+
+The product PCB also remained byte-identical:
+
+```text
+b48612520bd39f208da050f5c3c67e4c2222db5d54abaa758a8d01f2e755eec5
+```
+
+However, the compiler emits a new random `build_id` in
+`default.bom.json` on every run. The generated report hashed the raw BOM JSON,
+so otherwise identical builds produced different artifact hashes, different
+report bytes, and different approval fingerprints. During the reproduced
+failure, successive no-op review packets included approval fingerprints
+`9b126733…34dcc` and `74c14c74…fc6a1`.
+
+The user was consequently asked to approve the same unchanged electrical
+result repeatedly. A local diagnostic that removed only top-level `build_id`
+before hashing produced byte-identical reports and the same approval
+fingerprint, `2fae31e4…c502a`, across two complete no-op builds.
+
+### Why this is a process defect
+
+The approval protocol requires the user to review one exact fingerprint and
+then requires `status approve` to recompute that packet before recording it.
+Any volatile byte in the packet creates a time-of-check/time-of-use failure:
+the act of confirming the evidence can make the reviewed fingerprint stale.
+
+This is not useful reproducibility evidence. `build_id` identifies a compiler
+invocation, not a BOM, part selection, connection, assertion, or product PCB.
+Binding approval to it adds ceremony while detecting no design change.
+
+### Required process change
+
+- Define one canonical semantic hash for compiler BOM JSON that removes only
+  the documented volatile run identifier before canonical JSON encoding.
+- Use that semantic hash everywhere tracked evidence or approval fingerprints
+  refer to the BOM JSON.
+- Clearly label the report value as a semantic BOM hash. A raw artifact hash
+  may be logged separately for diagnostics, but must not make tracked approval
+  evidence unstable.
+- Audit every compiler artifact included in a tracked report for timestamps,
+  random IDs, absolute temporary paths, or other invocation-specific fields.
+- Ensure `status review` followed immediately by `status approve` cannot
+  invalidate itself when the circuit inputs and semantic outputs are
+  unchanged.
+
+### Acceptance criteria
+
+- Two frozen no-op builds with different compiler `build_id` values produce
+  byte-identical `docs/build-test.md`.
+- The Build + Test/CIRCUIT check fingerprint and approval fingerprint remain
+  identical across those builds.
+- Changing a BOM component, quantity, MPN, LCSC identifier, footprint, value,
+  or usage/designator changes the semantic BOM hash and approval fingerprint.
+- Malformed BOM JSON still fails rather than falling back to an approval-stable
+  but incomplete representation.
+- `status review` followed by `status approve` succeeds without asking the
+  user to approve a newly generated fingerprint.
+- A real Blinky no-op rebuild preserves the PCB hash and the exact reviewed
+  approval fingerprint.
+- Regression tests inject two different `build_id` values and prove stable
+  report bytes, status review, and approval recording.
+
+### Non-goals
+
+- Do not ignore any electrically meaningful BOM field.
+- Do not weaken exact BOM, PCB, connectivity, assertion, or spatial
+  preservation checks.
+- Do not claim the raw compiler artifact is byte-reproducible when it is not.
+
+### Likely affected areas
+
+- `pcbforge/build_test.py`
+- `pcbforge/status.py`
+- `pcbforge/circuit_review.py`
+- `tests/test_build_test.py`
+- `tests/test_status.py`
+- tracked-report reproducibility documentation
+
+### Resolution log
+
+| Date | State | Note |
+|---|---|---|
+| 2026-07-29 | Open | Blinky reproduced changing approval fingerprints across no-op builds while the semantic Build + Test fingerprint and PCB hash stayed unchanged. |
+| 2026-07-29 | Open | A local semantic-BOM diagnostic excluding only `build_id` produced identical report bytes and approval fingerprints across two complete builds. |
+| 2026-07-29 | Ready for pilot | One strict shared semantic BOM hash now removes only top-level `build_id`; build-test reports label it explicitly, CIRCUIT evidence uses it, malformed JSON fails, and injected changing run IDs produce byte-identical reports. |
+| 2026-07-29 | Ready for pilot | The full 151-test suite passes. Closure still requires the documented real Blinky no-op rebuild and review/approval replay. |
+
+## PC-007 — Pinned projects must not execute incompatible dirty tool code
+
+### Report
+
+**Project context:** The active Blinky project was generated as schema 13 and
+records its PCBForge revision and guidance schemas in `.pcbforge`.
+
+**Workflow point:** Between `status review build` and `status approve build`,
+the live PCBForge working tree changed to an in-progress schema-14
+implementation. The public `scripts/pcbforge` dispatcher continued importing
+the live checkout instead of enforcing the project's recorded workflow
+version.
+
+The approval command then tried to read the schema-13
+`schematic-review.yaml` as the new schema-14 circuit contract and failed:
+
+```text
+pcbforge.circuit_review.CircuitReviewInputError:
+circuit_review_schema: expected integer 2
+```
+
+A subsequent `pcbforge status --write` using the same incompatible checkout
+rewrote the dashboard schema and appended a SPEC reopen event. The displayed
+project state fell from six completed phases to zero even though the circuit
+source, approved review model, acceptance contract, and product PCB had not
+changed.
+
+The project pin recorded `dirty: true`, which described the risk but did not
+make the exact code reproducible or prevent a later dirty checkout from being
+treated as the pinned tool.
+
+### Why this is a process defect
+
+A project-level tool pin is meaningful only if public commands either execute
+that exact implementation or refuse to run. Merely recording a commit while
+importing arbitrary current working-tree code lets unrelated tool development
+reinterpret old artifacts, invalidate valid approvals, and persist false
+workflow history.
+
+This is especially dangerous for `status --write`: a schema parse failure
+should be a read-only compatibility error. It must never be converted into
+evidence that the user changed or rejected an approved artifact.
+
+### Required process change
+
+- New projects must pin a reproducible tool state. Initialization from a dirty
+  checkout must either fail or capture an immutable content identity that can
+  actually be executed later.
+- The public dispatcher must compare the active implementation with the
+  project's pin before importing project-aware workflow code.
+- On a mismatch, run the pinned implementation from an isolated checkout or
+  stop with an actionable migration/version error before touching project
+  files.
+- Workflow schema upgrades must occur only through an explicit, atomic,
+  versioned migration command.
+- `status --write`, `status --check --write`, and `status approve` must validate
+  every required schema before writing `STATUS.md`.
+- Unsupported or partially migrated inputs must leave all project files and
+  append-only workflow events byte-for-byte unchanged.
+
+### Acceptance criteria
+
+- Invoking a schema-14 checkout against an unmigrated schema-13 project either
+  runs the exact pinned schema-13 implementation or exits without modifying
+  any project file.
+- A dirty checkout cannot be recorded as a reproducible project pin unless an
+  immutable executable snapshot/content digest is retained.
+- An unsupported `circuit_review_schema`, status schema, or guidance schema
+  causes a fail-closed diagnostic and no new reopen event.
+- A failed approval command cannot partially refresh checks, reports, status
+  schema, or workflow events.
+- Explicit migration is atomic, idempotent, and preserves approvals only under
+  its documented migration contract.
+- Regression tests compare complete project-directory hashes before and after
+  incompatible invocations and prove there are no writes.
+- The Blinky schema-13 project remains at its last valid completed phase when
+  inspected from a schema-14 development checkout.
+
+### Non-goals
+
+- Do not silently treat old schemas as current.
+- Do not suppress legitimate reopening after a real approved-artifact change.
+- Do not automatically migrate a project merely because a newer checkout is
+  available.
+
+### Likely affected areas
+
+- `scripts/pcbforge`
+- `pcbforge/initialize.py`
+- `pcbforge/cli.py`
+- `pcbforge/status.py`
+- `.pcbforge` pin format and migration commands
+- `tests/test_initialize.py`
+- `tests/test_status.py`
+- end-to-end version-skew tests
+
+### Resolution log
+
+| Date | State | Note |
+|---|---|---|
+| 2026-07-29 | Open | Blinky reproduced a schema-13 review/approval interruption when the live tool checkout changed underneath the project. |
+| 2026-07-29 | Open | An incompatible status write appended a false SPEC reopen and rewrote the dashboard despite unchanged project artifacts. |
+| 2026-07-29 | Ready for pilot | The public launcher now resolves clean exact-revision Git worktrees before importing workflow code, rejects dirty pins and initialization, and reserves version skew for explicit migrations. Current-schema CLI preflight rejects incompatible pins, guidance, status, and structured artifacts before checks or writes. |
+| 2026-07-29 | Ready for pilot | Worktree routing and complete-tree no-write regressions pass. A real `status --write` attempt against Blinky's unreproducible dirty schema-13 pin failed closed while `.pcbforge`, `STATUS.md`, and `docs/build-test.md` remained byte-identical. |

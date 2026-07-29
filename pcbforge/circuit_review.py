@@ -1,4 +1,4 @@
-"""Human-readable circuit review and compiled parity for schema-13 projects."""
+"""Human-readable circuit review and compiled parity for schema-14 projects."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from typing import Any, Mapping, Sequence
 
 import yaml
 
+from pcbforge.artifact_hash import ArtifactHashError, semantic_bom_bytes
 from pcbforge.build_test import (
     BuildTestError,
     ato_source_semantic_bytes,
@@ -23,9 +24,9 @@ from pcbforge.build_test import (
 from pcbforge.initialize import InitInputError, read_spec
 from pcbforge.schematic import BASELINE_PATH, baseline_is_current
 
-CIRCUIT_REVIEW_SCHEMA = 1
+CIRCUIT_REVIEW_SCHEMA = 2
 CIRCUIT_MODEL_SCHEMA = 1
-PROJECT_PIN_SCHEMA = 13
+PROJECT_PIN_SCHEMA = 14
 CONTRACT_FILENAME = "circuit-review.yaml"
 STAGES = {"proposal", "final"}
 
@@ -247,7 +248,7 @@ def _read_pins(project_dir: Path) -> None:
 
 
 def read_circuit_review_contract(project_dir: Path) -> CircuitReviewContract:
-    """Read the strict schema-13 circuit review contract."""
+    """Read the strict schema-14 circuit review contract."""
     project_dir = project_dir.expanduser().resolve()
     data = _load_yaml(project_dir / CONTRACT_FILENAME)
     keys = {
@@ -268,13 +269,13 @@ def read_circuit_review_contract(project_dir: Path) -> CircuitReviewContract:
         data.get("model"),
         "model",
         suffix=".yaml",
-        prefix=Path("review/implement"),
+        prefix=Path("review/circuit"),
     )
     diagram = _safe_path(
         data.get("diagram"),
         "diagram",
         suffix=".svg",
-        prefix=Path("review/implement"),
+        prefix=Path("review/circuit"),
     )
     proposal_narrative = _safe_path(
         data.get("proposal_narrative"),
@@ -727,18 +728,6 @@ def _compiled_components(
     return components, errors
 
 
-def _compiled_bom_semantic_bytes(path: Path) -> bytes:
-    """Return stable BOM semantics without the volatile compiler run identifier."""
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError):
-        return path.read_bytes()
-    if isinstance(payload, dict):
-        payload = dict(payload)
-        payload.pop("build_id", None)
-    return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
-
-
 def _compare_to_compiled(
     project_dir: Path,
     contract: CircuitReviewContract,
@@ -858,7 +847,7 @@ def _compare_to_compiled(
 
 
 def _evidence_path(stage: str) -> Path:
-    return Path("review") / "implement" / stage / "evidence.json"
+    return Path("review") / "circuit" / stage / "evidence.json"
 
 
 def circuit_review_inputs(project_dir: Path, stage: str) -> tuple[Path, ...]:
@@ -910,7 +899,10 @@ def circuit_review_status_fingerprint(project_dir: Path, stage: str) -> str:
             except BuildTestError:
                 digest.update(hashlib.sha256(path.read_bytes()).digest())
         elif path.name.endswith(".bom.json"):
-            digest.update(_compiled_bom_semantic_bytes(path))
+            try:
+                digest.update(semantic_bom_bytes(path))
+            except ArtifactHashError as exc:
+                raise CircuitReviewInputError(str(exc)) from exc
         elif path.suffix == ".ato":
             digest.update(hashlib.sha256(ato_source_semantic_bytes(path)).digest())
         else:
@@ -968,7 +960,7 @@ def check_circuit_review(
         )
     if stage == "proposal" and "proposal" not in narrative.casefold():
         raise CircuitReviewInputError("proposal narrative must identify its proposal")
-    review_root = project_dir / "review" / "implement"
+    review_root = project_dir / "review" / "circuit"
     if any(review_root.rglob("*.kicad_pcb")):
         raise CircuitReviewInputError(
             "review-only circuit directories must not contain a KiCad PCB"
@@ -1042,9 +1034,12 @@ def check_circuit_review(
         payload["proposal_evidence_sha256"] = hashlib.sha256(
             (project_dir / _evidence_path("proposal")).read_bytes()
         ).hexdigest()
-        payload["compiled_bom_sha256"] = hashlib.sha256(
-            _compiled_bom_semantic_bytes(bom_path)
-        ).hexdigest()
+        try:
+            payload["compiled_bom_sha256"] = hashlib.sha256(
+                semantic_bom_bytes(bom_path)
+            ).hexdigest()
+        except ArtifactHashError as exc:
+            raise CircuitReviewInputError(str(exc)) from exc
         payload["source_sha256"] = {
             path.relative_to(project_dir).as_posix(): hashlib.sha256(
                 ato_source_semantic_bytes(path)

@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from pcbforge.artifact_hash import ArtifactHashError, semantic_bom_sha256
 from pcbforge.build_test import (
     BUILD_TEST_REPORT,
     AssertionLocation,
@@ -76,9 +77,16 @@ assertions:
 
 
 class FakeRunner:
-    def __init__(self, *, mutate_board: bool = False, fail: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        mutate_board: bool = False,
+        fail: bool = False,
+        build_ids: tuple[str, ...] = (),
+    ) -> None:
         self.mutate_board = mutate_board
         self.fail = fail
+        self.build_ids = iter(build_ids)
         self.calls: list[list[str]] = []
 
     def __call__(self, command, *, cwd, **kwargs):
@@ -93,6 +101,18 @@ class FakeRunner:
                 ),
                 encoding="utf-8",
             )
+        build_id = next(self.build_ids, None)
+        if build_id is not None:
+            bom = (
+                Path(cwd)
+                / "build"
+                / "builds"
+                / "default"
+                / "default.bom.json"
+            )
+            payload = json.loads(bom.read_text(encoding="utf-8"))
+            payload["build_id"] = build_id
+            bom.write_text(json.dumps(payload) + "\n", encoding="utf-8")
         return subprocess.CompletedProcess(
             command,
             1 if self.fail else 0,
@@ -177,6 +197,29 @@ guidance:
 
 
 class ContractTests(BuildTestFixture):
+    def test_semantic_bom_hash_ignores_only_top_level_build_id(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            bom = project / "build" / "builds" / "default" / "default.bom.json"
+            first = semantic_bom_sha256(bom)
+            payload = json.loads(bom.read_text(encoding="utf-8"))
+            payload["build_id"] = "run-one"
+            bom.write_text(json.dumps(payload), encoding="utf-8")
+            second = semantic_bom_sha256(bom)
+            payload["components"][0]["value"] = "10k"
+            bom.write_text(json.dumps(payload), encoding="utf-8")
+            changed = semantic_bom_sha256(bom)
+
+        self.assertEqual(first, second)
+        self.assertNotEqual(second, changed)
+
+    def test_semantic_bom_hash_rejects_malformed_json(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "default.bom.json"
+            path.write_text("{not json\n", encoding="utf-8")
+            with self.assertRaisesRegex(ArtifactHashError, "invalid compiler BOM"):
+                semantic_bom_sha256(path)
+
     def test_source_semantics_remove_only_valid_marker_assert_pairs(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary) / "main.ato"
@@ -248,7 +291,7 @@ board_footprints: 1""",
             runner = FakeRunner()
             with self.assertRaisesRegex(
                 BuildTestInputError,
-                "not migrated for Step 6",
+                "not migrated for CIRCUIT acceptance",
             ):
                 check_build_test(
                     project,
@@ -429,6 +472,32 @@ class CheckerTests(BuildTestFixture):
                 for index in range(len(runner.calls[0]) - 1)
             ],
         )
+
+    def test_volatile_build_ids_produce_byte_identical_report(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            runner = FakeRunner(build_ids=("run-one", "run-two"))
+            first = check_build_test(
+                project,
+                tool_root=TOOL_ROOT,
+                runner=runner,
+                write_report=True,
+            )
+            first_bytes = (project / BUILD_TEST_REPORT).read_bytes()
+            second = check_build_test(
+                project,
+                tool_root=TOOL_ROOT,
+                runner=runner,
+                write_report=True,
+            )
+            second_bytes = (project / BUILD_TEST_REPORT).read_bytes()
+
+        self.assertTrue(first.wrote_report)
+        self.assertFalse(second.wrote_report)
+        self.assertEqual(first_bytes, second_bytes)
+        self.assertEqual(first.fingerprint, second.fingerprint)
+        self.assertIn(b"| BOM JSON |", second_bytes)
+        self.assertIn(b"| Semantic BOM |", second_bytes)
 
     def test_bom_mismatch_fails_without_overwriting_report(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

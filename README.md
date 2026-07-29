@@ -34,6 +34,15 @@ wrappers, never global or PATH-resolved tools.
 Persist the PATH line in your shell profile if desired. `pcbforge --help`
 should then show the available workflow verbs.
 
+The public `pcbforge` command is project-pinned. Before importing workflow
+code, it reads the target project's `.pcbforge` file and selects a clean
+registered Git worktree at that exact revision with the matching lockfile and
+installed environment. If the pinned worktree is unavailable, the command
+stops without touching the project and prints the `git worktree add` and
+`uv sync` commands needed to install it. New projects and explicit migrations
+must run from a clean checkout; dirty tool state is never recorded as a
+reproducible pin.
+
 ## Start a new board
 
 1. Make an empty project directory (outside this repo) and start your AI
@@ -98,7 +107,7 @@ pcbforge status approve layout --fingerprint <sha256> \
 pcbforge check-policy
 pcbforge policy approve-exception <id> --note "Approved tradeoff"
 pcbforge check-circuit-review --stage proposal --write
-pcbforge status review implement --stage proposal
+pcbforge status review circuit --stage proposal
 pcbforge check-build-test
 pcbforge check-build-test --write-report
 pcbforge brief
@@ -106,12 +115,12 @@ pcbforge check-brief
 ```
 
 Static status is read-only and fast. `--check` runs applicable pinned build,
-Step 5 circuit review, Step 6 acceptance, placement-brief, parts-policy, CubeMX,
-and KiCad DRC
+Step 5 CIRCUIT acceptance, placement-brief, parts-policy, CubeMX, and KiCad DRC
 validation before rendering the same status model.
 
-Schema 13 combines authored Step 5 circuit review with the manufacturing
-policy and universal phase approvals. The
+Schema 14 merges physical implementation and build + test into one CIRCUIT
+phase. It combines authored circuit review, deterministic acceptance,
+manufacturing policy, and universal phase approvals. The
 tool-owned `policies/pcbforge-standard-v1.yaml` hard-locks JLCPCB, STM32,
 2/4-layer boards, SWD, pinned tools, exact part identity, spatial ownership,
 and human ordering authority. Project `policy.yaml` records standard
@@ -120,7 +129,7 @@ sourcing evidence, and explicit exception requests. Routine validation is
 offline; approval commands only persist decisions already made by the user.
 
 Before physical implementation, create the exact circuit proposal model and
-deliberately authored browser-readable SVG described by `agent/implement.md`.
+deliberately authored browser-readable SVG described by `agent/circuit.md`.
 Run `pcbforge check-circuit-review --stage proposal --write`, present the SVG,
 narrative, exact model summary, and fingerprint, and receive explicit approval
 before source edits. After implementation, the final check compares that frozen
@@ -131,34 +140,39 @@ PCBForge does not generate a KiCad schematic for this review.
 During physical implementation, run `pcbforge check-parts` directly. It rejects
 project-local KiCad assets for recognized commodity chip resistors, capacitors,
 and LEDs and reports the canonical official-library replacement. The same audit
-must pass before IMPLEMENT can complete.
+must pass before CIRCUIT can complete.
 
-After IMPLEMENT, follow `agent/build-test.md` and create the tracked exact
-acceptance contract `build-test.yaml`. Step 6 runs a pinned frozen build,
+Within CIRCUIT, create the tracked exact acceptance contract `build-test.yaml`.
+The internal build-test gate runs a pinned frozen build,
 executes the contract's marked atopile assertions, validates exact
 LCSC/MPN/footprint/quantity selections against the emitted BOM, checks
 BOM-to-PCB designator and footprint parity, requires resolved connectivity,
 and verifies that a no-op build preserved all spatial PCB work.
 `pcbforge status --check --write` records the current check fingerprint and
-generates the tracked `docs/build-test.md`. Passing evidence moves Step 6 to
-`Awaiting approval`; Step 7 stays blocked until the user explicitly approves
-the current Step 6 review fingerprint.
+generates the tracked `docs/build-test.md`. CIRCUIT reaches
+`Awaiting approval` only when the proposal approval, implementation parity,
+parts/policy/IOC checks, and build-test evidence are all current. One final
+CIRCUIT fingerprint covers the implemented and tested result.
+The report labels the compiler BOM digest as semantic: it canonicalizes the
+JSON and excludes only the compiler's volatile top-level `build_id`. All
+electrically meaningful BOM fields remain approval-bound, while the other
+compiler artifacts retain raw byte hashes.
 
-For Step 7, follow `agent/brief.md` and write the authoritative
+For Step 6, follow `agent/brief.md` and write the authoritative
 `placement.yaml`: every PCB reference appears in exactly one ordered group;
 typed constraints use current `REF` / `REF.PAD` endpoints; routing classes use
 exact current nets and safe JLC dimensions. `pcbforge brief` generates
 `brief.md` and merges only `pcbforge:` classes into the KiCad project. It
 preserves user classes and verifies the PCB is byte-identical.
-`pcbforge check-brief` is read-only. Step 7 completes only after the user
-approves `brief.md` beside the approved current Step 5 circuit overview;
+`pcbforge check-brief` is read-only. Step 6 completes only after the user
+approves `brief.md` beside the approved current CIRCUIT overview;
 record that gate with
 `pcbforge status approve brief --fingerprint <sha256> --note "..."`.
 
 After FAB-OUT, refresh live JLC availability and lifecycle evidence for the
 exact BOM. Once the user confirms it, record
 `pcbforge policy confirm-sourcing --note "..."`. ORDER cannot complete unless
-that confirmation still matches the policy sourcing records, Step 6 BOM, and
+that confirmation still matches the policy sourcing records, CIRCUIT BOM, and
 fabrication outputs.
 
 ## Repo map
@@ -167,7 +181,7 @@ fabrication outputs.
 |---|---|
 | `WORKFLOW.md` | concise phase sequence, ownership, outputs, and gates |
 | `DESIGN.md` | the contract — philosophy, workflow, invariants, decisions |
-| `agent/` | AI manuals (`operating-manual`, `spec-interview`, `architect`, `mcu`, `implement`, `build-test`, `brief`) |
+| `agent/` | AI manuals (`operating-manual`, `spec-interview`, `architect`, `mcu`, `circuit`, `build-test`, `brief`) |
 | `toolchain/` | pinned compiler env (atopile 0.15.7, Python 3.14, uv.lock) |
 | `scripts/` | public `pcbforge` CLI + pinned wrappers (`ato`, `kicad-cli`, `cubemx`) |
 | `pcbforge/` | CLI implementation and project scaffold generator |
@@ -186,7 +200,7 @@ pcbforge policy approve-baseline /path/to/project \
   --note "Approved migrated policy baseline"
 ```
 
-This migrates directly to schema 13. It pins the profile, generates
+This migrates directly to schema 14. It pins the profile, generates
 `policy.yaml` from discoverable facts, updates generated guidance, and leaves
 applicability and sourcing items for review. It never infers approval.
 
@@ -200,7 +214,7 @@ Current artifact-bound SPEC, ARCHITECT, and BRIEF approvals are preserved when
 their fingerprints still match and every preceding required approval remains
 current. Completed phases without a provable sequential approval reopen and
 require `status review` plus explicit approval. Approved policy exceptions
-retain their targeted reopening behavior. Temper is the first schema-11
+retain their targeted reopening behavior. Temper was the first
 universal-approval migration pilot.
 
 For an existing schema-11 project, use the legacy migration alias to reach the
@@ -210,11 +224,10 @@ current circuit-review workflow:
 pcbforge migrate-schematic-review /path/to/project
 ```
 
-An already completed IMPLEMENT phase must first be rewound, or migrated with
-`--adopt-existing`. Adoption is labelled in STATUS and never claims the
-circuit received pre-source proposal approval. A clean pre-IMPLEMENT migration
-reopens MCU once so its renewed approval captures the schema-13 source
-baseline.
+An already completed legacy IMPLEMENT phase must first be rewound, or migrated
+with `--adopt-existing`. Adoption is labelled in STATUS and never claims the
+circuit received pre-source proposal approval. A clean migration reopens MCU
+once so its renewed approval captures the current source baseline.
 
 For an existing schema-12 project, replace the native KiCad review gate:
 
@@ -225,3 +238,15 @@ pcbforge migrate-circuit-review /path/to/project
 Legacy KiCad review files are preserved but ignored. A current MCU handoff
 baseline is retained; changed post-baseline source requires explicit
 `--adopt-existing`. The migration never generates or deletes review artwork.
+
+For an existing schema-13 project, merge the old IMPLEMENT and build + test
+phases into CIRCUIT:
+
+```bash
+pcbforge migrate-circuit-phase /path/to/project
+```
+
+The migration renames active review artifacts to `review/circuit` and
+`docs/circuit-*`. CIRCUIT remains complete only when both old phase approvals
+are current; otherwise it reopens at the combined gate. Running the command
+again is a no-op.

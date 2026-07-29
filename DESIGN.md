@@ -82,6 +82,15 @@ exception approval reopens the profile-mapped completed phase.
 
 ## Decision record
 
+- **2026-07-28 — schema-14 merges IMPLEMENT and build + test into CIRCUIT.**
+  Physical implementation and its deterministic acceptance evidence are one
+  lifecycle: CIRCUIT starts with an authored proposal and explicit approval,
+  continues through Atopile implementation and exact compiled parity, then
+  requires the tracked `build-test.yaml` / `docs/build-test.md` gate before one
+  final approval. The dashboard has no separate build phase. Active artifacts
+  live under `review/circuit` and `docs/circuit-*`; BRIEF becomes Step 6.
+  Schema-13 migration preserves CIRCUIT completion only when both legacy
+  IMPLEMENT and build + test approvals are current.
 - **2026-07-28 — schema-13 authored circuit review supersedes synthetic KiCad
   review.** The schema-12 pilot proved that a valid generated `.kicad_sch` and
   clean ERC do not guarantee human comprehension. IMPLEMENT now approves a
@@ -117,7 +126,7 @@ exception approval reopens the profile-mapped completed phase.
   explicit migration and a separate user baseline approval; migration itself
   is not approval. Routine
   checks stay offline. Live JLC availability/lifecycle is reviewed during
-  IMPLEMENT and again after FAB-OUT before the user may complete ORDER.
+  CIRCUIT and again after FAB-OUT before the user may complete ORDER.
 - **2026-07-25 — MCU pinmux is AI-led; CubeMX review is optional.** After
   ARCHITECT approval, the agent chooses the exact STM32/package, resolves the
   pin mapping, and creates the canonical `firmware/<project>.ioc`. Pinned
@@ -239,24 +248,22 @@ for whichever compiler wins:
 4. MCU        AI selects exact STM32 + pins → creates .ioc → T: check-ioc;
               U may review/edit in CubeMX. AI derives the MCU module manually
               with a one-to-one audit until ioc2code is implemented.
-5. IMPLEMENT  AI creates an explanatory SVG plus exact proposal model; T:
+5. CIRCUIT    AI creates an explanatory SVG plus exact proposal model; T:
               semantic binding; U approves before source. AI implements exact
-              parts; T: compiled identity/pin/topology parity + check-parts + check-policy;
-              U gives separate final approval.
-6. build+test T: exact build-test.yaml → frozen compile → resolved
-              connectivity + BOM; marked assertions + compiler-native checks;
-              no-op spatial-preservation audit → tracked report; fail loud.
-7. brief      AI: exact placement.yaml from reviewed intent; T validates
+              parts; T validates identity/pin/topology parity, parts, policy,
+              exact build-test.yaml, assertions, BOM/connectivity, and no-op
+              spatial preservation; U gives one final approval.
+6. brief      AI: exact placement.yaml from reviewed intent; T validates
               complete footprint/ref/pad/net coverage, generates brief.md,
               and seeds PCBForge-owned classes in .kicad_pro without touching
-              .kicad_pcb; U approves brief beside current Step 5 circuit view.
-8. LAYOUT     U — THE ART. AI spotter on request (see Layout copilot).
-9. ROUTE      U — the art continues. AI sanity checks on request.
-10. verify    T: DRC vs JLC rules + scripted layout audits; AI render review.
-11. fab-out   T: JLC Gerbers + drill + BOM + CPL → fab/board.zip
-12. order     post-FAB sourcing confirmation → U uploads to JLCPCB
+              .kicad_pcb; U approves brief beside current CIRCUIT view.
+7. LAYOUT     U — THE ART. AI spotter on request (see Layout copilot).
+8. ROUTE      U — the art continues. AI sanity checks on request.
+9. verify     T: DRC vs JLC rules + scripted layout audits; AI render review.
+10. fab-out   T: JLC Gerbers + drill + BOM + CPL → fab/board.zip
+11. order     post-FAB sourcing confirmation → U uploads to JLCPCB
               (tool never touches money/orders)
-13. publish   proven modules: version tag + generated schematic render;
+12. publish   proven modules: version tag + generated schematic render;
               U optional prettify (the surviving drawing act).
 ```
 
@@ -264,7 +271,7 @@ Every numbered phase ends with the same final gate: required evidence becomes
 current, the agent presents `pcbforge status review <phase>`, the user
 explicitly approves that fingerprint, and the agent records it with
 `pcbforge status approve`. The phase cannot complete from tool success, file
-presence, or agent judgment alone. ARCHITECT and IMPLEMENT each have an
+presence, or agent judgment alone. ARCHITECT and CIRCUIT each have an
 additional proposal-stage approval before affected source; optional PUBLISH
 may instead be explicitly skipped.
 
@@ -313,7 +320,7 @@ check.
 
 `ioc2code` remains debt. Until it exists, the agent derives `src/mcu.ato`
 manually from the checked `.ioc`, independently audits every mapping, and
-builds before moving to IMPLEMENT.
+builds before moving to CIRCUIT.
 
 ### Phase 1 — SPEC (unchanged from B)
 
@@ -334,7 +341,8 @@ names a part. Schema lives in `agent/spec-interview.md`.
 Its YAML frontmatter contains append-only workflow events and fingerprints for
 saved build, IOC, and DRC results. Its generated body is the single user-facing
 dashboard: current focus, required-phase count, blockers, next actions, all 13
-phases, and recent progress. Static refreshes inspect files; explicit
+phases in legacy projects or all 12 phases in schema 14, and recent progress.
+Static refreshes inspect files; explicit
 `--check` refreshes deterministic evidence. Human-owned gates are never
 inferred from board contents.
 
@@ -407,7 +415,7 @@ measured dimensions against datasheet. Generated ones live project/tool-local
 `pcbforge check-parts` makes the common case executable: recognized
 two-terminal chip resistors, capacitors, and LEDs may keep exact MPN/LCSC
 supplier metadata but may not reference project-local KiCad symbol, footprint,
-or model files. Its fingerprint is part of the IMPLEMENT evidence gate.
+or model files. Its fingerprint is part of the CIRCUIT evidence gate.
 
 ## Checks become tests
 
@@ -437,9 +445,10 @@ still possible; that's review + assertions.) `verify-stock` is a live JLC
 query — time-dependent, not deterministic; it **reports** availability and
 proposes alternates, never silently changes locked parts.
 
-Step 6 makes those principles executable. `build-test.yaml` schema 1 is the
-board-specific acceptance oracle, written from reviewed intent rather than
-copied blindly from build output. It declares the exact aggregated
+The CIRCUIT build-test gate makes those principles executable.
+`build-test.yaml` schema 1 is the board-specific acceptance oracle, written
+from reviewed intent rather than copied blindly from build output. It declares
+the exact aggregated
 LCSC/MPN/footprint/quantity BOM, expected PCB footprint count, selected atopile
 build, and stable IDs for every required assertion. A
 `# pcbforge-test: <id>` source marker must immediately precede each declared
@@ -450,28 +459,27 @@ manifest and BOM JSON/CSV, exact BOM agreement, unique designators,
 BOM-to-PCB reference parity, resolved pad-to-net connectivity, and an unchanged
 no-op spatial fingerprint. The preservation fingerprint covers footprint
 position/side/membership, tracks, vias, zones, board outline, graphics, and
-user artwork. Compiler-owned identity/connectivity may change during
-IMPLEMENT, but Step 6 begins only once another identical build is a spatial
-no-op.
+user artwork. Compiler-owned identity/connectivity may change while CIRCUIT is
+being implemented, but its final review begins only once another identical
+build is a spatial no-op.
 
 A full passing checked write atomically produces tracked
 `docs/build-test.md`: input/tool versions and hashes, resolved BOM, assertion
 locations, connectivity totals/hash, artifact hashes, and preservation
 results. `STATUS.md` stores the same input fingerprint. Either source becoming
-stale reopens the mechanical Step 6 gate. Failure never overwrites the previous
-passing report.
+stale reopens CIRCUIT. Failure never overwrites the previous passing report.
 
 This deterministic gate does not pretend to prove live JLC stock or price,
 placement/routing quality, KiCad PCB DRC, or fab output. Circuit comprehension
 and exact compiled parity are already mandatory in Step 5.
 
-`pcbforge check-policy` cross-checks the exact Step 6 LCSC set against tracked
+`pcbforge check-policy` cross-checks the exact CIRCUIT LCSC set against tracked
 offline sourcing evidence without making normal status network-dependent.
 After FAB-OUT, the user confirms a newly researched sourcing snapshot. That
-approval fingerprints the sourcing entries, exact Step 6 contract, and current
+approval fingerprints the sourcing entries, exact build-test contract, and current
 fabrication outputs; ORDER cannot complete while it is absent or stale.
 
-Step 7 makes the pre-layout handoff equally explicit. `placement.yaml` schema
+Step 6 makes the pre-layout handoff equally explicit. `placement.yaml` schema
 1 is authoritative and board-specific. It records a qualitative board
 strategy, board-wide rules, ordered placement groups, typed spatial
 constraints, exact-net routing classes, and a review checklist. Every resolved
@@ -481,7 +489,7 @@ current net; wildcards are not inferred. Manufacturing dimensions must meet
 the pinned conservative JLC profile, including annular width and optional
 differential-pair width/gaps.
 
-`pcbforge brief` requires current Step 6 evidence, then stages `brief.md` and a
+`pcbforge brief` requires current CIRCUIT evidence, then stages `brief.md` and a
 merged KiCad project before committing either. It owns only net classes named
 `pcbforge:<name>` and their exact patterns in `.kicad_pro`; it preserves the
 Default class, user classes/assignments, unknown JSON fields, `.kicad_dru`, and
@@ -490,15 +498,15 @@ overridden. `.kicad_pcb` is read-only and confirmed byte-identical.
 `pcbforge check-brief` validates those outputs without mutation.
 
 The generated brief contains no coordinates and creates no geometric keepouts.
-It is guidance for the human placer, not spatial source. Step 7 is a combined
+It is guidance for the human placer, not spatial source. Step 6 is a combined
 machine/human gate: the checker must pass, then the user approves `brief.md`
-beside the current Step 5 circuit overview. Missing, stale, or inadequate
+beside the current CIRCUIT overview. Missing, stale, or inadequate
 circuit-review evidence blocks the phase before layout.
 
-Saved Step 6 and Step 7 evidence fingerprints circuit-owned PCB semantics
+Saved CIRCUIT and BRIEF evidence fingerprints circuit-owned PCB semantics
 (references, selected footprints, pads, and connectivity), not placement,
 side, tracks, vias, zones, outline, graphics, or artwork. Circuit/topology
-changes stale both phases. Spatial edits do not. Step 7 additionally
+changes stale both phases. Spatial edits do not. BRIEF additionally
 fingerprints `placement.yaml`, generated `brief.md`, and PCBForge-owned
 net-class semantics; unrelated user net classes remain outside its ownership
 and staleness boundary.
@@ -508,13 +516,19 @@ and staleness boundary.
 "Fab-reproducible years later" is a claim about files, so pin everything:
 
 - `.pcbforge`: exact compiler + KiCad versions; dependency lockfile w/ hashes.
+- `.pcbforge`: exact clean PCBForge Git revision. The public dispatcher
+  executes that revision from a registered worktree or fails closed; dirty
+  revisions cannot initialize projects.
 - `.pcbforge`: exact policy profile and hash; baseline approval mode.
 - `policy.yaml`: project declarations, assurance/sourcing evidence, and
   exception requests; approval stays in STATUS.
 - Resolved selections recorded per refdes (MPN/LCSC#); generated-footprint
   hashes.
-- Step 6 emits `docs/build-test.md`: input/tool versions and hashes, exact BOM,
+- CIRCUIT emits `docs/build-test.md`: input/tool versions and hashes, exact BOM,
   assertion evidence, connectivity summary, artifact hashes, and preservation.
+  Compiler BOM JSON uses a canonical semantic hash that excludes only its
+  volatile top-level `build_id`; malformed JSON fails and every other field
+  remains bound to approval.
 - `fab-out` archives the set: final `.kicad_pcb`, BOM, CPL, Gerbers, DRC
   report.
 
@@ -640,19 +654,19 @@ order:
    is ioc2code feasibility (parse checked `.ioc` → MCU module).
 2. Typed-interface + assertion expressiveness covers the JLC rule set;
    compiler-native electrical checks plus exact circuit-model parity are adequate.
-3. **In-loop visual circuit review** (schema-13 implementation ready for
+3. **In-loop visual circuit review** (schema-14 implementation ready for
    pilot): complete authored explanatory SVG and exact model before source,
-   passive-purpose annotations, semantic coverage, and exact compiled parity
-   before final IMPLEMENT approval.
+   passive-purpose annotations, semantic coverage, exact compiled parity, and
+   deterministic acceptance before final CIRCUIT approval.
 4. **Sync contract holds** (see Handoff): no-op idempotence, intended deltas
    only, atomic failure, component/pad/net identity stability.
 5. Registry/versioning health, breaking-change cadence tolerable.
 
 Gates while building board 1:
 
-- **Step-5 comprehension gate (criterion 3):** the user must be able to explain
+- **CIRCUIT comprehension gate (criterion 3):** the user must be able to explain
   every major block and passive purpose from the explanatory SVG before
-  implementation. Inadequate presentation blocks IMPLEMENT.
+  implementation. Inadequate presentation blocks CIRCUIT.
 - **Sync drill (criterion 4):** immediately after the first placement
   session, scripted on the live board with the pilots' fingerprint tooling:
   no-op rebuild fingerprint check, controlled add / rename / footprint-swap /

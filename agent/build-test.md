@@ -1,18 +1,19 @@
 <!-- pcbforge-build-test-schema: 1 -->
+<!-- Legacy standalone phase: build + test is now CIRCUIT's final gate. -->
 # Build + test playbook
 
-Use this playbook after IMPLEMENT is complete and before beginning the placement
-brief. Step 6 is an offline deterministic gate: it proves that the pinned
+For schema-14 projects, follow `agent/circuit.md`; this file remains for older
+generated guidance. The deterministic gate proves that the pinned
 compiler resolves the intended exact BOM and PCB connectivity, executes the
 declared electrical assertions, emits the required artifacts, and preserves
 all user-owned spatial board data.
 
 Live stock and pricing, placement, routing, KiCad PCB DRC, and fabrication
 output are separate gates. Explanatory circuit review and exact compiled parity
-were completed in Step 5. `pcbforge check-policy`
-cross-checks the exact BOM against the tracked offline sourcing evidence, but
-does not claim that the evidence is still live. Do not claim that Step 6 proves
-these separate facts.
+are also required within CIRCUIT. `pcbforge check-policy` cross-checks the
+exact BOM against the tracked offline sourcing evidence, but does not claim
+that the evidence is still live. Do not claim that this gate proves these
+separate facts.
 
 ## 1. Write the acceptance contract
 
@@ -89,7 +90,7 @@ This performs a frozen pinned build and requires:
 
 Use `pcbforge check-build-test` for a non-writing diagnostic run, or
 `pcbforge check-build-test --write-report` to save the report directly. A
-non-writing pass does not complete Step 6; the dashboard also requires the
+non-writing pass does not complete CIRCUIT; the dashboard also requires the
 current tracked report. A failed run never overwrites the last passing report.
 
 ## 4. Resolve failures
@@ -115,9 +116,6 @@ Review `docs/build-test.md` and present:
 - spatial-preservation result;
 - any limitation that remains for visual review, DRC, stock, or fabrication.
 
-Current saved check evidence and the tracked report move build + test to
-`Awaiting approval`; they never complete it automatically. Run
-`pcbforge status review build`, present the exact packet and fingerprint, and
-stop. Only after the user explicitly approves that packet, record
-`pcbforge status approve build --fingerprint <sha256> --note "<approval>"`.
-Proceed to Step 7 only after the dashboard reports Step 6 complete.
+For schema-14 projects, current saved evidence is part of the final CIRCUIT
+packet. Run `pcbforge status review circuit`, present its fingerprint, and stop.
+Only after explicit approval record `pcbforge status approve circuit ...`.

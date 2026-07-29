@@ -140,8 +140,14 @@ unknown_body_key: true
 
 
 class FakeRunner:
-    def __init__(self, *, fail_build: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        fail_build: bool = False,
+        dirty_checkout: bool = False,
+    ) -> None:
         self.fail_build = fail_build
+        self.dirty_checkout = dirty_checkout
         self.calls: list[tuple[list[str], Path]] = []
 
     def __call__(self, command, *, cwd, **kwargs):
@@ -155,7 +161,8 @@ class FakeRunner:
         if command[-2:] == ["rev-parse", "HEAD"]:
             return subprocess.CompletedProcess(command, 0, "a" * 40 + "\n", "")
         if command[-2:] == ["status", "--short"]:
-            return subprocess.CompletedProcess(command, 0, "", "")
+            output = " M pcbforge/status.py\n" if self.dirty_checkout else ""
+            return subprocess.CompletedProcess(command, 0, output, "")
         if "build" in command:
             if self.fail_build:
                 return subprocess.CompletedProcess(command, 1, "", "induced failure\n")
@@ -326,23 +333,24 @@ class InitializeTests(unittest.TestCase):
             self.assertIn("kicad: 9.0.9", pins)
             self.assertIn("jlc-2layer-conservative-v1", pins)
             pin_data = yaml.safe_load(pins)
-            self.assertEqual(pin_data["schema"], 13)
-            self.assertEqual(pin_data["guidance"]["brief_schema"], 3)
-            self.assertEqual(pin_data["guidance"]["approval_schema"], 4)
-            self.assertEqual(pin_data["guidance"]["agents_schema"], 13)
+            self.assertEqual(pin_data["schema"], 14)
+            self.assertEqual(pin_data["guidance"]["brief_schema"], 4)
+            self.assertEqual(pin_data["guidance"]["approval_schema"], 5)
+            self.assertEqual(pin_data["guidance"]["agents_schema"], 14)
             self.assertEqual(pin_data["guidance"]["policy_schema"], 1)
             self.assertEqual(pin_data["guidance"]["architect_schema"], 4)
             self.assertEqual(
                 pin_data["guidance"]["architecture_diagram_schema"],
                 1,
             )
-            self.assertEqual(pin_data["guidance"]["mcu_schema"], 2)
-            self.assertEqual(pin_data["guidance"]["implement_schema"], 3)
+            self.assertEqual(pin_data["guidance"]["mcu_schema"], 3)
+            self.assertEqual(pin_data["guidance"]["circuit_schema"], 1)
+            self.assertNotIn("implement_schema", pin_data["guidance"])
             self.assertEqual(pin_data["guidance"]["build_test_schema"], 1)
-            self.assertEqual(pin_data["guidance"]["status_schema"], 2)
+            self.assertEqual(pin_data["guidance"]["status_schema"], 3)
             self.assertEqual(
                 pin_data["guidance"]["circuit_review_schema"],
-                1,
+                2,
             )
             self.assertEqual(
                 pin_data["policy"]["profile"],
@@ -358,14 +366,14 @@ class InitializeTests(unittest.TestCase):
             )
 
             agents = (project / "AGENTS.md").read_text(encoding="utf-8")
-            self.assertIn("pcbforge-agents-schema: 13", agents)
+            self.assertIn("pcbforge-agents-schema: 14", agents)
             self.assertIn("agent/brief.md", agents)
             self.assertIn("Never place, route, move", agents)
             self.assertIn("ready for\nARCHITECT", agents)
             self.assertIn("/agent/architect.md", agents)
             self.assertIn("/agent/mcu.md", agents)
-            self.assertIn("/agent/implement.md", agents)
-            self.assertIn("/agent/build-test.md", agents)
+            self.assertIn("/agent/circuit.md", agents)
+            self.assertNotIn("/agent/implement.md", agents)
             self.assertIn("/modules/index.md", agents)
             self.assertIn("## Decision authority", agents)
             self.assertIn("never originate", agents)
@@ -377,7 +385,7 @@ class InitializeTests(unittest.TestCase):
             self.assertIn("policy confirm-sourcing", agents)
             self.assertIn("Do not generate a KiCad schematic", agents)
             self.assertIn("check-circuit-review --stage proposal", agents)
-            self.assertIn("review/implement/circuit.svg", agents)
+            self.assertIn("review/circuit/circuit.svg", agents)
             self.assertIn("Do not choose parts", agents)
             self.assertIn("docs/architecture.md", agents)
             self.assertIn("pcbforge-architecture-diagram-schema: 1", agents)
@@ -386,7 +394,10 @@ class InitializeTests(unittest.TestCase):
             self.assertIn("check-ioc", agents)
             self.assertIn("optional CubeMX 6.18 review", agents)
             self.assertIn("check-parts", agents)
-            self.assertIn("parts or policy evidence is failed or stale", agents)
+            self.assertIn(
+                "CIRCUIT cannot\n    become ready while build, IOC, parts, policy",
+                agents,
+            )
             self.assertIn("build-test.yaml", agents)
             self.assertIn("docs/build-test.md", agents)
 
@@ -407,6 +418,28 @@ class InitializeTests(unittest.TestCase):
             self.assertIn('(6 "In2.Cu" power)', board)
             pins = (project / ".pcbforge").read_text(encoding="utf-8")
             self.assertIn("jlc-4layer-conservative-v1", pins)
+
+    def test_refuses_dirty_tool_checkout_without_writing_scaffold(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self._project(Path(temporary), "garden-logger")
+            before = {
+                path.relative_to(project): path.read_bytes()
+                for path in project.rglob("*")
+                if path.is_file()
+            }
+            with self.assertRaisesRegex(InitError, "checkout is dirty"):
+                initialize_project(
+                    project,
+                    tool_root=TOOL_ROOT,
+                    runner=FakeRunner(dirty_checkout=True),
+                )
+            after = {
+                path.relative_to(project): path.read_bytes()
+                for path in project.rglob("*")
+                if path.is_file()
+            }
+
+        self.assertEqual(before, after)
 
     def test_rejects_directory_name_mismatch_without_writing(self) -> None:
         runner = FakeRunner()
@@ -557,7 +590,7 @@ class InitializeTests(unittest.TestCase):
             self.assertEqual(len(report.events), 1)
             self.assertEqual(report.events[0].phase, "spec")
             dashboard = (project / "STATUS.md").read_text(encoding="utf-8")
-            self.assertIn("1 of 12 required phases complete", dashboard)
+            self.assertIn("1 of 11 required phases complete", dashboard)
             self.assertIn("2. init — In progress", dashboard)
 
             init_review = review_phase(
@@ -674,46 +707,34 @@ class GuidanceTests(unittest.TestCase):
 
         mcu_playbook = (TOOL_ROOT / "agent" / "mcu.md").read_text(encoding="utf-8")
         for required in (
-            "pcbforge-mcu-schema: 2",
+            "pcbforge-mcu-schema: 3",
             "firmware/<project>.ioc",
             "DEBUG_UART_TX",
             "check-ioc",
             "optional and is not an approval gate",
             "one-to-one audit",
-            "IMPLEMENT as the next phase",
+            "CIRCUIT as the next phase",
             "source-baseline.json",
         ):
             self.assertIn(required, mcu_playbook)
 
-        implement_playbook = (TOOL_ROOT / "agent" / "implement.md").read_text(
+        circuit_playbook = (TOOL_ROOT / "agent" / "circuit.md").read_text(
             encoding="utf-8"
         )
         for required in (
-            "pcbforge-implement-schema: 3",
+            "pcbforge-circuit-schema: 1",
             "Device:R",
             "Resistor_SMD:R_0603_1608Metric",
             "supplier/BOM",
             "pcbforge check-parts",
             "`circuit-final`",
             "policy approve-exception",
-            "status review implement --stage proposal",
-        ):
-            self.assertIn(required, implement_playbook)
-
-        build_test_playbook = (TOOL_ROOT / "agent" / "build-test.md").read_text(
-            encoding="utf-8"
-        )
-        for required in (
-            "pcbforge-build-test-schema: 1",
+            "status review circuit --stage proposal",
             "build-test.yaml",
             "pcbforge-test",
-            "exact LCSC",
-            "BOM-to-PCB",
-            "no-op spatial fingerprint",
             "docs/build-test.md",
-            "status --check --write",
         ):
-            self.assertIn(required, build_test_playbook)
+            self.assertIn(required, circuit_playbook)
 
         catalog = (TOOL_ROOT / "modules" / "index.md").read_text(encoding="utf-8")
         self.assertIn("No modules have been published yet", catalog)

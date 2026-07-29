@@ -29,18 +29,18 @@ from pcbforge.policy import (
 ATO_VERSION = "0.15.7"
 KICAD_VERSION = "9.0.9"
 SPEC_SCHEMA = 1
-PIN_SCHEMA = 13
-AGENTS_SCHEMA = 13
+PIN_SCHEMA = 14
+AGENTS_SCHEMA = 14
 ARCHITECT_GUIDE_SCHEMA = 4
 ARCHITECTURE_DIAGRAM_SCHEMA = 1
-MCU_GUIDE_SCHEMA = 2
-IMPLEMENT_GUIDE_SCHEMA = 3
+MCU_GUIDE_SCHEMA = 3
+CIRCUIT_GUIDE_SCHEMA = 1
 BUILD_TEST_GUIDE_SCHEMA = 1
-BRIEF_GUIDE_SCHEMA = 3
-APPROVAL_GUIDE_SCHEMA = 4
-CIRCUIT_REVIEW_SCHEMA = 1
+BRIEF_GUIDE_SCHEMA = 4
+APPROVAL_GUIDE_SCHEMA = 5
+CIRCUIT_REVIEW_SCHEMA = 2
 POLICY_GUIDE_SCHEMA = POLICY_SCHEMA
-STATUS_SCHEMA = 2
+STATUS_SCHEMA = 3
 BOARD_ORIGIN_MM = 100.0
 
 REQUIRED_KEYS = {
@@ -403,6 +403,11 @@ def _tool_metadata(tool_root: Path, runner: CommandRunner) -> dict[str, Any]:
             purpose="pcbforge worktree check",
         )
     )
+    if dirty:
+        raise InitError(
+            "PCBForge checkout is dirty; commit or stash tool changes before "
+            "initializing a reproducibly pinned project"
+        )
     lockfile = tool_root / "toolchain" / "uv.lock"
     return {
         "revision": revision,
@@ -676,9 +681,8 @@ saved workflow gates, compiler output, and the KiCad board.
 2. `{tool_root}/agent/operating-manual.md`.
 3. `{tool_root}/agent/architect.md` before doing ARCHITECT work.
 4. `{tool_root}/agent/mcu.md` before doing MCU work.
-5. `{tool_root}/agent/implement.md` before doing IMPLEMENT work.
-6. `{tool_root}/agent/build-test.md` before doing build + test work.
-7. `{tool_root}/agent/brief.md` before doing placement-brief work.
+5. `{tool_root}/agent/circuit.md` before doing CIRCUIT work.
+6. `{tool_root}/agent/brief.md` before doing placement-brief work.
 
 ## Ownership
 
@@ -714,7 +718,7 @@ saved workflow gates, compiler output, and the KiCad board.
 - Approvals are phase-specific and fingerprint-bound. A changed approved
   artifact requires renewed approval; rerunning checks cannot revive an old
   gate.
-- ARCHITECT and IMPLEMENT proposals use
+- ARCHITECT and CIRCUIT proposals use
   `status review <phase> --stage proposal` followed, only after explicit user
   approval, by `status approve <phase> --stage proposal --fingerprint ...`.
 - Only local, reversible details that do not alter an approved contract may be
@@ -803,7 +807,7 @@ implementation:
 7. Only after current proposal approval, write the module skeleton and keep it
    synchronized with the approved diagram.
 8. Do not choose parts, footprints, LCSC numbers, resistor values, exact MCU
-   pins, or layout geometry. Do not begin the MCU or implementation phase.
+   pins, or layout geometry. Do not begin the MCU or CIRCUIT phase.
 9. Build with the pinned compiler and require the PCB bytes/spatial content to
    remain unchanged because an architecture skeleton has no physical parts.
 10. Audit every functional `App` instance, typed top-level connection, and
@@ -837,16 +841,16 @@ After explicit ARCHITECT approval and a new MCU request, follow
    artifacts, checks, and fingerprint, then stop. Record `status approve mcu`
    only after the user explicitly approves that fingerprint.
 
-## IMPLEMENT gate
+## CIRCUIT gate
 
-Before adding physical parts, follow `{tool_root}/agent/implement.md`:
+Before adding physical parts, follow `{tool_root}/agent/circuit.md`:
 
 1. Do not edit physical Atopile source yet. Create `circuit-review.yaml`, the
-   exact `review/implement/circuit.yaml` proposal model, the deliberately
-   authored browser-readable `review/implement/circuit.svg`, and
-   `docs/implementation-proposal.md`. Do not generate a KiCad schematic.
+   exact `review/circuit/circuit.yaml` proposal model, the deliberately
+   authored browser-readable `review/circuit/circuit.svg`, and
+   `docs/circuit-proposal.md`. Do not generate a KiCad schematic.
 2. Run `pcbforge check-circuit-review --stage proposal --write`, then
-   `pcbforge status review implement --stage proposal`. Present the explanatory
+   `pcbforge status review circuit --stage proposal`. Present the explanatory
    SVG, narrative, exact model summary, and fingerprint, then stop. Record the
    proposal fingerprint only after explicit user approval.
 3. After proposal approval, implement the circuit in Atopile. Reuse canonical
@@ -857,36 +861,29 @@ Before adding physical parts, follow `{tool_root}/agent/implement.md`:
    pin mapping is absent from the official libraries, then verify the generated
    geometry against the datasheet.
 5. Run `{tool_root}/scripts/pcbforge check-parts` during part selection and
-   before presenting IMPLEMENT for completion.
+   before presenting CIRCUIT for completion.
 6. Complete protection/testability evidence and sourcing entries in
    `policy.yaml`; run `{tool_root}/scripts/pcbforge check-policy` and stop for
    explicit user approval of every required exception.
-7. Write `docs/implementation-review.md`, then run
+7. Write `docs/circuit-review.md`, then run
    `pcbforge check-circuit-review --stage final --write`. Exact part identity,
    physical pins, and endpoint topology must match both the approved model and
    compiled Atopile design. Electrical differences return to proposal approval.
-8. `status --check` records these audits as required evidence. IMPLEMENT
-   cannot become ready while parts or policy evidence is failed or stale.
-9. Present `pcbforge status review implement` and stop. Record approval only
-   after the user explicitly accepts the exact implementation fingerprint.
-
-## Build + test gate
-
-After IMPLEMENT completes, follow `{tool_root}/agent/build-test.md`:
-
-1. Create the exact, tracked `build-test.yaml` acceptance contract.
-2. Give every required atopile assertion a unique `pcbforge-test` marker and
+8. Create the exact, tracked `build-test.yaml` acceptance contract.
+9. Give every required atopile assertion a unique `pcbforge-test` marker and
    list the same IDs in the contract.
-3. Run
+10. Run
    `{tool_root}/scripts/pcbforge status --check --write`.
-4. Inspect the generated `docs/build-test.md` evidence report.
-5. Passing evidence moves build + test to `Awaiting approval`; it never
-   completes automatically. Present `pcbforge status review build`, stop, and
-   record `status approve build` only after explicit approval.
+11. Inspect the generated `docs/build-test.md` evidence report. CIRCUIT cannot
+    become ready while build, IOC, parts, policy, circuit parity, assertions,
+    exact BOM/PCB, or spatial-preservation evidence is failed or stale.
+12. Present one final `pcbforge status review circuit` packet and stop. Record
+    `status approve circuit` only after the user explicitly accepts that exact
+    implementation-and-test fingerprint.
 
 ## Placement brief gate
 
-After build + test completes, follow `{tool_root}/agent/brief.md`:
+After CIRCUIT completes, follow `{tool_root}/agent/brief.md`:
 
 1. Write the exact qualitative placement contract in `placement.yaml`.
 2. Assign every PCB footprint to exactly one group and reference only current
@@ -894,10 +891,10 @@ After build + test completes, follow `{tool_root}/agent/brief.md`:
 3. Run `{tool_root}/scripts/pcbforge brief`; it generates `brief.md` and merges
    only `pcbforge:` net classes into the KiCad project. It never edits the PCB.
 4. Run `{tool_root}/scripts/pcbforge check-brief` and present `brief.md` beside
-   the already-approved Step 5 explanatory SVG and final parity evidence.
+   the already-approved CIRCUIT explanatory SVG and final parity evidence.
 5. Run `pcbforge status review brief` and present its packet. Record
    `status approve brief` only after the user approves `brief.md` beside the
-   current Step 5 circuit overview. If that evidence is missing, stale, or
+   current CIRCUIT overview. If that evidence is missing, stale, or
    inadequate for placement decisions, block BRIEF and do not begin layout.
 
 ## FAB-OUT and order policy
@@ -959,7 +956,7 @@ def _render_pins(
             "architect_schema": ARCHITECT_GUIDE_SCHEMA,
             "architecture_diagram_schema": ARCHITECTURE_DIAGRAM_SCHEMA,
             "mcu_schema": MCU_GUIDE_SCHEMA,
-            "implement_schema": IMPLEMENT_GUIDE_SCHEMA,
+            "circuit_schema": CIRCUIT_GUIDE_SCHEMA,
             "build_test_schema": BUILD_TEST_GUIDE_SCHEMA,
             "brief_schema": BRIEF_GUIDE_SCHEMA,
             "approval_schema": APPROVAL_GUIDE_SCHEMA,

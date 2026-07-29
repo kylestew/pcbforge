@@ -14,6 +14,7 @@ from pcbforge.schematic import (
     capture_implementation_baseline,
     check_schematic,
     parse_kicad_netlist,
+    schematic_status_fingerprint,
 )
 from pcbforge.status import (
     StatusInputError,
@@ -210,6 +211,24 @@ final_narrative: docs/implementation-review.md
 
 
 class SchematicTests(SchematicFixture):
+    def test_legacy_final_fingerprint_ignores_compiler_build_id(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            bom = project / "build" / "builds" / "default" / "default.bom.json"
+            payload = json.loads(bom.read_text(encoding="utf-8"))
+            payload["build_id"] = "run-one"
+            bom.write_text(json.dumps(payload), encoding="utf-8")
+            first = schematic_status_fingerprint(project, "final")
+            payload["build_id"] = "run-two"
+            bom.write_text(json.dumps(payload), encoding="utf-8")
+            second = schematic_status_fingerprint(project, "final")
+            payload["components"][0]["value"] = "2k"
+            bom.write_text(json.dumps(payload), encoding="utf-8")
+            changed = schematic_status_fingerprint(project, "final")
+
+        self.assertEqual(first, second)
+        self.assertNotEqual(second, changed)
+
     def test_parser_preserves_identity_and_physical_pin_nets(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "netlist.xml"
@@ -401,9 +420,9 @@ guidance:
 
         self.assertTrue(migration.wrote)
         self.assertFalse(second.wrote)
-        self.assertEqual(pins["schema"], 13)
-        self.assertEqual(pins["guidance"]["agents_schema"], 13)
-        self.assertEqual(pins["guidance"]["circuit_review_schema"], 1)
+        self.assertEqual(pins["schema"], 14)
+        self.assertEqual(pins["guidance"]["agents_schema"], 14)
+        self.assertEqual(pins["guidance"]["circuit_review_schema"], 2)
         self.assertEqual(document.events, ())
 
     def test_migration_requires_explicit_adoption_for_existing_step_five_files(

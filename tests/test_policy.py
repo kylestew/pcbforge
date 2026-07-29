@@ -118,12 +118,42 @@ class PolicyFixture(unittest.TestCase):
   profile_sha256: {policy_hash}
   baseline_approval: spec
 """
-            if schema in {10, 11}
+            if schema in {10, 11, 14}
             else ""
+        )
+        pcbforge_pin = (
+            """pcbforge:
+  revision: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  dirty: false
+"""
+            if schema == 14
+            else ""
+        )
+        guidance = (
+            """  agents_schema: 14
+  architect_schema: 4
+  architecture_diagram_schema: 1
+  mcu_schema: 3
+  circuit_schema: 1
+  circuit_review_schema: 2
+  policy_schema: 1
+  build_test_schema: 1
+  brief_schema: 4
+  approval_schema: 5
+  status_schema: 3
+"""
+            if schema == 14
+            else f"""  agents_schema: {schema}
+  policy_schema: 1
+  build_test_schema: 1
+  brief_schema: 1
+  approval_schema: {2 if schema == 11 else 1}
+"""
         )
         (project / ".pcbforge").write_text(
             f"""schema: {schema}
 project: garden-logger
+{pcbforge_pin}\
 toolchain:
   atopile: "0.15.7"
   kicad: "9.0.9"
@@ -133,11 +163,7 @@ rules:
   profile_sha256: {RULES_2L_HASH}
 {policy_pin}\
 guidance:
-  agents_schema: {schema}
-  policy_schema: 1
-  build_test_schema: 1
-  brief_schema: 1
-  approval_schema: {2 if schema == 11 else 1}
+{guidance}\
 """,
             encoding="utf-8",
         )
@@ -166,7 +192,7 @@ guidance:
 class PolicyCheckerTests(PolicyFixture):
     def test_standard_policy_passes_offline(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            project = self.project(Path(temporary))
+            project = self.project(Path(temporary), schema=14)
             result = check_policy(
                 project,
                 tool_root=TOOL_ROOT,
@@ -434,7 +460,7 @@ class PolicyApprovalAndMigrationTests(PolicyFixture):
             migrated_agents = (project / "AGENTS.md").read_text(encoding="utf-8")
 
         self.assertTrue(migration.wrote)
-        self.assertEqual(pins["schema"], 13)
+        self.assertEqual(pins["schema"], 14)
         self.assertEqual(pins["policy"]["baseline_approval"], "policy-event")
         self.assertFalse(blocked.ok)
         self.assertIn(
@@ -446,7 +472,7 @@ class PolicyApprovalAndMigrationTests(PolicyFixture):
             "baseline-approved",
         )
         self.assertFalse(second.wrote)
-        self.assertIn("pcbforge-agents-schema: 13", migrated_agents)
+        self.assertIn("pcbforge-agents-schema: 14", migrated_agents)
 
     def test_schema_seven_migrates_directly_and_reopens_unbound_spec(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -483,21 +509,21 @@ class PolicyApprovalAndMigrationTests(PolicyFixture):
             )
 
         self.assertTrue(migration.wrote)
-        self.assertEqual(pins["schema"], 13)
+        self.assertEqual(pins["schema"], 14)
         self.assertEqual(
             pins["guidance"],
             {
-                "agents_schema": 13,
+                "agents_schema": 14,
                 "policy_schema": 1,
                 "build_test_schema": 1,
-                "brief_schema": 3,
-                "approval_schema": 4,
+                "brief_schema": 4,
+                "approval_schema": 5,
                 "architect_schema": 4,
                 "architecture_diagram_schema": 1,
-                "mcu_schema": 2,
-                "implement_schema": 3,
-                "status_schema": 2,
-                "circuit_review_schema": 1,
+                "mcu_schema": 3,
+                "circuit_schema": 1,
+                "status_schema": 3,
+                "circuit_review_schema": 2,
             },
         )
         self.assertEqual(refreshed.report.document.events[-1].phase, "spec")
@@ -648,7 +674,7 @@ class PolicyApprovalAndMigrationTests(PolicyFixture):
 class PolicyCliTests(PolicyFixture):
     def test_check_policy_exit_categories(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            project = self.project(Path(temporary))
+            project = self.project(Path(temporary), schema=14)
             with mock.patch("builtins.print"):
                 self.assertEqual(main(["check-policy", str(project)]), 0)
 
@@ -665,7 +691,7 @@ class PolicyCliTests(PolicyFixture):
             pins = project / ".pcbforge"
             pins.write_text(
                 pins.read_text(encoding="utf-8").replace(
-                    "schema: 11",
+                    "schema: 14",
                     "schema: 9",
                     1,
                 ),

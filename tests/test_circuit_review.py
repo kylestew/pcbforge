@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import yaml
 
@@ -22,12 +23,17 @@ from pcbforge.schematic import (
     check_schematic,
 )
 from pcbforge.status import (
+    CheckRecord,
     StatusDocument,
+    StatusEvent,
     StatusInputError,
     _phase_approval_fingerprint,
+    inspect_status,
+    migrate_circuit_phase,
     migrate_circuit_review,
     read_status_document,
     run_status_checks,
+    write_status,
 )
 
 
@@ -116,12 +122,35 @@ def svg(model_hash: str, *, include_path: bool = True) -> str:
 
 
 class CircuitReviewFixture(unittest.TestCase):
-    def project(self, root: Path, *, schema: int = 13) -> Path:
+    def project(self, root: Path, *, schema: int = 14) -> Path:
         project = root / "garden-logger"
         project.mkdir()
         (project / "spec.md").write_text(SPEC, encoding="utf-8")
         guidance = (
-            "  circuit_review_schema: 1\n"
+            (
+                "  agents_schema: 14\n"
+                "  architect_schema: 4\n"
+                "  architecture_diagram_schema: 1\n"
+                "  mcu_schema: 3\n"
+                "  circuit_schema: 1\n"
+                "  circuit_review_schema: 2\n"
+                "  build_test_schema: 1\n"
+                "  brief_schema: 4\n"
+                "  approval_schema: 5\n"
+                "  policy_schema: 1\n"
+                "  status_schema: 3\n"
+            )
+            if schema == 14
+            else (
+                "  agents_schema: 13\n"
+                "  mcu_schema: 2\n"
+                "  implement_schema: 3\n"
+                "  circuit_review_schema: 1\n"
+                "  build_test_schema: 1\n"
+                "  brief_schema: 3\n"
+                "  approval_schema: 4\n"
+                "  status_schema: 2\n"
+            )
             if schema == 13
             else (
                 "  agents_schema: 12\n"
@@ -162,15 +191,21 @@ guidance:
             "# architecture\n",
             encoding="utf-8",
         )
-        (project / "docs" / "implementation-proposal.md").write_text(
+        current = schema == 14
+        proposal_name = (
+            "circuit-proposal.md" if current else "implementation-proposal.md"
+        )
+        final_name = "circuit-review.md" if current else "implementation-review.md"
+        (project / "docs" / proposal_name).write_text(
             "# PCBForge review-only proposal\n",
             encoding="utf-8",
         )
-        (project / "docs" / "implementation-review.md").write_text(
+        (project / "docs" / final_name).write_text(
             "# PCBForge review-only final review\n",
             encoding="utf-8",
         )
-        review = project / "review" / "implement"
+        review_name = "circuit" if current else "implement"
+        review = project / "review" / review_name
         review.mkdir(parents=True)
         model_path = review / "circuit.yaml"
         model_path.write_text(MODEL, encoding="utf-8")
@@ -180,12 +215,12 @@ guidance:
             encoding="utf-8",
         )
         (project / "circuit-review.yaml").write_text(
-            """circuit_review_schema: 1
+            f"""circuit_review_schema: {2 if current else 1}
 build: default
-model: review/implement/circuit.yaml
-diagram: review/implement/circuit.svg
-proposal_narrative: docs/implementation-proposal.md
-final_narrative: docs/implementation-review.md
+model: review/{review_name}/circuit.yaml
+diagram: review/{review_name}/circuit.svg
+proposal_narrative: docs/{proposal_name}
+final_narrative: docs/{final_name}
 """,
             encoding="utf-8",
         )
@@ -207,12 +242,140 @@ final_narrative: docs/implementation-review.md
             ),
             encoding="utf-8",
         )
-        if schema == 13:
+        if schema == 14:
             capture_implementation_baseline(project)
         return project
 
 
 class CircuitReviewTests(CircuitReviewFixture):
+    def test_phase_migration_preserves_only_both_legacy_approvals(self) -> None:
+        outcomes = {}
+        for include_build in (False, True):
+            with self.subTest(include_build=include_build):
+                with tempfile.TemporaryDirectory() as temporary:
+                    project = self.project(Path(temporary), schema=13)
+                    capture_implementation_baseline(project)
+                    phases = ["spec", "init", "architect", "mcu", "implement"]
+                    if include_build:
+                        phases.append("build")
+                    events = tuple(
+                        StatusEvent(
+                            f"2026-07-28T20:{index:02d}:00+00:00",
+                            phase,
+                            "complete",
+                            f"Explicit legacy {phase} approval",
+                            "approved",
+                        )
+                        for index, phase in enumerate(phases)
+                    )
+                    checks = {
+                        name: CheckRecord(
+                            "2026-07-28T20:10:00+00:00",
+                            "checked",
+                            "pass",
+                            "Current legacy evidence",
+                        )
+                        for name in {
+                            "build",
+                            "parts",
+                            "policy",
+                            "ioc",
+                            "circuit-final",
+                            "build-test",
+                        }
+                    }
+                    with (
+                        mock.patch(
+                            "pcbforge.status._static_evidence",
+                            return_value=(True, "current evidence", True),
+                        ),
+                        mock.patch(
+                            "pcbforge.status._approval_is_current",
+                            return_value=True,
+                        ),
+                    ):
+                        write_status(
+                            project,
+                            document=StatusDocument("", events, checks),
+                        )
+                        migration = migrate_circuit_phase(
+                            project,
+                            tool_root=TOOL_ROOT,
+                        )
+                    migrated = read_status_document(project)
+                    outcomes[include_build] = (
+                        migration.reopened_phases,
+                        any(
+                            event.phase == "circuit"
+                            and event.action == "complete"
+                            for event in migrated.events
+                        ),
+                    )
+
+        self.assertEqual(outcomes[False], (("circuit",), False))
+        self.assertEqual(outcomes[True], ((), True))
+
+    def test_schema_thirteen_migrates_to_combined_circuit_phase(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), schema=13)
+            capture_implementation_baseline(project)
+
+            migration = migrate_circuit_phase(
+                project,
+                tool_root=TOOL_ROOT,
+                now="2026-07-28T21:00:00+00:00",
+            )
+            second = migrate_circuit_phase(project, tool_root=TOOL_ROOT)
+            pins = yaml.safe_load(
+                (project / ".pcbforge").read_text(encoding="utf-8")
+            )
+            contract = yaml.safe_load(
+                (project / "circuit-review.yaml").read_text(encoding="utf-8")
+            )
+            report = inspect_status(project)
+            circuit_svg_exists = (
+                project / "review" / "circuit" / "circuit.svg"
+            ).is_file()
+            final_narrative_exists = (
+                project / "docs" / "circuit-review.md"
+            ).is_file()
+            legacy_review_exists = (
+                project / "review" / "implement"
+            ).exists()
+
+        self.assertTrue(migration.wrote)
+        self.assertEqual(migration.reopened_phases, ("circuit",))
+        self.assertFalse(second.wrote)
+        self.assertEqual(pins["schema"], 14)
+        self.assertEqual(pins["guidance"]["circuit_schema"], 1)
+        self.assertNotIn("implement_schema", pins["guidance"])
+        self.assertEqual(contract["circuit_review_schema"], 2)
+        self.assertEqual(contract["model"], "review/circuit/circuit.yaml")
+        self.assertEqual(
+            contract["proposal_narrative"],
+            "docs/circuit-proposal.md",
+        )
+        self.assertTrue(circuit_svg_exists)
+        self.assertTrue(final_narrative_exists)
+        self.assertFalse(legacy_review_exists)
+        self.assertEqual(
+            [result.phase.key for result in report.phases],
+            [
+                "spec",
+                "init",
+                "architect",
+                "mcu",
+                "circuit",
+                "brief",
+                "layout",
+                "route",
+                "verify",
+                "fab-out",
+                "order",
+                "publish",
+            ],
+        )
+
     def test_proposal_writes_stable_authored_svg_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))
@@ -222,7 +385,7 @@ class CircuitReviewTests(CircuitReviewFixture):
                 (project / first.evidence_path).read_text(encoding="utf-8")
             )
             baseline = json.loads(
-                (project / "review" / "implement" / "source-baseline.json").read_text(
+                (project / "review" / "circuit" / "source-baseline.json").read_text(
                     encoding="utf-8"
                 )
             )
@@ -237,7 +400,7 @@ class CircuitReviewTests(CircuitReviewFixture):
     def test_svg_must_match_and_cover_the_exact_model(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))
-            diagram = project / "review" / "implement" / "circuit.svg"
+            diagram = project / "review" / "circuit" / "circuit.svg"
             diagram.write_text(svg("0" * 64), encoding="utf-8")
             with self.assertRaisesRegex(
                 CircuitReviewInputError,
@@ -245,7 +408,7 @@ class CircuitReviewTests(CircuitReviewFixture):
             ):
                 check_circuit_review(project, "proposal", write=True)
             model = read_circuit_model(
-                project / "review" / "implement" / "circuit.yaml"
+                project / "review" / "circuit" / "circuit.yaml"
             )
             diagram.write_text(
                 svg(circuit_model_fingerprint(model), include_path=False),
@@ -348,7 +511,7 @@ class CircuitReviewTests(CircuitReviewFixture):
                 ),
                 encoding="utf-8",
             )
-            model_path = project / "review" / "implement" / "circuit.yaml"
+            model_path = project / "review" / "circuit" / "circuit.yaml"
             model_path.write_text(
                 MODEL.replace(
                     "nets:\n",
@@ -378,7 +541,7 @@ groups:
                 encoding="utf-8",
             )
             model = read_circuit_model(model_path)
-            diagram = project / "review" / "implement" / "circuit.svg"
+            diagram = project / "review" / "circuit" / "circuit.svg"
             diagram.write_text(
                 svg(circuit_model_fingerprint(model)).replace(
                     "</svg>",
@@ -455,7 +618,7 @@ groups:
                 2,
             )
 
-    def test_status_records_schema_thirteen_check_names(self) -> None:
+    def test_status_records_schema_fourteen_check_names(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))
 
@@ -474,7 +637,7 @@ groups:
         self.assertNotIn("schematic-proposal", checked.checks)
         self.assertNotIn("schematic-final", checked.checks)
 
-    def test_schema_thirteen_cannot_run_legacy_schematic_gate(self) -> None:
+    def test_schema_fourteen_cannot_run_legacy_schematic_gate(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))
             with self.assertRaisesRegex(
@@ -514,8 +677,8 @@ groups:
 
         self.assertTrue(migration.wrote)
         self.assertFalse(second.wrote)
-        self.assertEqual(pins["schema"], 13)
-        self.assertEqual(pins["guidance"]["circuit_review_schema"], 1)
+        self.assertEqual(pins["schema"], 14)
+        self.assertEqual(pins["guidance"]["circuit_review_schema"], 2)
         self.assertNotIn("schematic_review_schema", pins["guidance"])
         self.assertTrue(legacy_exists)
         self.assertTrue(baseline_preserved)
@@ -550,7 +713,7 @@ policy_events: []
             )
             document = read_status_document(project)
             baseline_exists = (
-                project / "review" / "implement" / "source-baseline.json"
+                project / "review" / "circuit" / "source-baseline.json"
             ).is_file()
 
         self.assertTrue(migration.wrote)

@@ -34,24 +34,24 @@ exception_rules:
   manufacturing.advanced-vias:
     earliest_phase: spec
   components.commodity-package:
-    earliest_phase: implement
+    earliest_phase: circuit
   components.advanced-package:
-    earliest_phase: implement
+    earliest_phase: circuit
   assurance.reverse-polarity:
-    earliest_phase: implement
+    earliest_phase: circuit
   assurance.overcurrent:
-    earliest_phase: implement
+    earliest_phase: circuit
   assurance.connector-esd:
-    earliest_phase: implement
+    earliest_phase: circuit
   assurance.test-points:
-    earliest_phase: implement
+    earliest_phase: circuit
   assurance.polarity-marking:
     earliest_phase: brief
   assurance.pin1-marking:
     earliest_phase: brief
   sourcing.unavailable:
-    earliest_phase: implement
+    earliest_phase: circuit
   sourcing.lifecycle:
-    earliest_phase: implement
+    earliest_phase: circuit
   sourcing.unknown:
-    earliest_phase: implement
+    earliest_phase: circuit
