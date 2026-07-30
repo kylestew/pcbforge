@@ -12,10 +12,19 @@ export UV_CACHE_DIR="$tool_root/.state/uv-cache"
 export UV_PYTHON_INSTALL_DIR="$tool_root/.state/python"
 export XDG_CONFIG_HOME="$tool_root/.state/xdg-config"
 
+venv_python="$tool_root/toolchain/.venv/bin/python"
 venv_ato="$tool_root/toolchain/.venv/bin/ato"
-if [ ! -x "$venv_ato" ]; then
+if [ ! -x "$venv_python" ] || [ ! -x "$venv_ato" ]; then
   echo "pcbforge: toolchain venv missing — run: uv sync --project '$tool_root/toolchain'" >&2
   exit 2
+fi
+
+compat_dir="$tool_root/toolchain/compat"
+"$venv_python" "$compat_dir/check_version.py"
+if [ -n "${PYTHONPATH:-}" ]; then
+  export PYTHONPATH="$compat_dir:$PYTHONPATH"
+else
+  export PYTHONPATH="$compat_dir"
 fi
 
 exec "$venv_ato" "$@"
