@@ -69,9 +69,12 @@ After explicit proposal approval, record that exact fingerprint:
   --note "<user-approved graph and material choices>; diagram: docs/architecture.md"
 ```
 
-This approval is bound to the current `spec.md`, `docs/architecture.md`, and
-`docs/mcu.md` fingerprints. Any change to one of those artifacts invalidates
-it and requires another presentation and approval before coding continues.
+This approval is bound to the semantic SPEC contract plus the current
+`docs/architecture.md` and `docs/mcu.md` fingerprints. A normative SPEC change
+or a change to either proposal artifact invalidates it and requires another
+presentation and approval before coding continues. Appending rationale to the
+exact `## Decisions log` section does not; all other SPEC prose remains
+normative.
 
 Creating architecture source before the first proposal approval makes the
 dashboard report ARCHITECT blocked. If source was legitimately created under an

@@ -69,6 +69,16 @@ pcbforge status approve <phase> --stage proposal \
 Changed approved artifacts reopen the affected gate. Restoring old bytes or
 rerunning checks does not revive approval.
 
+Fingerprint scope follows phase ownership. `spec.md` contributes canonical
+YAML frontmatter plus all body bytes except the exact `## Decisions log`
+section. SPEC binds the policy profile, manufacturing/component declarations,
+and assurance status/rationale; final CIRCUIT additionally binds assurance
+evidence and declared exceptions. Sourcing belongs to ORDER's separate
+fingerprint. ARCHITECT and CIRCUIT therefore consume the semantic SPEC
+contract without being reopened by later decisions-log notes. The human review
+packet still lists the full files even where the approval hash uses a scoped
+digest.
+
 ## 1. SPEC
 
 Follow `agent/spec-interview.md`. Resolve purpose, power, rails, MCU family,
@@ -77,7 +87,9 @@ policy, risks, and material alternatives. SPEC produces `spec.md`,
 `policy.yaml`, and a pre-project `STATUS.md`.
 
 Review and approve the exact SPEC fingerprint. The dashboard then shows the
-initialization transition as ready.
+initialization transition as ready. Later implementation evidence in
+`policy.yaml` does not rewrite this baseline approval; changing a declaration,
+assurance status, or rationale does.
 
 ## SPEC → ARCHITECT: initialize
 
@@ -149,7 +161,8 @@ Final evidence includes current:
 - circuit-owned PCB topology with spatial data preserved.
 
 One final CIRCUIT approval covers the implemented circuit and its acceptance
-evidence.
+evidence. Its policy scope includes assurance evidence and exceptions, but not
+sourcing currency, which is reviewed again and bound at ORDER.
 
 ## CIRCUIT → LAYOUT: layout handoff
 

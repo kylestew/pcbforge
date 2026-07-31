@@ -211,6 +211,12 @@ reasoned `not-applicable` disposition, or an `exception` disposition backed by
 one declared exception. Normal checks are offline; do the live research before
 recording the evidence.
 
+These shared-file edits have scoped approval effects: assurance evidence and
+declared exceptions join the final CIRCUIT fingerprint without reopening SPEC
+or ARCHITECT, while sourcing is excluded from CIRCUIT approval and bound by
+ORDER's dedicated sourcing fingerprint. A changed assurance status/rationale
+is still a SPEC baseline change.
+
 Run:
 
 ```sh

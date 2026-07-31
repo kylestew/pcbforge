@@ -48,6 +48,8 @@ from pcbforge.policy import (
     PolicyInputError,
     check_policy,
     load_policy_profile,
+    policy_baseline_fingerprint,
+    policy_circuit_fingerprint,
     policy_exception_fingerprints,
     policy_inputs,
     policy_sourcing_fingerprint,
@@ -357,6 +359,83 @@ _UniqueStatusLoader.add_constructor(
     yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG,
     _construct_unique_mapping,
 )
+
+
+def _invalid_spec_contract_digest(detail: str) -> str:
+    marker = f"<invalid:{detail}>".encode()
+    return hashlib.sha256(b"spec-contract-v1\0" + marker).hexdigest()
+
+
+def spec_contract_digest(project_dir: Path) -> str:
+    """Fingerprint normative SPEC content while excluding its decisions log."""
+    path = project_dir.expanduser().resolve() / "spec.md"
+    try:
+        contents = path.read_bytes()
+    except FileNotFoundError:
+        return _invalid_spec_contract_digest("missing spec.md")
+    except OSError as exc:
+        return _invalid_spec_contract_digest(
+            f"spec.md read {type(exc).__name__} errno={exc.errno}"
+        )
+
+    try:
+        contents.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        return _invalid_spec_contract_digest(
+            f"spec.md utf-8 byte={exc.start} reason={exc.reason}"
+        )
+
+    lines = contents.splitlines(keepends=True)
+    if not lines or lines[0].rstrip(b"\r\n") != b"---":
+        return _invalid_spec_contract_digest("missing opening frontmatter delimiter")
+    try:
+        end = next(
+            index
+            for index, line in enumerate(lines[1:], start=1)
+            if line.rstrip(b"\r\n") == b"---"
+        )
+    except StopIteration:
+        return _invalid_spec_contract_digest("missing closing frontmatter delimiter")
+
+    try:
+        frontmatter = yaml.load(
+            b"".join(lines[1:end]).decode("utf-8"),
+            Loader=_UniqueStatusLoader,
+        )
+    except yaml.YAMLError as exc:
+        return _invalid_spec_contract_digest(f"frontmatter {exc}")
+    if not isinstance(frontmatter, dict):
+        return _invalid_spec_contract_digest("frontmatter is not a mapping")
+    try:
+        canonical_frontmatter = json.dumps(
+            frontmatter,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+    except (TypeError, ValueError) as exc:
+        return _invalid_spec_contract_digest(f"frontmatter {exc}")
+
+    body: list[bytes] = []
+    skipping_decisions = False
+    heading = re.compile(rb"^#{1,2}(?!#)[ \t]+")
+    for line in lines[end + 1 :]:
+        content = line.rstrip(b"\r\n").rstrip(b" \t")
+        if content == b"## Decisions log":
+            skipping_decisions = True
+            continue
+        if skipping_decisions:
+            if heading.match(content):
+                skipping_decisions = False
+            else:
+                continue
+        body.append(line)
+
+    digest = hashlib.sha256()
+    digest.update(b"spec-contract-v1\0")
+    digest.update(canonical_frontmatter)
+    digest.update(b"\0")
+    digest.update(b"".join(body))
+    return digest.hexdigest()
 
 
 def _now() -> str:
@@ -685,7 +764,6 @@ def _approval_fingerprint(
             paths = {
                 path
                 for path in (
-                    project_dir / "spec.md",
                     project_dir / "docs" / "architecture.md",
                     project_dir / "docs" / "mcu.md",
                 )
@@ -714,10 +792,12 @@ def _approval_fingerprint(
             checks = [{"name": "circuit-proposal", "required_outcome": "pass"}]
         else:
             raise AssertionError(f"{phase} has no proposal fingerprint")
+        paths.discard(project_dir / "spec.md")
         payload = {
             "approval_schema": 1,
             "phase": phase,
             "stage": "proposal",
+            "spec_contract": spec_contract_digest(project_dir),
             "artifacts": _file_semantics(
                 project_dir,
                 tuple(path for path in paths if path.is_file()),
@@ -991,7 +1071,10 @@ def _check_fingerprint(
                 continue
             digest.update(path.relative_to(project_dir).as_posix().encode())
             digest.update(b"\0")
-            digest.update(hashlib.sha256(path.read_bytes()).digest())
+            if path == project_dir / "spec.md":
+                digest.update(spec_contract_digest(project_dir).encode())
+            else:
+                digest.update(hashlib.sha256(path.read_bytes()).digest())
         board_paths = [path for path in inputs if path.suffix == ".kicad_pcb"]
         if board_paths:
             digest.update(b"pcb-topology\0")
@@ -1013,6 +1096,16 @@ def _check_fingerprint(
         return circuit_review_status_fingerprint(project_dir, "final")
     if name == "policy":
         return policy_status_fingerprint(project_dir)
+    if name == "ioc":
+        digest = hashlib.sha256()
+        for path in sorted(set(inputs)):
+            digest.update(path.relative_to(project_dir).as_posix().encode())
+            digest.update(b"\0")
+            if path == project_dir / "spec.md":
+                digest.update(spec_contract_digest(project_dir).encode())
+            else:
+                digest.update(hashlib.sha256(path.read_bytes()).digest())
+        return digest.hexdigest()
     return _fingerprint(project_dir, inputs)
 
 
@@ -1028,7 +1121,6 @@ def _phase_artifact_paths(
         candidates = (project_dir / "spec.md", project_dir / POLICY_FILENAME)
     elif phase == "architect":
         candidates = (
-            project_dir / "spec.md",
             project_dir / "docs" / "architecture.md",
             project_dir / "src" / "main.ato",
             *_files(project_dir, ("src/modules/*.ato",)),
@@ -1038,7 +1130,6 @@ def _phase_artifact_paths(
         )
     elif phase == "circuit":
         candidates = (
-            project_dir / "spec.md",
             project_dir / "ato.yaml",
             project_dir / "fp-lib-table",
             *_files(
@@ -1052,7 +1143,6 @@ def _phase_artifact_paths(
                     "firmware/*.ioc",
                 ),
             ),
-            project_dir / POLICY_FILENAME,
             project_dir / CIRCUIT_REVIEW_FILENAME,
             project_dir / "docs" / "circuit-proposal.md",
             project_dir / "docs" / "circuit-review.md",
@@ -1107,9 +1197,34 @@ def _phase_artifact_paths(
         )
     else:
         raise AssertionError(f"unknown phase: {phase}")
+    excluded = {
+        project_dir / "spec.md"
+    } if phase in {"architect", "circuit"} else set()
+    if phase == "circuit":
+        excluded.add(project_dir / POLICY_FILENAME)
     return tuple(
-        sorted({path for path in candidates if path.is_file()})
+        sorted(
+            {
+                path
+                for path in candidates
+                if path.is_file() and path not in excluded
+            }
+        )
     )
+
+
+def _phase_review_artifact_paths(
+    project_dir: Path,
+    spec: ProjectSpec,
+    phase: str,
+) -> tuple[Path, ...]:
+    """Return full human-facing files, including scoped shared contracts."""
+    paths = set(_phase_artifact_paths(project_dir, spec, phase))
+    if phase in {"architect", "circuit"}:
+        paths.add(project_dir / "spec.md")
+    if phase == "circuit":
+        paths.add(project_dir / POLICY_FILENAME)
+    return tuple(sorted(path for path in paths if path.is_file()))
 
 
 def _file_semantics(project_dir: Path, paths: Sequence[Path]) -> list[dict[str, str]]:
@@ -1203,7 +1318,15 @@ def _phase_approval_fingerprint(
         "artifacts": _file_semantics(project_dir, artifacts),
         "checks": _approval_check_semantics(project_dir, phase),
     }
+    if phase == "spec":
+        payload.pop("artifacts")
+        payload["spec_contract"] = spec_contract_digest(project_dir)
+        try:
+            payload["policy_baseline"] = policy_baseline_fingerprint(project_dir)
+        except PolicyError as exc:
+            payload["policy_baseline"] = f"<invalid:{exc}>"
     if phase == "architect":
+        payload["spec_contract"] = spec_contract_digest(project_dir)
         semantic_sources = {
             item["path"]: item["sha256"]
             for item in _implementation_source_semantics(project_dir)
@@ -1217,6 +1340,11 @@ def _phase_approval_fingerprint(
         ]
     board = project_dir / f"{spec.name}.kicad_pcb"
     if phase == "circuit":
+        payload["spec_contract"] = spec_contract_digest(project_dir)
+        try:
+            payload["policy_circuit"] = policy_circuit_fingerprint(project_dir)
+        except PolicyError as exc:
+            payload["policy_circuit"] = f"<invalid:{exc}>"
         payload["sources"] = _implementation_source_semantics(project_dir)
         try:
             payload["board_topology_sha256"] = hashlib.sha256(
@@ -2467,7 +2595,11 @@ def run_status_checks(
             summary = f"{result.part_number} CubeMX round-trip passed"
         checks[name] = CheckRecord(
             checked_at,
-            _fingerprint(project_dir, _check_inputs(project_dir, spec, name)),
+            _check_fingerprint(
+                project_dir,
+                name,
+                _check_inputs(project_dir, spec, name),
+            ),
             "pass" if ok else "fail",
             summary,
         )
@@ -2595,7 +2727,7 @@ def _prepare_phase_review(
 
     artifacts = tuple(
         path.relative_to(project_dir).as_posix()
-        for path in _phase_artifact_paths(project_dir, spec, phase)
+        for path in _phase_review_artifact_paths(project_dir, spec, phase)
     )
     fingerprint = _approval_fingerprint(
         project_dir,

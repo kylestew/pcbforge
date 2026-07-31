@@ -14,6 +14,8 @@ from pcbforge.policy import (
     PolicyInputError,
     check_policy,
     load_policy_profile,
+    policy_baseline_fingerprint,
+    policy_circuit_fingerprint,
     policy_exception_fingerprints,
     render_default_policy,
 )
@@ -172,6 +174,126 @@ guidance:
 
 
 class PolicyCheckerTests(PolicyFixture):
+    def test_policy_fingerprints_scope_baseline_circuit_and_sourcing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(
+                Path(temporary),
+                complete_evidence=False,
+                include_build_test=False,
+            )
+            policy_path = project / "policy.yaml"
+            policy = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
+            baseline_before = policy_baseline_fingerprint(
+                project,
+                tool_root=TOOL_ROOT,
+            )
+            circuit_before = policy_circuit_fingerprint(
+                project,
+                tool_root=TOOL_ROOT,
+            )
+
+            policy["assurances"]["reverse-polarity"]["evidence"] = [
+                "Reviewed reverse-polarity implementation.",
+                "Checked the protected input net.",
+            ]
+            policy_path.write_text(
+                yaml.safe_dump(policy, sort_keys=False),
+                encoding="utf-8",
+            )
+            baseline_with_evidence = policy_baseline_fingerprint(
+                project,
+                tool_root=TOOL_ROOT,
+            )
+            circuit_with_evidence = policy_circuit_fingerprint(
+                project,
+                tool_root=TOOL_ROOT,
+            )
+
+            policy["assurances"]["reverse-polarity"]["evidence"].reverse()
+            policy_path.write_text(
+                yaml.safe_dump(policy, sort_keys=False),
+                encoding="utf-8",
+            )
+            circuit_with_reordered_evidence = policy_circuit_fingerprint(
+                project,
+                tool_root=TOOL_ROOT,
+            )
+
+            policy["sourcing"] = [
+                {
+                    "lcsc": "C25804",
+                    "jlc_class": "basic",
+                    "assembly_status": "available",
+                    "lifecycle": "active",
+                    "checked_on": "2026-07-31",
+                    "second_source": "C25803",
+                }
+            ]
+            policy_path.write_text(
+                yaml.safe_dump(policy, sort_keys=False),
+                encoding="utf-8",
+            )
+            circuit_with_sourcing = policy_circuit_fingerprint(
+                project,
+                tool_root=TOOL_ROOT,
+            )
+
+            policy["exceptions"] = [
+                {
+                    "id": "allow-0402",
+                    "rule": "components.commodity-package",
+                    "scope": "R1",
+                    "rationale": "Required by the approved density constraint.",
+                },
+                {
+                    "id": "allow-castellation",
+                    "rule": "manufacturing.edge-clearance",
+                    "scope": "J1",
+                    "rationale": "Required by the approved module interface.",
+                },
+            ]
+            policy_path.write_text(
+                yaml.safe_dump(policy, sort_keys=False),
+                encoding="utf-8",
+            )
+            circuit_with_exception = policy_circuit_fingerprint(
+                project,
+                tool_root=TOOL_ROOT,
+            )
+
+            policy["exceptions"].reverse()
+            policy_path.write_text(
+                yaml.safe_dump(policy, sort_keys=False),
+                encoding="utf-8",
+            )
+            circuit_with_reordered_exceptions = policy_circuit_fingerprint(
+                project,
+                tool_root=TOOL_ROOT,
+            )
+
+            policy["assurances"]["reverse-polarity"]["status"] = (
+                "not-applicable"
+            )
+            policy_path.write_text(
+                yaml.safe_dump(policy, sort_keys=False),
+                encoding="utf-8",
+            )
+            baseline_with_status_change = policy_baseline_fingerprint(
+                project,
+                tool_root=TOOL_ROOT,
+            )
+
+        self.assertEqual(baseline_before, baseline_with_evidence)
+        self.assertNotEqual(circuit_before, circuit_with_evidence)
+        self.assertEqual(circuit_with_evidence, circuit_with_reordered_evidence)
+        self.assertEqual(circuit_with_evidence, circuit_with_sourcing)
+        self.assertNotEqual(circuit_with_sourcing, circuit_with_exception)
+        self.assertEqual(
+            circuit_with_exception,
+            circuit_with_reordered_exceptions,
+        )
+        self.assertNotEqual(baseline_with_evidence, baseline_with_status_change)
+
     def test_standard_policy_passes_offline(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))

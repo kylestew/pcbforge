@@ -23,6 +23,7 @@ from pcbforge.status import (
     TransitionEvent,
     _approval_fingerprint,
     _derive_transitions,
+    _phase_review_artifact_paths,
     approve_phase,
     inspect_status,
     mark_status,
@@ -31,6 +32,7 @@ from pcbforge.status import (
     render_dashboard,
     review_phase,
     run_status_checks,
+    spec_contract_digest,
     write_status,
 )
 
@@ -205,6 +207,245 @@ flowchart LR
 
 
 class DashboardTests(StatusFixture):
+    def test_scoped_fingerprints_keep_shared_files_in_review_packets(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True).resolve()
+            spec = inspect_status(project).spec
+
+            architect = {
+                path.relative_to(project).as_posix()
+                for path in _phase_review_artifact_paths(
+                    project,
+                    spec,
+                    "architect",
+                )
+            }
+            circuit = {
+                path.relative_to(project).as_posix()
+                for path in _phase_review_artifact_paths(
+                    project,
+                    spec,
+                    "circuit",
+                )
+            }
+
+        self.assertIn("spec.md", architect)
+        self.assertIn("spec.md", circuit)
+        self.assertIn("policy.yaml", circuit)
+
+    def test_spec_contract_digest_is_semantic_and_excludes_decisions(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            path = project / "spec.md"
+            original = spec_text().replace(
+                "## Decisions log\n",
+                (
+                    "## Purpose\n\nRecord garden conditions.\n\n"
+                    "## Decisions log\n\n- Initial decision.\n\n"
+                    "## Constraints\n\nKeep the board compact.\n"
+                ),
+            )
+            path.write_text(original, encoding="utf-8")
+            initial = spec_contract_digest(project)
+
+            with_decision = original.replace(
+                "- Initial decision.\n",
+                "- Initial decision.\n- Later implementation note.\n",
+            )
+            path.write_text(with_decision, encoding="utf-8")
+            self.assertEqual(initial, spec_contract_digest(project))
+
+            frontmatter = yaml.safe_load(original.split("---", 2)[1])
+            body = original.split("---", 2)[2]
+            path.write_text(
+                "---\n"
+                + yaml.safe_dump(frontmatter, sort_keys=True)
+                + "---"
+                + body,
+                encoding="utf-8",
+            )
+            self.assertEqual(initial, spec_contract_digest(project))
+
+            path.write_text(
+                original.replace(
+                    "Record garden conditions.",
+                    "Record garden conditions and soil temperature.",
+                ),
+                encoding="utf-8",
+            )
+            self.assertNotEqual(initial, spec_contract_digest(project))
+
+            path.write_text(
+                original.replace(
+                    "Keep the board compact.",
+                    "Keep the board under 45 mm wide.",
+                ),
+                encoding="utf-8",
+            )
+            self.assertNotEqual(initial, spec_contract_digest(project))
+
+            path.write_text(
+                "---\nspec_schema: 1\nspec_schema: 1\n---\n# Invalid\n",
+                encoding="utf-8",
+            )
+            invalid = spec_contract_digest(project)
+            self.assertEqual(invalid, spec_contract_digest(project))
+
+        self.assertRegex(invalid, r"^[0-9a-f]{64}$")
+
+    def test_phase_fingerprints_use_scoped_spec_and_policy_contracts(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            self.add_architecture(project)
+            spec_path = project / "spec.md"
+            policy_path = project / "policy.yaml"
+            fingerprints = {
+                "spec": _approval_fingerprint(project, "spec"),
+                "architect-proposal": _approval_fingerprint(
+                    project,
+                    "architect",
+                    "proposal-approved",
+                ),
+                "architect": _approval_fingerprint(project, "architect"),
+                "circuit-proposal": _approval_fingerprint(
+                    project,
+                    "circuit",
+                    "proposal-approved",
+                ),
+                "circuit": _approval_fingerprint(project, "circuit"),
+            }
+
+            spec_path.write_text(
+                spec_path.read_text(encoding="utf-8")
+                + "- CIRCUIT evidence was populated.\n",
+                encoding="utf-8",
+            )
+            after_decision = {
+                key: _approval_fingerprint(
+                    project,
+                    key.removesuffix("-proposal"),
+                    "proposal-approved" if key.endswith("-proposal") else "complete",
+                )
+                for key in fingerprints
+            }
+
+            policy = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
+            policy["assurances"]["reverse-polarity"]["evidence"] = [
+                "Reviewed reverse-polarity implementation."
+            ]
+            policy_path.write_text(
+                yaml.safe_dump(policy, sort_keys=False),
+                encoding="utf-8",
+            )
+            after_evidence = {
+                "spec": _approval_fingerprint(project, "spec"),
+                "architect": _approval_fingerprint(project, "architect"),
+                "circuit": _approval_fingerprint(project, "circuit"),
+            }
+
+            policy["sourcing"] = [
+                {
+                    "lcsc": "C25804",
+                    "jlc_class": "basic",
+                    "assembly_status": "available",
+                    "lifecycle": "active",
+                    "checked_on": "2026-07-31",
+                    "second_source": "C25803",
+                }
+            ]
+            policy_path.write_text(
+                yaml.safe_dump(policy, sort_keys=False),
+                encoding="utf-8",
+            )
+            circuit_with_sourcing = _approval_fingerprint(project, "circuit")
+
+            policy["exceptions"] = [
+                {
+                    "id": "allow-0402",
+                    "rule": "components.commodity-package",
+                    "scope": "R1",
+                    "rationale": "Approved density tradeoff.",
+                }
+            ]
+            policy_path.write_text(
+                yaml.safe_dump(policy, sort_keys=False),
+                encoding="utf-8",
+            )
+            circuit_with_exception = _approval_fingerprint(project, "circuit")
+
+            policy["assurances"]["reverse-polarity"]["status"] = (
+                "not-applicable"
+            )
+            policy_path.write_text(
+                yaml.safe_dump(policy, sort_keys=False),
+                encoding="utf-8",
+            )
+            spec_with_status_change = _approval_fingerprint(project, "spec")
+
+        self.assertEqual(fingerprints, after_decision)
+        self.assertEqual(fingerprints["spec"], after_evidence["spec"])
+        self.assertEqual(fingerprints["architect"], after_evidence["architect"])
+        self.assertNotEqual(fingerprints["circuit"], after_evidence["circuit"])
+        self.assertEqual(after_evidence["circuit"], circuit_with_sourcing)
+        self.assertNotEqual(circuit_with_sourcing, circuit_with_exception)
+        self.assertNotEqual(fingerprints["spec"], spec_with_status_change)
+
+    def test_circuit_work_does_not_reopen_spec_or_architect(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            self.add_architecture_proposal(project)
+            self.approve(project, "spec", "User approved the SPEC contract")
+
+            proposal = review_phase(
+                project,
+                "architect",
+                stage="proposal",
+                tool_root=TOOL_ROOT,
+            )
+            approve_phase(
+                project,
+                "architect",
+                proposal.fingerprint,
+                "User approved the architecture and MCU proposal",
+                stage="proposal",
+                tool_root=TOOL_ROOT,
+            )
+            self.add_architecture(project)
+            with mock.patch(
+                "pcbforge.status.check_ioc",
+                return_value=mock.Mock(part_number="STM32G071KBT6"),
+            ):
+                approved = self.approve(
+                    project,
+                    "architect",
+                    "User approved the compiled architecture and MCU audit",
+                    runner=FakeRunner(),
+                )
+            self.assertTrue(approved.report.phases[0].complete)
+            self.assertTrue(approved.report.phases[1].complete)
+
+            policy_path = project / "policy.yaml"
+            policy = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
+            policy["assurances"]["reverse-polarity"]["evidence"] = [
+                "CIRCUIT review confirmed reverse-polarity protection."
+            ]
+            policy_path.write_text(
+                yaml.safe_dump(policy, sort_keys=False),
+                encoding="utf-8",
+            )
+            spec_path = project / "spec.md"
+            spec_path.write_text(
+                spec_path.read_text(encoding="utf-8")
+                + "- CIRCUIT evidence recorded without changing requirements.\n",
+                encoding="utf-8",
+            )
+
+            report = inspect_status(project)
+
+        self.assertTrue(report.phases[0].complete)
+        self.assertTrue(report.phases[1].complete)
+        self.assertEqual(report.current.phase.key, "circuit")
+
     def test_current_workflow_rejects_direct_completion_for_every_phase(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))
@@ -240,7 +481,10 @@ class DashboardTests(StatusFixture):
             )
 
             (project / "spec.md").write_text(
-                spec_text() + "\nChanged requirement.\n",
+                spec_text().replace(
+                    "## Decisions log",
+                    "## Purpose\n\nChanged requirement.\n\n## Decisions log",
+                ),
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(
@@ -314,7 +558,13 @@ class DashboardTests(StatusFixture):
             )
 
             spec.write_text(
-                approved_contents + "\nMaterial requirement changed.\n",
+                approved_contents.replace(
+                    "## Decisions log",
+                    (
+                        "## Purpose\n\nMaterial requirement changed.\n\n"
+                        "## Decisions log"
+                    ),
+                ),
                 encoding="utf-8",
             )
             inspected = inspect_status(project)

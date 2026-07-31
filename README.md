@@ -96,6 +96,16 @@ conversational approval, and only then records it. Changed approved artifacts
 are durably reopened by dashboard writes, and rerunning checks cannot revive
 an old approval.
 
+Approval fingerprints follow contract ownership rather than hashing every
+shared file wholesale. The exact `## Decisions log` section in `spec.md` is
+non-normative; the rest of the Markdown body and the canonicalized YAML
+frontmatter remain approval-bound. SPEC binds policy declarations and
+assurance dispositions, while assurance evidence and exceptions join the
+final CIRCUIT contract. Sourcing is excluded from CIRCUIT approval and is
+bound at ORDER through its dedicated sourcing fingerprint. These scopes avoid
+reopening SPEC or ARCHITECT when CIRCUIT fills in later evidence; they do not
+weaken review packets, which still display the complete source files.
+
 Optional dashboard commands (the agent normally refreshes the dashboard and
 records conversational approvals for you):
 

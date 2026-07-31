@@ -84,6 +84,16 @@ exception approval reopens the profile-mapped completed phase.
 
 ## Decision record
 
+- **2026-07-31 — approval fingerprints follow contract ownership.** Raw shared
+  files no longer make downstream evidence reopen earlier phases. The SPEC
+  digest canonicalizes YAML frontmatter and binds every body byte except the
+  exact `## Decisions log` section. SPEC policy approval binds the profile,
+  manufacturing/components, and assurance status/rationale. Final CIRCUIT
+  adds assurance evidence and declared exceptions; sourcing remains outside
+  that approval and is bound at ORDER by the existing sourcing fingerprint.
+  ARCHITECT and CIRCUIT consume the semantic SPEC digest while review packets
+  continue to show the full files. This changes fingerprint composition only;
+  no artifact schema or migration is introduced.
 - **2026-07-31 — v1 clean break.** PCBForge supports freshly initialized
   projects only. All artifact and guidance schemas reset to integer `1` with
   one accepted value. Unsupported versions fail with “unsupported version —
@@ -306,8 +316,8 @@ The agent follows `agent/architect.md`. It first maps every spec requirement to
 a proposed functional block and compiler-native typed interface in
 `docs/architecture.md`. If multiple material designs satisfy the spec, it
 presents alternatives and stops. The user approves the proposal before the
-agent writes the skeleton. Proposal approval is fingerprint-bound to the spec
-and diagram.
+agent writes the skeleton. Proposal approval is fingerprint-bound to the
+semantic SPEC contract and diagram.
 
 Only after proposal approval does the agent keep `src/main.ato` as a thin graph
 and place project-local interface skeletons in separate source files. The MCU
@@ -323,10 +333,12 @@ before corresponding source edits. The diagram contains functional modules and
 typed interfaces, never parts, pins, or spatial detail.
 
 After build and audit, the user gives separate final approval. Its append-only
-STATUS event is fingerprint-bound to the spec, diagram, and thin top-level
-source graph. Artifact changes make approval stale and the next dashboard write
-records a durable reopen before the workflow may move to CIRCUIT. Design rationale
-may remain in the `spec.md` Decisions log, but prose is not the workflow gate.
+STATUS event is fingerprint-bound to the semantic SPEC contract, diagram, and
+thin top-level source graph. Normative artifact changes make approval stale and
+the next dashboard write records a durable reopen before the workflow may move
+to CIRCUIT. Design rationale may remain in the non-normative `spec.md`
+Decisions log without reopening the gate; all other SPEC prose remains
+normative.
 
 #### MCU workstream inside ARCHITECT
 
@@ -361,6 +373,11 @@ only this, `yaml.safe_load` + versioned schema, fails loud on missing keys) + **
 (human intent, for the user and future AI sessions). AI keeps frontmatter in
 sync with prose. No exact chip in spec — family + constraints only, unless user
 names a part. Schema lives in `agent/spec-interview.md`.
+
+Approval hashing canonicalizes the frontmatter as sorted JSON and binds the
+body byte-for-byte except for the exact `## Decisions log` section. That log
+may accumulate downstream rationale without reopening SPEC or ARCHITECT; edits
+to any other heading or prose are normative contract changes.
 
 `STATUS.md` is created after the first valid spec draft and survives `init`.
 Its YAML frontmatter contains append-only workflow events and fingerprints for
@@ -566,6 +583,9 @@ and staleness boundary.
 - `.pcbforge`: exact policy profile and hash; baseline approval mode.
 - `policy.yaml`: project declarations, assurance/sourcing evidence, and
   exception requests; approval stays in STATUS.
+- Scoped approvals bind policy declarations and assurance dispositions at
+  SPEC, add assurance evidence and exceptions at final CIRCUIT, and defer
+  sourcing currency to ORDER's dedicated fingerprint.
 - Resolved selections recorded per refdes (MPN/LCSC#); generated-footprint
   hashes.
 - CIRCUIT emits `docs/build-test.md`: input/tool versions and hashes, exact BOM,

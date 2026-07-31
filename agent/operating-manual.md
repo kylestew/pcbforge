@@ -59,6 +59,13 @@ User approval is explicit, artifact-specific, and one-time:
   invalidates it, and rerunning checks cannot revive it;
 - checked dashboard writes durably reopen changed approved phases.
 
+Fingerprints bind each phase's owned contract, even when review packets show
+whole shared files. The exact `## Decisions log` section of `spec.md` is
+non-normative; every other SPEC body byte and its canonicalized frontmatter is
+normative. SPEC owns policy declarations plus assurance status/rationale;
+final CIRCUIT adds assurance evidence and exceptions; sourcing is ORDER-owned.
+Thus CIRCUIT evidence and decision-log notes do not reopen SPEC/ARCHITECT.
+
 Every numbered phase requires final user approval, including SPEC, ARCHITECT,
 CIRCUIT, LAYOUT, ROUTE, VERIFY, FAB-OUT, and ORDER. Initialization and the
 layout handoff are visible, machine-checked transitions rather than separate

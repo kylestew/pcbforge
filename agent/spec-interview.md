@@ -53,7 +53,10 @@ Vendor-neutral: any agent with file read/write follows this document.
 7. Remind: `spec.md` and `policy.yaml` are **living contracts**. Later
    requirement changes go to the spec first; technology declarations,
    sourcing evidence, and requested exceptions go to policy. Keep each file
-   internally consistent.
+   internally consistent. The exact `## Decisions log` section may collect
+   downstream rationale without reopening approvals; all other SPEC prose is
+   normative. Policy assurance evidence and exceptions are CIRCUIT-bound,
+   sourcing is ORDER-bound, and status/rationale changes remain SPEC-bound.
 
 ## Dimensions
 

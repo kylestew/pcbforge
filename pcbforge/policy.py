@@ -666,22 +666,59 @@ def _canonical(value: Any) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
 
 
-def policy_baseline_fingerprint(
-    project_dir: Path,
-    *,
-    tool_root: Path | None = None,
-) -> str:
-    """Fingerprint profile and baseline declarations, excluding evolving sourcing."""
-    contract = read_policy_contract(project_dir)
-    _, _, profile_hash = load_policy_profile(tool_root)
-    payload = {
+def _policy_baseline_payload(
+    contract: PolicyContract,
+    profile_hash: str,
+) -> Mapping[str, Any]:
+    return {
         "profile_sha256": profile_hash,
         "profile": contract.profile,
         "manufacturing": dict(contract.manufacturing),
         "components": dict(contract.components),
         "assurances": {
-            key: asdict(value) for key, value in sorted(contract.assurances.items())
+            key: {
+                "status": value.status,
+                "rationale": value.rationale,
+            }
+            for key, value in sorted(contract.assurances.items())
         },
+    }
+
+
+def policy_baseline_fingerprint(
+    project_dir: Path,
+    *,
+    tool_root: Path | None = None,
+) -> str:
+    """Fingerprint SPEC-owned policy declarations and assurance dispositions."""
+    contract = read_policy_contract(project_dir)
+    _, _, profile_hash = load_policy_profile(tool_root)
+    return hashlib.sha256(
+        _canonical(_policy_baseline_payload(contract, profile_hash))
+    ).hexdigest()
+
+
+def policy_circuit_fingerprint(
+    project_dir: Path,
+    *,
+    tool_root: Path | None = None,
+) -> str:
+    """Bind CIRCUIT to policy evidence and exceptions, excluding sourcing."""
+    contract = read_policy_contract(project_dir)
+    _, _, profile_hash = load_policy_profile(tool_root)
+    payload = {
+        "baseline": _policy_baseline_payload(contract, profile_hash),
+        "assurance_evidence": {
+            key: sorted(value.evidence)
+            for key, value in sorted(contract.assurances.items())
+        },
+        "exceptions": [
+            asdict(exception)
+            for exception in sorted(
+                contract.exceptions,
+                key=lambda item: item.identifier,
+            )
+        ],
     }
     return hashlib.sha256(_canonical(payload)).hexdigest()
 
