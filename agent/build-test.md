@@ -90,7 +90,9 @@ This performs a frozen pinned build and requires:
 Use `pcbforge check-build-test` for a non-writing diagnostic run, or
 `pcbforge check-build-test --write-report` to save the report directly. A
 non-writing pass does not complete CIRCUIT; the dashboard also requires the
-current tracked report. A failed run never overwrites the last passing report.
+current tracked report. These direct commands always run their own frozen
+build. The status cycle builds once and validates those same artifacts. A
+failed run never overwrites the last passing report.
 
 ## 4. Resolve failures
 

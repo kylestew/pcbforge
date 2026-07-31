@@ -104,7 +104,9 @@ may be selected autonomously, and those assumptions must be stated.
 2. Run `pcbforge status --check --write`. The dashboard combines live file
    evidence, compiler, build-test, parts-policy, technology-policy,
    layout-handoff, IOC, and DRC check fingerprints, and explicit human gates;
-   a note never overrides missing evidence.
+   a note never overrides missing evidence. Current passing checks are reused
+   without changing their timestamps; failed or stale checks rerun. Use
+   `--force-checks` only when an explicit full rerun is needed.
 3. Run `pcbforge status --next` when you need the concise handoff view. Report
    the latest valid milestone, any previously performed transition that is now
    inactive, the current state, next owner, one primary action, and its command.

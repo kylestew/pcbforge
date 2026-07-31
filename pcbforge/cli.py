@@ -294,6 +294,11 @@ def _status_show_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--force-checks",
+        action="store_true",
+        help="rerun all applicable checks instead of reusing current passes",
+    )
+    parser.add_argument(
         "--next",
         action="store_true",
         help="show only the last, current, and next workflow handoff",
@@ -510,10 +515,13 @@ def _run_status_cli(argv: list[str]) -> int:
             )
             return 0
 
+        if status_args.force_checks and not status_args.check:
+            raise StatusInputError("--force-checks requires --check")
         if status_args.write:
             result = write_status(
                 Path(status_args.project_dir),
                 check=status_args.check,
+                force_checks=status_args.force_checks,
             )
             report = result.report
             print(
@@ -526,7 +534,11 @@ def _run_status_cli(argv: list[str]) -> int:
             project_dir = Path(status_args.project_dir)
             document = read_status_document(project_dir.expanduser().resolve())
             if status_args.check:
-                document = run_status_checks(project_dir, document)
+                document = run_status_checks(
+                    project_dir,
+                    document,
+                    force_checks=status_args.force_checks,
+                )
             report = inspect_status(project_dir, document=document)
             print(
                 render_next(report)

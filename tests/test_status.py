@@ -1482,6 +1482,198 @@ checks: {}
 
 
 class CheckTests(StatusFixture):
+    def test_unchanged_checked_write_reuses_passes_without_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            first_runner = FakeRunner()
+            first = write_status(
+                project,
+                check=True,
+                tool_root=TOOL_ROOT,
+                runner=first_runner,
+                now="2026-07-26T10:00:00+00:00",
+            )
+            second_runner = FakeRunner()
+            second = write_status(
+                project,
+                check=True,
+                tool_root=TOOL_ROOT,
+                runner=second_runner,
+                now="2026-07-26T11:00:00+00:00",
+            )
+
+        self.assertTrue(first.wrote)
+        self.assertFalse(second.wrote)
+        self.assertEqual(len(first_runner.calls), 1)
+        self.assertEqual(second_runner.calls, [])
+        self.assertEqual(
+            first.report.document.checks,
+            second.report.document.checks,
+        )
+
+    def test_force_checks_reruns_current_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            first = run_status_checks(
+                project,
+                StatusDocument(updated_at="", events=(), checks={}),
+                tool_root=TOOL_ROOT,
+                runner=FakeRunner(),
+                checked_at="2026-07-26T10:00:00+00:00",
+            )
+            runner = FakeRunner()
+            forced = run_status_checks(
+                project,
+                first,
+                tool_root=TOOL_ROOT,
+                runner=runner,
+                checked_at="2026-07-26T11:00:00+00:00",
+                force_checks=True,
+            )
+
+        self.assertEqual(len(runner.calls), 1)
+        self.assertEqual(
+            forced.checks["build"].at,
+            "2026-07-26T11:00:00+00:00",
+        )
+        self.assertEqual(
+            forced.checks["parts"].at,
+            "2026-07-26T11:00:00+00:00",
+        )
+
+    def test_failed_record_always_reruns(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            failed = run_status_checks(
+                project,
+                StatusDocument(updated_at="", events=(), checks={}),
+                tool_root=TOOL_ROOT,
+                runner=FakeRunner(build_ok=False),
+                checked_at="2026-07-26T10:00:00+00:00",
+            )
+            runner = FakeRunner()
+            checked = run_status_checks(
+                project,
+                failed,
+                tool_root=TOOL_ROOT,
+                runner=runner,
+                checked_at="2026-07-26T11:00:00+00:00",
+            )
+
+        self.assertEqual(len(runner.calls), 1)
+        self.assertEqual(checked.checks["build"].outcome, "pass")
+        self.assertEqual(
+            checked.checks["build"].at,
+            "2026-07-26T11:00:00+00:00",
+        )
+
+    def test_ioc_change_reruns_only_dependent_external_check(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            self.add_architecture(project)
+            with mock.patch(
+                "pcbforge.status.check_ioc",
+                return_value=mock.Mock(part_number="STM32G071KBT6"),
+            ):
+                first = run_status_checks(
+                    project,
+                    StatusDocument(updated_at="", events=(), checks={}),
+                    tool_root=TOOL_ROOT,
+                    runner=FakeRunner(),
+                    checked_at="2026-07-26T10:00:00+00:00",
+                )
+            ioc = project / "firmware" / "garden-logger.ioc"
+            ioc.write_text("Mcu.Name=STM32G071KBT6\n", encoding="utf-8")
+            runner = FakeRunner()
+            with mock.patch(
+                "pcbforge.status.check_ioc",
+                return_value=mock.Mock(part_number="STM32G071KBT6"),
+            ) as check_ioc_mock:
+                second = run_status_checks(
+                    project,
+                    first,
+                    tool_root=TOOL_ROOT,
+                    runner=runner,
+                    checked_at="2026-07-26T11:00:00+00:00",
+                )
+
+        self.assertEqual(runner.calls, [])
+        check_ioc_mock.assert_called_once()
+        self.assertEqual(second.checks["build"], first.checks["build"])
+        self.assertEqual(second.checks["parts"], first.checks["parts"])
+        self.assertEqual(
+            second.checks["ioc"].at,
+            "2026-07-26T11:00:00+00:00",
+        )
+
+    def test_build_test_reuses_cycle_build_and_requires_saved_report(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            (project / "build-test.yaml").write_text(
+                "build_test_schema: 1\nbuild: default\n",
+                encoding="utf-8",
+            )
+            fingerprint = fingerprint_inputs(project)
+            result = mock.Mock(
+                summary="build-test passed",
+                fingerprint=fingerprint,
+            )
+            first_runner = FakeRunner()
+            with mock.patch(
+                "pcbforge.status.check_build_test",
+                return_value=result,
+            ) as first_check:
+                first = run_status_checks(
+                    project,
+                    StatusDocument(updated_at="", events=(), checks={}),
+                    tool_root=TOOL_ROOT,
+                    runner=first_runner,
+                    checked_at="2026-07-26T10:00:00+00:00",
+                )
+            report = project / "docs" / "build-test.md"
+            report.parent.mkdir(exist_ok=True)
+            report.write_text(
+                "---\n"
+                "pcbforge_build_test_report_schema: 1\n"
+                "result: pass\n"
+                f"fingerprint: {fingerprint}\n"
+                "---\n",
+                encoding="utf-8",
+            )
+            second_runner = FakeRunner()
+            with mock.patch("pcbforge.status.check_build_test") as second_check:
+                second = run_status_checks(
+                    project,
+                    first,
+                    tool_root=TOOL_ROOT,
+                    runner=second_runner,
+                    checked_at="2026-07-26T11:00:00+00:00",
+                )
+            report.unlink()
+            third_runner = FakeRunner()
+            with mock.patch(
+                "pcbforge.status.check_build_test",
+                return_value=result,
+            ) as third_check:
+                run_status_checks(
+                    project,
+                    second,
+                    tool_root=TOOL_ROOT,
+                    runner=third_runner,
+                    checked_at="2026-07-26T12:00:00+00:00",
+                )
+
+        self.assertEqual(len(first_runner.calls), 1)
+        self.assertTrue(first_check.call_args.kwargs["skip_build"])
+        self.assertEqual(second_runner.calls, [])
+        second_check.assert_not_called()
+        self.assertEqual(
+            second.checks["build-test"],
+            first.checks["build-test"],
+        )
+        self.assertEqual(third_runner.calls, [])
+        self.assertTrue(third_check.call_args.kwargs["skip_build"])
+
     def test_static_status_runs_no_tools_and_checked_status_saves_build(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary), initialized=True)
@@ -1600,6 +1792,51 @@ component R_10K_0603:
         self.assertEqual(len(runner.calls), 2)
 
 class StatusCliTests(StatusFixture):
+    def test_force_checks_requires_check(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            with mock.patch("builtins.print"):
+                result = main(["status", "--force-checks", str(project)])
+
+        self.assertEqual(result, 2)
+
+    def test_force_checks_reaches_read_only_and_write_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            document = read_status_document(project)
+            report = inspect_status(project, document=document)
+            with (
+                mock.patch(
+                    "pcbforge.cli.run_status_checks",
+                    return_value=document,
+                ) as run_checks,
+                mock.patch("builtins.print"),
+            ):
+                read_result = main(
+                    ["status", "--check", "--force-checks", str(project)]
+                )
+            with (
+                mock.patch(
+                    "pcbforge.cli.write_status",
+                    return_value=mock.Mock(report=report, wrote=False),
+                ) as write_status_mock,
+                mock.patch("builtins.print"),
+            ):
+                write_result = main(
+                    [
+                        "status",
+                        "--check",
+                        "--force-checks",
+                        "--write",
+                        str(project),
+                    ]
+                )
+
+        self.assertEqual(read_result, 0)
+        self.assertEqual(write_result, 0)
+        self.assertTrue(run_checks.call_args.kwargs["force_checks"])
+        self.assertTrue(write_status_mock.call_args.kwargs["force_checks"])
+
     def test_cascade_review_and_renew_cli(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary), initialized=True)

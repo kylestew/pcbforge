@@ -302,6 +302,45 @@ board_footprints: 1""",
 
 
 class CheckerTests(BuildTestFixture):
+    def test_skip_build_reuses_artifacts_with_identical_result(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            normal_runner = FakeRunner()
+            normal = check_build_test(
+                project,
+                tool_root=TOOL_ROOT,
+                runner=normal_runner,
+            )
+            skipped_runner = FakeRunner()
+            skipped = check_build_test(
+                project,
+                tool_root=TOOL_ROOT,
+                runner=skipped_runner,
+                skip_build=True,
+            )
+
+        self.assertEqual(normal, skipped)
+        self.assertEqual(len(normal_runner.calls), 1)
+        self.assertEqual(skipped_runner.calls, [])
+
+    def test_skip_build_reports_missing_artifacts_without_running(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            (project / "build" / "manifest.json").unlink()
+            runner = FakeRunner()
+            with self.assertRaisesRegex(
+                BuildTestError,
+                "cannot skip frozen build; missing build artifacts: Compiler manifest",
+            ):
+                check_build_test(
+                    project,
+                    tool_root=TOOL_ROOT,
+                    runner=runner,
+                    skip_build=True,
+                )
+
+        self.assertEqual(runner.calls, [])
+
     def test_allows_canonical_unfitted_pcb_features(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))

@@ -221,6 +221,11 @@ On every cold start:
 pcbforge status --check --write /absolute/path/to/project
 ```
 
+Current passing checks retain their original timestamps and are skipped, so an
+unchanged cold start launches no external validators. Use
+`pcbforge status --check --force-checks --write` when every applicable check
+must run again. Failed checks always rerun.
+
 Report the current numbered phase or transition, blockers, and next actions.
 Never edit the dashboard body or use `status mark ... complete`.
 

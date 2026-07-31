@@ -112,6 +112,7 @@ records conversational approvals for you):
 ```bash
 pcbforge status
 pcbforge status --check --write
+pcbforge status --check --force-checks --write
 pcbforge status --next
 pcbforge status review layout
 pcbforge status approve layout --fingerprint <sha256> \
@@ -172,7 +173,10 @@ LCSC/MPN/footprint/quantity selections against the emitted BOM, checks
 BOM-to-PCB designator and footprint parity, requires resolved connectivity,
 and verifies that a no-op build preserved all spatial PCB work.
 `pcbforge status --check --write` records the current check fingerprint and
-generates the tracked `docs/build-test.md`. CIRCUIT reaches
+generates the tracked `docs/build-test.md`. Passing checks are reused while
+their content fingerprints remain current; `--force-checks` reruns every
+applicable check. A status cycle performs at most one successful frozen build,
+and build-test validates the compiler artifacts from that build. CIRCUIT reaches
 `Awaiting approval` only when the proposal approval, implementation parity,
 parts/policy/IOC checks, and build-test evidence are all current. One final
 CIRCUIT fingerprint covers the implemented and tested result.

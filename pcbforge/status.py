@@ -1184,6 +1184,8 @@ def _check_fingerprint(
     project_dir: Path,
     name: str,
     inputs: Sequence[Path],
+    *,
+    tool_root: Path | None = None,
 ) -> str:
     if name == "build":
         digest = hashlib.sha256()
@@ -1210,13 +1212,13 @@ def _check_fingerprint(
 
         return fingerprint_inputs(project_dir)
     if name == "layout-handoff":
-        return brief_status_fingerprint(project_dir)
+        return brief_status_fingerprint(project_dir, tool_root=tool_root)
     if name == "circuit-proposal":
         return circuit_review_status_fingerprint(project_dir, "proposal")
     if name == "circuit-final":
         return circuit_review_status_fingerprint(project_dir, "final")
     if name == "policy":
-        return policy_status_fingerprint(project_dir)
+        return policy_status_fingerprint(project_dir, tool_root=tool_root)
     if name == "ioc":
         digest = hashlib.sha256()
         for path in sorted(set(inputs)):
@@ -1228,6 +1230,49 @@ def _check_fingerprint(
                 digest.update(hashlib.sha256(path.read_bytes()).digest())
         return digest.hexdigest()
     return _fingerprint(project_dir, inputs)
+
+
+def _reusable_check_record(
+    project_dir: Path,
+    spec: ProjectSpec,
+    document: StatusDocument,
+    name: str,
+    *,
+    tool_root: Path,
+    force_checks: bool,
+) -> CheckRecord | None:
+    """Return an unchanged passing record when its current inputs still match."""
+    if force_checks:
+        return None
+    record = document.checks.get(name)
+    if record is None or record.outcome != "pass":
+        return None
+    try:
+        inputs = _check_inputs(project_dir, spec, name)
+        if not inputs:
+            return None
+        fingerprint = _check_fingerprint(
+            project_dir,
+            name,
+            inputs,
+            tool_root=tool_root,
+        )
+    except (
+        BuildTestError,
+        CircuitReviewError,
+        InitInputError,
+        PlacementError,
+        PolicyError,
+        OSError,
+    ):
+        return None
+    if record.fingerprint != fingerprint:
+        return None
+    if name == "build-test":
+        report_ok, _ = saved_report_status(project_dir, fingerprint)
+        if not report_ok:
+            return None
+    return record
 
 
 def _phase_artifact_paths(
@@ -2509,6 +2554,7 @@ def run_status_checks(
     runner: CommandRunner = subprocess.run,
     checked_at: str | None = None,
     write_reports: bool = False,
+    force_checks: bool = False,
 ) -> StatusDocument:
     """Run stage-appropriate checks and return a document containing results."""
     project_dir = _project_dir(project_dir)
@@ -2538,169 +2584,113 @@ def run_status_checks(
             document
         )
         name = "policy"
-        try:
-            result = check_policy(
-                project_dir,
-                tool_root=tool_root,
-                through_phase=through_phase,
-                baseline_approval=baseline_approval,
-                exception_approvals=exception_approvals,
-            )
-        except (PolicyInputError, PolicyError) as exc:
-            ok = False
-            summary = str(exc).splitlines()[0]
+        reusable = _reusable_check_record(
+            project_dir,
+            spec,
+            document,
+            name,
+            tool_root=tool_root,
+            force_checks=force_checks,
+        )
+        if reusable is None:
             try:
-                fingerprint = policy_status_fingerprint(
+                result = check_policy(
                     project_dir,
                     tool_root=tool_root,
+                    through_phase=through_phase,
+                    baseline_approval=baseline_approval,
+                    exception_approvals=exception_approvals,
                 )
-            except PolicyError:
-                fingerprint = _fingerprint(
-                    project_dir,
-                    policy_inputs(project_dir),
-                )
-        else:
-            ok = result.ok
-            summary = result.summary
-            fingerprint = result.fingerprint
-        checks[name] = CheckRecord(
-            checked_at,
-            fingerprint,
-            "pass" if ok else "fail",
-            summary,
-        )
+            except (PolicyInputError, PolicyError) as exc:
+                ok = False
+                summary = str(exc).splitlines()[0]
+                try:
+                    fingerprint = policy_status_fingerprint(
+                        project_dir,
+                        tool_root=tool_root,
+                    )
+                except PolicyError:
+                    fingerprint = _fingerprint(
+                        project_dir,
+                        policy_inputs(project_dir),
+                    )
+            else:
+                ok = result.ok
+                summary = result.summary
+                fingerprint = result.fingerprint
+            checks[name] = CheckRecord(
+                checked_at,
+                fingerprint,
+                "pass" if ok else "fail",
+                summary,
+            )
 
+    build_available = False
     if (project_dir / ".pcbforge").is_file():
         name = "build"
-        inputs = _check_inputs(project_dir, spec, name)
-        ok, summary = _run_command(
-            [
-                str(tool_root / "scripts" / "ato"),
-                "build",
-                "--frozen",
-                "--verbose",
-            ],
-            cwd=project_dir,
-            runner=runner,
+        reusable = _reusable_check_record(
+            project_dir,
+            spec,
+            document,
+            name,
+            tool_root=tool_root,
+            force_checks=force_checks,
         )
-        checks[name] = CheckRecord(
-            checked_at,
-            _check_fingerprint(project_dir, name, inputs),
-            "pass" if ok else "fail",
-            summary,
-        )
+        if reusable is not None:
+            build_available = True
+        else:
+            inputs = _check_inputs(project_dir, spec, name)
+            ok, summary = _run_command(
+                [
+                    str(tool_root / "scripts" / "ato"),
+                    "build",
+                    "--frozen",
+                    "--verbose",
+                ],
+                cwd=project_dir,
+                runner=runner,
+            )
+            checks[name] = CheckRecord(
+                checked_at,
+                _check_fingerprint(project_dir, name, inputs),
+                "pass" if ok else "fail",
+                summary,
+            )
+            build_available = ok
 
         should_run_build_test = (project_dir / BUILD_TEST_FILENAME).is_file()
         if should_run_build_test:
             name = "build-test"
-            try:
-                result = check_build_test(
-                    project_dir,
-                    tool_root=tool_root,
-                    runner=runner,
-                    write_report=write_reports,
-                )
-            except (BuildTestInputError, BuildTestError) as exc:
-                ok = False
-                summary = str(exc).splitlines()[0]
-                try:
-                    fingerprint = _check_fingerprint(
-                        project_dir,
-                        name,
-                        _check_inputs(project_dir, spec, name),
-                    )
-                except (BuildTestError, OSError):
-                    fingerprint = _fingerprint(
-                        project_dir,
-                        _check_inputs(project_dir, spec, name),
-                    )
-            else:
-                ok = True
-                summary = result.summary
-                fingerprint = result.fingerprint
-            checks[name] = CheckRecord(
-                checked_at,
-                fingerprint,
-                "pass" if ok else "fail",
-                summary,
+            reusable = _reusable_check_record(
+                project_dir,
+                spec,
+                document,
+                name,
+                tool_root=tool_root,
+                force_checks=force_checks,
             )
-
-        build_test_ok, _ = _current_check(
-            project_dir,
-            spec,
-            replace(document, checks=checks),
-            "build-test",
-        )
-        should_run_brief = (
-            project_dir / PLACEMENT_FILENAME
-        ).is_file() and build_test_ok
-        if should_run_brief:
-            name = "layout-handoff"
-            try:
-                result = check_brief(project_dir, tool_root=tool_root)
-            except (PlacementInputError, PlacementError) as exc:
-                ok = False
-                summary = str(exc).splitlines()[0]
-                fingerprint = brief_status_fingerprint(
-                    project_dir,
-                    tool_root=tool_root,
-                )
-            else:
-                ok = True
-                summary = result.summary
-                fingerprint = result.fingerprint
-            checks[name] = CheckRecord(
-                checked_at,
-                fingerprint,
-                "pass" if ok else "fail",
-                summary,
-            )
-
-        name = "parts"
-        try:
-            result = check_parts(project_dir)
-        except PartsAuditError as exc:
-            ok = False
-            summary = str(exc).splitlines()[0]
-        else:
-            ok = result.ok
-            summary = result.summary
-        checks[name] = CheckRecord(
-            checked_at,
-            _fingerprint(project_dir, _check_inputs(project_dir, spec, name)),
-            "pass" if ok else "fail",
-            summary,
-        )
-
-        if (project_dir / CIRCUIT_REVIEW_FILENAME).is_file():
-            for stage in ("proposal", "final"):
-                if stage == "final" and not (
-                    project_dir / "docs" / "circuit-review.md"
-                ).is_file():
-                    continue
-                name = f"circuit-{stage}"
+            if reusable is None:
                 try:
-                    result = check_circuit_review(
-                        project_dir, stage, write=write_reports
+                    result = check_build_test(
+                        project_dir,
+                        tool_root=tool_root,
+                        runner=runner,
+                        write_report=write_reports,
+                        skip_build=build_available,
                     )
-                except (CircuitReviewInputError, CircuitReviewError) as exc:
+                except (BuildTestInputError, BuildTestError) as exc:
                     ok = False
                     summary = str(exc).splitlines()[0]
                     try:
-                        fingerprint = circuit_review_status_fingerprint(
-                            project_dir, stage
+                        fingerprint = _check_fingerprint(
+                            project_dir,
+                            name,
+                            _check_inputs(project_dir, spec, name),
                         )
-                    except CircuitReviewError:
+                    except (BuildTestError, OSError):
                         fingerprint = _fingerprint(
                             project_dir,
-                            tuple(
-                                path
-                                for path in (
-                                    project_dir / CIRCUIT_REVIEW_FILENAME,
-                                    project_dir / ".pcbforge",
-                                )
-                                if path.is_file()
-                            ),
+                            _check_inputs(project_dir, spec, name),
                         )
                 else:
                     ok = True
@@ -2713,60 +2703,193 @@ def run_status_checks(
                     summary,
                 )
 
+        build_test_ok, _ = _current_check(
+            project_dir,
+            spec,
+            replace(document, checks=checks),
+            "build-test",
+        )
+        should_run_brief = (
+            project_dir / PLACEMENT_FILENAME
+        ).is_file() and build_test_ok
+        if should_run_brief:
+            name = "layout-handoff"
+            reusable = _reusable_check_record(
+                project_dir,
+                spec,
+                document,
+                name,
+                tool_root=tool_root,
+                force_checks=force_checks,
+            )
+            if reusable is None:
+                try:
+                    result = check_brief(project_dir, tool_root=tool_root)
+                except (PlacementInputError, PlacementError) as exc:
+                    ok = False
+                    summary = str(exc).splitlines()[0]
+                    fingerprint = brief_status_fingerprint(
+                        project_dir,
+                        tool_root=tool_root,
+                    )
+                else:
+                    ok = True
+                    summary = result.summary
+                    fingerprint = result.fingerprint
+                checks[name] = CheckRecord(
+                    checked_at,
+                    fingerprint,
+                    "pass" if ok else "fail",
+                    summary,
+                )
+
+        name = "parts"
+        reusable = _reusable_check_record(
+            project_dir,
+            spec,
+            document,
+            name,
+            tool_root=tool_root,
+            force_checks=force_checks,
+        )
+        if reusable is None:
+            try:
+                result = check_parts(project_dir)
+            except PartsAuditError as exc:
+                ok = False
+                summary = str(exc).splitlines()[0]
+            else:
+                ok = result.ok
+                summary = result.summary
+            checks[name] = CheckRecord(
+                checked_at,
+                _fingerprint(project_dir, _check_inputs(project_dir, spec, name)),
+                "pass" if ok else "fail",
+                summary,
+            )
+
+        if (project_dir / CIRCUIT_REVIEW_FILENAME).is_file():
+            for stage in ("proposal", "final"):
+                if stage == "final" and not (
+                    project_dir / "docs" / "circuit-review.md"
+                ).is_file():
+                    continue
+                name = f"circuit-{stage}"
+                reusable = _reusable_check_record(
+                    project_dir,
+                    spec,
+                    document,
+                    name,
+                    tool_root=tool_root,
+                    force_checks=force_checks,
+                )
+                if reusable is None:
+                    try:
+                        result = check_circuit_review(
+                            project_dir, stage, write=write_reports
+                        )
+                    except (CircuitReviewInputError, CircuitReviewError) as exc:
+                        ok = False
+                        summary = str(exc).splitlines()[0]
+                        try:
+                            fingerprint = circuit_review_status_fingerprint(
+                                project_dir, stage
+                            )
+                        except CircuitReviewError:
+                            fingerprint = _fingerprint(
+                                project_dir,
+                                tuple(
+                                    path
+                                    for path in (
+                                        project_dir / CIRCUIT_REVIEW_FILENAME,
+                                        project_dir / ".pcbforge",
+                                    )
+                                    if path.is_file()
+                                ),
+                            )
+                    else:
+                        ok = True
+                        summary = result.summary
+                        fingerprint = result.fingerprint
+                    checks[name] = CheckRecord(
+                        checked_at,
+                        fingerprint,
+                        "pass" if ok else "fail",
+                        summary,
+                    )
+
     ioc_path = project_dir / "firmware" / f"{spec.name}.ioc"
     if ioc_path.is_file():
         name = "ioc"
-        try:
-            result = check_ioc(project_dir, tool_root=tool_root, runner=runner)
-        except (IocProjectError, IocValidationError, InitInputError) as exc:
-            ok = False
-            summary = str(exc).splitlines()[0]
-        else:
-            ok = True
-            summary = f"{result.part_number} CubeMX round-trip passed"
-        checks[name] = CheckRecord(
-            checked_at,
-            _check_fingerprint(
-                project_dir,
-                name,
-                _check_inputs(project_dir, spec, name),
-            ),
-            "pass" if ok else "fail",
-            summary,
+        reusable = _reusable_check_record(
+            project_dir,
+            spec,
+            document,
+            name,
+            tool_root=tool_root,
+            force_checks=force_checks,
         )
+        if reusable is None:
+            try:
+                result = check_ioc(project_dir, tool_root=tool_root, runner=runner)
+            except (IocProjectError, IocValidationError, InitInputError) as exc:
+                ok = False
+                summary = str(exc).splitlines()[0]
+            else:
+                ok = True
+                summary = f"{result.part_number} CubeMX round-trip passed"
+            checks[name] = CheckRecord(
+                checked_at,
+                _check_fingerprint(
+                    project_dir,
+                    name,
+                    _check_inputs(project_dir, spec, name),
+                ),
+                "pass" if ok else "fail",
+                summary,
+            )
 
     if _route_is_complete(document):
         name = "drc"
         board = project_dir / f"{spec.name}.kicad_pcb"
-        if board.is_file():
-            with tempfile.TemporaryDirectory(
-                prefix="pcbforge-status-drc-"
-            ) as temporary:
-                report = Path(temporary) / "drc.json"
-                ok, summary = _run_command(
-                    [
-                        str(tool_root / "scripts" / "kicad-cli"),
-                        "pcb",
-                        "drc",
-                        "--format",
-                        "json",
-                        "--output",
-                        str(report),
-                        "--severity-all",
-                        "--exit-code-violations",
-                        str(board),
-                    ],
-                    cwd=project_dir,
-                    runner=runner,
-                )
-        else:
-            ok, summary = False, f"missing {board.name}"
-        checks[name] = CheckRecord(
-            checked_at,
-            _fingerprint(project_dir, _check_inputs(project_dir, spec, name)),
-            "pass" if ok else "fail",
-            summary,
+        reusable = _reusable_check_record(
+            project_dir,
+            spec,
+            document,
+            name,
+            tool_root=tool_root,
+            force_checks=force_checks,
         )
+        if reusable is None:
+            if board.is_file():
+                with tempfile.TemporaryDirectory(
+                    prefix="pcbforge-status-drc-"
+                ) as temporary:
+                    report = Path(temporary) / "drc.json"
+                    ok, summary = _run_command(
+                        [
+                            str(tool_root / "scripts" / "kicad-cli"),
+                            "pcb",
+                            "drc",
+                            "--format",
+                            "json",
+                            "--output",
+                            str(report),
+                            "--severity-all",
+                            "--exit-code-violations",
+                            str(board),
+                        ],
+                        cwd=project_dir,
+                        runner=runner,
+                    )
+            else:
+                ok, summary = False, f"missing {board.name}"
+            checks[name] = CheckRecord(
+                checked_at,
+                _fingerprint(project_dir, _check_inputs(project_dir, spec, name)),
+                "pass" if ok else "fail",
+                summary,
+            )
 
     return replace(document, checks=checks)
 
@@ -4278,6 +4401,7 @@ def write_status(
     runner: CommandRunner = subprocess.run,
     now: str | None = None,
     document: StatusDocument | None = None,
+    force_checks: bool = False,
 ) -> StatusResult:
     """Create or refresh STATUS.md, avoiding timestamp-only rewrites."""
     project_dir = _project_dir(project_dir)
@@ -4290,6 +4414,7 @@ def write_status(
             runner=runner,
             checked_at=now,
             write_reports=True,
+            force_checks=force_checks,
         )
     document = _invalidate_stale_approvals(
         project_dir,

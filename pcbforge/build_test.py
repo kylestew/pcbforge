@@ -1027,8 +1027,9 @@ def check_build_test(
     tool_root: Path | None = None,
     runner: CommandRunner = subprocess.run,
     write_report: bool = False,
+    skip_build: bool = False,
 ) -> BuildTestResult:
-    """Run the complete deterministic CIRCUIT acceptance gate."""
+    """Run the deterministic CIRCUIT gate, optionally reusing build artifacts."""
     project_dir = project_dir.expanduser().resolve()
     if not project_dir.is_dir():
         raise BuildTestInputError(f"project directory does not exist: {project_dir}")
@@ -1039,6 +1040,18 @@ def check_build_test(
     contract = read_build_test_contract(project_dir)
     pins = _read_pin_metadata(project_dir)
     board_path = project_dir / f"{spec.name}.kicad_pcb"
+    artifacts = _artifact_paths(project_dir, contract.build, board_path)
+    if skip_build:
+        missing = [
+            f"{label} ({path.relative_to(project_dir).as_posix()})"
+            for label, path in artifacts.items()
+            if not path.is_file()
+        ]
+        if missing:
+            raise BuildTestError(
+                "cannot skip frozen build; missing build artifacts: "
+                + ", ".join(missing)
+            )
     before = read_board_evidence(board_path)
     assertions, assertion_source_errors = _find_assertions(project_dir)
     assertion_errors = assertion_source_errors + _validate_assertions(
@@ -1052,17 +1065,17 @@ def check_build_test(
         else Path(__file__).resolve().parent.parent
     )
     build_failure: BuildTestError | None = None
-    try:
-        _run_build(project_dir, tool_root, contract.build, runner)
-    except BuildTestError as exc:
-        build_failure = exc
+    if not skip_build:
+        try:
+            _run_build(project_dir, tool_root, contract.build, runner)
+        except BuildTestError as exc:
+            build_failure = exc
     after = read_board_evidence(board_path)
     errors = _spatial_errors(before, after)
     if build_failure is not None:
         errors.insert(0, str(build_failure))
     errors.extend(assertion_errors)
 
-    artifacts = _artifact_paths(project_dir, contract.build, board_path)
     components: tuple[BomComponent, ...] = ()
     try:
         manifest = _read_json(
