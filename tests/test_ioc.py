@@ -151,7 +151,7 @@ class IocCheckTests(unittest.TestCase):
     ) -> Path:
         project = root / "garden-logger"
         (project / "firmware").mkdir(parents=True)
-        (project / ".pcbforge").write_text("schema: 3\n", encoding="utf-8")
+        (project / ".pcbforge").write_text("schema: 1\n", encoding="utf-8")
         (project / "spec.md").write_text(
             spec_text(
                 family=family,
@@ -343,7 +343,7 @@ class RealCubeMxIntegrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             project = Path(temporary) / "roamer-check"
             (project / "firmware").mkdir(parents=True)
-            (project / ".pcbforge").write_text("schema: 3\n", encoding="utf-8")
+            (project / ".pcbforge").write_text("schema: 1\n", encoding="utf-8")
             (project / "spec.md").write_text(
                 spec_text(
                     name="roamer-check",

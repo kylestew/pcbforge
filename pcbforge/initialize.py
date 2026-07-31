@@ -29,29 +29,18 @@ from pcbforge.policy import (
 ATO_VERSION = "0.15.7"
 KICAD_VERSION = "9.0.9"
 SPEC_SCHEMA = 1
-PIN_SCHEMA = 15
-AGENTS_SCHEMA = 16
-ARCHITECT_GUIDE_SCHEMA = 5
+PIN_SCHEMA = 1
+AGENTS_SCHEMA = 1
+ARCHITECT_GUIDE_SCHEMA = 1
 ARCHITECTURE_DIAGRAM_SCHEMA = 1
-MCU_GUIDE_SCHEMA = 4
+MCU_GUIDE_SCHEMA = 1
 CIRCUIT_GUIDE_SCHEMA = 1
 BUILD_TEST_GUIDE_SCHEMA = 1
 LAYOUT_HANDOFF_GUIDE_SCHEMA = 1
-APPROVAL_GUIDE_SCHEMA = 6
-CIRCUIT_REVIEW_SCHEMA = 2
+APPROVAL_GUIDE_SCHEMA = 1
+CIRCUIT_REVIEW_SCHEMA = 1
 POLICY_GUIDE_SCHEMA = POLICY_SCHEMA
-STATUS_SCHEMA = 4
-
-# Schema-14 migration constants. Older migration entry points deliberately
-# produce the last schema-14 shape before `migrate-phase-transitions` performs
-# the final schema-15 boundary change.
-SCHEMA14_AGENTS_SCHEMA = 15
-SCHEMA14_ARCHITECT_GUIDE_SCHEMA = 4
-SCHEMA14_MCU_GUIDE_SCHEMA = 3
-SCHEMA14_BRIEF_GUIDE_SCHEMA = 5
-SCHEMA14_APPROVAL_GUIDE_SCHEMA = 5
-SCHEMA14_STATUS_SCHEMA = 3
-BRIEF_GUIDE_SCHEMA = SCHEMA14_BRIEF_GUIDE_SCHEMA
+STATUS_SCHEMA = 1
 BOARD_ORIGIN_MM = 100.0
 
 REQUIRED_KEYS = {
@@ -246,7 +235,7 @@ def validate_spec(data: Mapping[str, Any]) -> ProjectSpec:
 
     schema = data.get("spec_schema")
     if type(schema) is not int or schema != SPEC_SCHEMA:
-        errors.append(f"spec_schema: expected integer {SPEC_SCHEMA}")
+        errors.append("spec_schema: unsupported version — restart the project")
 
     name = data.get("name")
     if not isinstance(name, str) or NAME_RE.fullmatch(name) is None:
@@ -765,9 +754,11 @@ saved workflow gates, compiler output, and the KiCad board.
 
 1. Read this file, `spec.md`, `policy.yaml`, and `STATUS.md`.
 2. Run `{tool_root}/scripts/pcbforge status --check --write` from this directory.
-3. Inspect any dashboard blocker and the evidence for the reported current phase.
-4. Report the current focus and next actions. If the phase is technically
-   ready, present `status review <phase>` and stop for explicit user approval.
+3. Use `{tool_root}/scripts/pcbforge status --next` for the compact handoff view.
+4. Report the latest valid milestone, any previously performed transition that
+   is now inactive, the current state, next owner, one primary action, and its
+   command. If the phase is technically ready, present
+   `status review <phase>` and stop for explicit user approval.
 
 ## Status dashboard
 
@@ -777,6 +768,11 @@ saved workflow gates, compiler output, and the KiCad board.
 - Use `{tool_root}/scripts/pcbforge status --write` after meaningful project
   changes. Use `--check` when compiler, build-test, parts-policy,
   layout-handoff, IOC, or DRC evidence must be refreshed.
+- `Complete` means a transition currently authorizes forward progress.
+  `Performed, inactive` preserves a transition that ran before its upstream
+  phase reopened; return to that phase instead of treating the transition as
+  current completion. `Stale` means its upstream phase is current but its
+  evidence must be refreshed.
 - Never use `status mark <phase> complete`. After checks pass, run
   `{tool_root}/scripts/pcbforge status review <phase>`, present the packet, and
   stop. Only after explicit user approval, run
@@ -785,10 +781,9 @@ saved workflow gates, compiler output, and the KiCad board.
 - Use `blocked` with a concrete reason, `reopened` when an approved phase
   changes, and `skipped` only for optional publish. Never infer user approval,
   layout completion, routing completion, or ordering.
-- Record a migrated baseline with `pcbforge policy approve-baseline`, a
-  declared exception with `pcbforge policy approve-exception <id>`, and the
-  final post-FAB review with `pcbforge policy confirm-sourcing`, always after
-  the user explicitly approves or confirms it.
+- Record a declared exception with `pcbforge policy approve-exception <id>` and
+  the final post-FAB review with `pcbforge policy confirm-sourcing`, always
+  after the user explicitly approves or confirms it.
 
 ## ARCHITECT gate
 
@@ -851,24 +846,29 @@ Before adding physical parts, follow `{tool_root}/agent/circuit.md`:
 4. Generate project-local KiCad assets only when the exact required package or
    pin mapping is absent from the official libraries, then verify the generated
    geometry against the datasheet.
-5. Run `{tool_root}/scripts/pcbforge check-parts` during part selection and
+5. Give every resolved PCB net a concise human-readable name owned by Atopile
+   source, and record the same exact `compiler_name` in the approved proposal
+   model. Reject generic `hv`, `lv`, `line`, numeric-only, and
+   hierarchy-generated routing labels; name intentional single-pad unused
+   nets `NC_<REF>_<PIN>`. Never rename nets only in the KiCad PCB.
+6. Run `{tool_root}/scripts/pcbforge check-parts` during part selection and
    before presenting CIRCUIT for completion.
-6. Complete protection/testability evidence and sourcing entries in
+7. Complete protection/testability evidence and sourcing entries in
    `policy.yaml`; run `{tool_root}/scripts/pcbforge check-policy` and stop for
    explicit user approval of every required exception.
-7. Write `docs/circuit-review.md`, then run
+8. Write `docs/circuit-review.md`, then run
    `pcbforge check-circuit-review --stage final --write`. Exact part identity,
    physical pins, and endpoint topology must match both the approved model and
    compiled Atopile design. Electrical differences return to proposal approval.
-8. Create the exact, tracked `build-test.yaml` acceptance contract.
-9. Give every required atopile assertion a unique `pcbforge-test` marker and
+9. Create the exact, tracked `build-test.yaml` acceptance contract.
+10. Give every required atopile assertion a unique `pcbforge-test` marker and
    list the same IDs in the contract.
-10. Run
+11. Run
    `{tool_root}/scripts/pcbforge status --check --write`.
-11. Inspect the generated `docs/build-test.md` evidence report. CIRCUIT cannot
+12. Inspect the generated `docs/build-test.md` evidence report. CIRCUIT cannot
     become ready while build, IOC, parts, policy, circuit parity, assertions,
     exact BOM/PCB, or spatial-preservation evidence is failed or stale.
-12. Present one final `pcbforge status review circuit` packet and stop. Record
+13. Present one final `pcbforge status review circuit` packet and stop. Record
     `status approve circuit` only after the user explicitly accepts that exact
     implementation-and-test fingerprint.
 
@@ -915,92 +915,6 @@ bom/*
 *-backups/
 _autosave-*
 *.kicad_prl
-"""
-
-
-def _render_schema14_agents(spec: ProjectSpec, tool_root: Path) -> str:
-    """Render honest legacy guidance until the explicit schema-15 migration."""
-    return f"""<!-- pcbforge-agents-schema: {SCHEMA14_AGENTS_SCHEMA} -->
-# pcbforge project: {spec.name}
-
-This project is pinned to the schema-14 workflow. Do not use the streamlined
-phase model until the user explicitly runs `pcbforge migrate-phase-transitions`.
-Read `spec.md`, `policy.yaml`, and `STATUS.md` first on every cold start.
-
-## Authority and ownership
-
-- Every phase requires explicit, artifact-bound user approval. Never infer,
-  originate, self-approve, or reuse approval.
-- Present materially different reasonable designs, recommendation, tradeoffs,
-  and consequences, then wait before changing the affected artifact.
-- The user owns intent, optional CubeMX review, placement, routing, ordering,
-  and all approval decisions.
-- The agent owns capture code, exact MCU/pins, parts, checks, review packets,
-  and layout audits. Never place, route, move, or fix copper.
-- `{spec.name}.kicad_pcb` owns all spatial work. Circuit source owns identity,
-  fields, footprints, and connectivity.
-
-## Pinned workflow
-
-1. SPEC — approved requirements and policy.
-2. init — generated scaffold, build evidence, and explicit approval.
-3. ARCHITECT — proposal approval before skeleton code, then build/audit and
-   final approval.
-4. MCU — exact STM32/package/pins, checked IOC, matching `src/mcu.ato`,
-   one-to-one audit, and final approval.
-5. CIRCUIT — authored proposal approval before physical source; exact parts,
-   compiled parity, acceptance evidence, and final approval.
-6. brief — exact placement contract, generated brief, and explicit approval.
-7. LAYOUT.
-8. ROUTE.
-9. verify.
-10. fab-out.
-11. order.
-12. publish, optional.
-
-Resume with `{tool_root}/scripts/pcbforge status --check --write`, report the
-current phase and blockers, and follow only the matching gate below.
-
-## ARCHITECT
-
-Before skeleton source, draft `docs/architecture.md`, run
-`pcbforge status review architect --stage proposal`, present it, and wait.
-After proposal approval, write and build the typed functional skeleton without
-choosing parts or exact MCU pins. Audit diagram/source coverage, present
-`pcbforge status review architect`, and record final approval only after the
-user accepts that fingerprint.
-
-## MCU
-
-Follow `{tool_root}/agent/mcu.md` for device selection, `firmware/{spec.name}.ioc`,
-`pcbforge check-ioc`, optional CubeMX review, `src/mcu.ato`, and the one-to-one
-audit. In schema 14 this remains a separately approved phase:
-`pcbforge status review mcu`, then `status approve mcu` only after explicit
-user approval. Final MCU approval captures the pre-CIRCUIT source baseline.
-
-## CIRCUIT
-
-Follow `{tool_root}/agent/circuit.md`. Obtain proposal approval before physical
-source edits. Use official KiCad assets for commodity parts, run
-`pcbforge check-parts`, policy, IOC, compiled-parity, and build-test checks,
-then present one final CIRCUIT packet for explicit approval.
-
-## Placement brief
-
-Follow `{tool_root}/agent/brief.md`. Author `placement.yaml`, run
-`pcbforge brief` and `pcbforge check-brief`, and present
-`pcbforge status review brief`. Record `status approve brief` only after the
-user approves `docs/placement-brief.md` beside the current CIRCUIT overview.
-The tool must not change `{spec.name}.kicad_pcb`.
-
-## Policy and release
-
-JLCPCB, STM32, 2/4 layers, SWD, pinned tools, exact identity, canonical
-commodity libraries, spatial ownership, and human ordering authority are hard
-constraints. Use `{tool_root}/scripts/pcbforge check-policy`; project policy
-may request but never grant exceptions. VERIFY, FAB-OUT, and ORDER retain
-separate review and approval gates, and ORDER requires current post-FAB
-sourcing confirmation.
 """
 
 

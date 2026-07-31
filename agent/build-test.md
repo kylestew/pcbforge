@@ -1,9 +1,8 @@
 <!-- pcbforge-build-test-schema: 1 -->
-<!-- Legacy standalone phase: build + test is now CIRCUIT's final gate. -->
 # Build + test playbook
 
-For schema-14-or-newer projects, follow `agent/circuit.md`; this file remains for older
-generated guidance. The deterministic gate proves that the pinned
+Use this playbook as the deterministic acceptance gate inside CIRCUIT. It
+proves that the pinned
 compiler resolves the intended exact BOM and PCB connectivity, executes the
 declared electrical assertions, emits the required artifacts, and preserves
 all user-owned spatial board data.
@@ -116,6 +115,6 @@ Review `docs/build-test.md` and present:
 - spatial-preservation result;
 - any limitation that remains for visual review, DRC, stock, or fabrication.
 
-For schema-14 projects, current saved evidence is part of the final CIRCUIT
-packet. Run `pcbforge status review circuit`, present its fingerprint, and stop.
+Current saved evidence is part of the final CIRCUIT packet. Run
+`pcbforge status review circuit`, present its fingerprint, and stop.
 Only after explicit approval record `pcbforge status approve circuit ...`.

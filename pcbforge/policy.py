@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
-import tempfile
 from dataclasses import asdict, dataclass
 from datetime import date
 from pathlib import Path
@@ -19,7 +17,7 @@ POLICY_PROFILE_SCHEMA = 1
 POLICY_PROFILE_ID = "pcbforge-standard-v1"
 POLICY_FILENAME = "policy.yaml"
 POLICY_PROFILE_PATH = Path("policies") / f"{POLICY_PROFILE_ID}.yaml"
-PROJECT_PIN_SCHEMA = 15
+PROJECT_PIN_SCHEMA = 1
 
 ASSURANCE_RULES = (
     "reverse-polarity",
@@ -35,19 +33,14 @@ ASSEMBLY_STATUSES = {"available", "unavailable", "unknown"}
 LIFECYCLE_STATUSES = {"active", "nrnd", "obsolete", "unknown"}
 PHASE_ORDER = {
     "spec": 1,
-    "init": 2,
-    "architect": 3,
-    "mcu": 4,
-    "circuit": 5,
-    "implement": 5,
-    "build": 5,
-    "brief": 6,
-    "layout": 7,
-    "route": 8,
-    "verify": 9,
-    "fab-out": 10,
-    "order": 11,
-    "publish": 12,
+    "architect": 2,
+    "circuit": 3,
+    "layout": 4,
+    "route": 5,
+    "verify": 6,
+    "fab-out": 7,
+    "order": 8,
+    "publish": 9,
 }
 ID_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 LCSC_RE = re.compile(r"^C[1-9][0-9]*$")
@@ -115,7 +108,7 @@ class PolicyError(RuntimeError):
 
 
 class PolicyInputError(PolicyError):
-    """A malformed or unmigrated policy input."""
+    """A malformed policy input."""
 
 
 @dataclass(frozen=True)
@@ -194,13 +187,6 @@ class PolicyResult:
             else f"policy passed with {warning_count} warning"
             f"{'s' if warning_count != 1 else ''}"
         )
-
-
-@dataclass(frozen=True)
-class PolicyMigrationResult:
-    project_dir: Path
-    wrote: bool
-    review_items: tuple[str, ...]
 
 
 class _UniqueLoader(yaml.SafeLoader):
@@ -323,10 +309,10 @@ def load_policy_profile(
         "policy profile",
         errors,
     )
-    if data.get("policy_profile_schema") != POLICY_PROFILE_SCHEMA:
-        errors.append(
-            f"policy_profile_schema: expected integer {POLICY_PROFILE_SCHEMA}"
-        )
+    if type(data.get("policy_profile_schema")) is not int or data.get(
+        "policy_profile_schema"
+    ) != POLICY_PROFILE_SCHEMA:
+        errors.append("policy_profile_schema: unsupported version — restart the project")
     if data.get("id") != POLICY_PROFILE_ID:
         errors.append(f"id: expected {POLICY_PROFILE_ID!r}")
     hard = data.get("hard")
@@ -418,8 +404,10 @@ def read_policy_contract(project_dir: Path) -> PolicyContract:
         POLICY_FILENAME,
         errors,
     )
-    if data.get("policy_schema") != POLICY_SCHEMA:
-        errors.append(f"policy_schema: expected integer {POLICY_SCHEMA}")
+    if type(data.get("policy_schema")) is not int or data.get(
+        "policy_schema"
+    ) != POLICY_SCHEMA:
+        errors.append("policy_schema: unsupported version — restart the project")
     profile = _text(data, "profile", POLICY_FILENAME, errors)
 
     manufacturing_raw = data.get("manufacturing")
@@ -861,10 +849,8 @@ def _pinned_policy(
         return "spec", []
     data = _load_yaml(path, ".pcbforge")
     schema = data.get("schema")
-    if schema not in {10, 11, 12, 13, 14, PROJECT_PIN_SCHEMA}:
-        raise PolicyInputError(
-            "project policy is not migrated: run `pcbforge migrate-policy`"
-        )
+    if type(schema) is not int or schema != PROJECT_PIN_SCHEMA:
+        raise PolicyInputError("unsupported version — restart the project")
     policy = data.get("policy")
     violations: list[PolicyViolation] = []
     if not isinstance(policy, dict):
@@ -889,7 +875,7 @@ def _pinned_policy(
             )
         )
     baseline = policy.get("baseline_approval")
-    if baseline not in {"spec", "policy-event"}:
+    if baseline != "spec":
         violations.append(
             PolicyViolation(
                 "hard.policy-pin",
@@ -1013,7 +999,7 @@ def _board_violations(
                     PolicyViolation(
                         "components.commodity-package",
                         reference,
-                        "implement",
+                        "circuit",
                         f"{reference} uses {package}, below the {minimum_package} default",
                     )
                 )
@@ -1033,7 +1019,7 @@ def _board_violations(
                 PolicyViolation(
                     "components.advanced-package",
                     reference,
-                    "implement",
+                    "circuit",
                     f"{reference} uses undeclared advanced package {reason}",
                 )
             )
@@ -1085,7 +1071,7 @@ def check_policy(
                 f"exceptions.{exception.identifier}: unknown rule {exception.rule!r}"
             )
 
-    baseline_mode, violations = _pinned_policy(
+    _, violations = _pinned_policy(
         project_dir,
         str(profile["id"]),
         profile_hash,
@@ -1109,7 +1095,7 @@ def check_policy(
                 PolicyViolation(
                     "hard.toolchain",
                     ".pcbforge",
-                    "init",
+                    "architect",
                     ".pcbforge toolchain pin is missing",
                     True,
                 )
@@ -1126,7 +1112,7 @@ def check_policy(
                         PolicyViolation(
                             "hard.toolchain",
                             key,
-                            "init",
+                            "architect",
                             f"{key} must be pinned to {expected}",
                             True,
                         )
@@ -1143,7 +1129,7 @@ def check_policy(
                 PolicyViolation(
                     "hard.fabricator-rules",
                     ".pcbforge",
-                    "init",
+                    "architect",
                     f"missing pinned JLC {spec.layers}-layer rules profile",
                     True,
                 )
@@ -1152,20 +1138,6 @@ def check_policy(
         project_dir,
         tool_root=tool_root,
     )
-    if (
-        baseline_mode == "policy-event"
-        and baseline_approval != baseline_fingerprint
-    ):
-        violations.append(
-            PolicyViolation(
-                "policy.baseline-approval",
-                "project",
-                "spec",
-                "migrated policy baseline lacks current explicit user approval",
-                True,
-            )
-        )
-
     manufacturing = contract.manufacturing
     components = contract.components
     hard_expectations = (
@@ -1252,7 +1224,7 @@ def check_policy(
             PolicyViolation(
                 "components.commodity-package",
                 "project",
-                "implement",
+                "circuit",
                 "project commodity-package default differs from 0603",
             )
         )
@@ -1262,7 +1234,7 @@ def check_policy(
             PolicyViolation(
                 "components.advanced-package",
                 declaration,
-                "implement",
+                "circuit",
                 f"advanced package {declaration!r} is declared",
             )
         )
@@ -1315,7 +1287,7 @@ def check_policy(
                 PolicyViolation(
                     "hard.exact-parts",
                     "build-test.yaml",
-                    "build",
+                    "circuit",
                     f"cannot validate exact BOM sourcing: {exc}",
                     True,
                 )
@@ -1325,7 +1297,7 @@ def check_policy(
             PolicyViolation(
                 "sourcing.unknown",
                 lcsc,
-                "implement",
+                "circuit",
                 f"{lcsc} has no recorded sourcing evidence",
             )
         )
@@ -1343,7 +1315,7 @@ def check_policy(
                 PolicyViolation(
                     "sourcing.unknown",
                     lcsc,
-                    "implement",
+                    "circuit",
                     f"{lcsc} has unknown JLC class",
                 )
             )
@@ -1352,7 +1324,7 @@ def check_policy(
                 PolicyViolation(
                     "sourcing.unavailable",
                     lcsc,
-                    "implement",
+                    "circuit",
                     f"{lcsc} was unavailable for JLC assembly when checked",
                 )
             )
@@ -1361,7 +1333,7 @@ def check_policy(
                 PolicyViolation(
                     "sourcing.unknown",
                     lcsc,
-                    "implement",
+                    "circuit",
                     f"{lcsc} assembly availability is unknown",
                 )
             )
@@ -1370,7 +1342,7 @@ def check_policy(
                 PolicyViolation(
                     "sourcing.lifecycle",
                     lcsc,
-                    "implement",
+                    "circuit",
                     f"{lcsc} lifecycle is {part.lifecycle}",
                 )
             )
@@ -1379,7 +1351,7 @@ def check_policy(
                 PolicyViolation(
                     "sourcing.unknown",
                     lcsc,
-                    "implement",
+                    "circuit",
                     f"{lcsc} lifecycle is unknown",
                 )
             )
@@ -1456,233 +1428,3 @@ def render_policy_result(result: PolicyResult) -> str:
             f"WARN [{warning.rule}] ({warning.scope}): {warning.message}"
         )
     return "\n".join(lines)
-
-
-def _migration_discovery(
-    project_dir: Path,
-) -> tuple[tuple[str, ...], tuple[str, ...], bool]:
-    sourcing_ids: tuple[str, ...] = ()
-    build_test = project_dir / "build-test.yaml"
-    if build_test.is_file():
-        try:
-            from pcbforge.build_test import read_build_test_contract
-
-            sourcing_ids = tuple(
-                sorted(
-                    component.lcsc
-                    for component in read_build_test_contract(project_dir).bom
-                )
-            )
-        except Exception:
-            sourcing_ids = ()
-
-    advanced_packages: list[str] = []
-    advanced_vias = False
-    board_paths = sorted(project_dir.glob("*.kicad_pcb"))
-    if board_paths:
-        try:
-            text = board_paths[0].read_text(encoding="utf-8")
-        except (OSError, UnicodeError):
-            text = ""
-        advanced_vias = bool(
-            re.search(r"\(via\b[^)]*\(type\s+(?:blind|micro)\)", text, re.DOTALL)
-        )
-        try:
-            from pcbforge.build_test import read_board_evidence
-
-            board = read_board_evidence(board_paths[0])
-        except Exception:
-            board = None
-        if board is not None:
-            for reference, footprint in board.footprints:
-                upper = footprint.upper()
-                advanced = "WLCSP" in upper or bool(
-                    re.search(r"(?:^|[:_-])BGA", upper)
-                )
-                if "QFN" in upper:
-                    pitch = QFN_PITCH_RE.search(footprint)
-                    advanced = advanced or bool(
-                        pitch and float(pitch.group(1)) < 0.5
-                    )
-                if advanced:
-                    advanced_packages.append(f"{reference}:{footprint}")
-    return sourcing_ids, tuple(sorted(advanced_packages)), advanced_vias
-
-
-def migrate_policy(
-    project_dir: Path,
-    *,
-    tool_root: Path | None = None,
-) -> PolicyMigrationResult:
-    """Explicitly migrate a generated schema-7-through-9 project to schema 14."""
-    project_dir = project_dir.expanduser().resolve()
-    tool_root = (
-        tool_root.resolve()
-        if tool_root is not None
-        else Path(__file__).resolve().parent.parent
-    )
-    from pcbforge.initialize import (
-        SCHEMA14_AGENTS_SCHEMA as AGENTS_SCHEMA,
-        SCHEMA14_APPROVAL_GUIDE_SCHEMA as APPROVAL_GUIDE_SCHEMA,
-        SCHEMA14_ARCHITECT_GUIDE_SCHEMA as ARCHITECT_GUIDE_SCHEMA,
-        ARCHITECTURE_DIAGRAM_SCHEMA,
-        BRIEF_GUIDE_SCHEMA,
-        BUILD_TEST_GUIDE_SCHEMA,
-        CIRCUIT_GUIDE_SCHEMA,
-        SCHEMA14_MCU_GUIDE_SCHEMA as MCU_GUIDE_SCHEMA,
-        POLICY_GUIDE_SCHEMA,
-        SCHEMA14_STATUS_SCHEMA as STATUS_SCHEMA,
-        CIRCUIT_REVIEW_SCHEMA,
-        _render_schema14_agents as _render_agents,
-        read_spec,
-    )
-
-    try:
-        spec = read_spec(project_dir / "spec.md")
-    except Exception as exc:
-        raise PolicyInputError(str(exc)) from exc
-    pins_path = project_dir / ".pcbforge"
-    pins = dict(_load_yaml(pins_path, ".pcbforge"))
-    schema = pins.get("schema")
-    if schema in {14, PROJECT_PIN_SCHEMA}:
-        check_policy(
-            project_dir,
-            tool_root=tool_root,
-            through_phase="spec",
-        )
-        return PolicyMigrationResult(project_dir, False, ())
-    if schema == 10:
-        raise PolicyInputError(
-            "policy is already migrated; run `pcbforge migrate-approvals` "
-            "to upgrade schema 10 to current approvals"
-        )
-    if schema not in {7, 8, 9}:
-        raise PolicyInputError(
-            "migrate-policy requires generated .pcbforge schema 7, 8, or 9; "
-            f"got {schema!r}"
-        )
-    policy_path = project_dir / POLICY_FILENAME
-    if policy_path.exists():
-        raise PolicyInputError(
-            f"refusing to overwrite existing {POLICY_FILENAME}"
-        )
-    agents_path = project_dir / "AGENTS.md"
-    try:
-        agents = agents_path.read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as exc:
-        raise PolicyInputError(f"cannot read {agents_path}: {exc}") from exc
-    if not agents.startswith(
-        f"<!-- pcbforge-agents-schema: {schema} -->"
-    ):
-        raise PolicyInputError(
-            f"AGENTS.md is not the expected generated schema-{schema} guidance"
-        )
-
-    _, _, profile_hash = load_policy_profile(tool_root)
-    sourcing_ids, advanced_packages, advanced_vias = _migration_discovery(
-        project_dir
-    )
-    policy_contents = render_default_policy(
-        sourcing_ids=sourcing_ids,
-        advanced_packages=advanced_packages,
-        advanced_vias=advanced_vias,
-    )
-    pins["schema"] = 14
-    pins["policy"] = {
-        "profile": POLICY_PROFILE_ID,
-        "profile_sha256": profile_hash,
-        "baseline_approval": "policy-event",
-    }
-    guidance = pins.get("guidance")
-    if not isinstance(guidance, dict):
-        raise PolicyInputError(".pcbforge guidance: expected a mapping")
-    guidance = dict(guidance)
-    guidance["agents_schema"] = AGENTS_SCHEMA
-    guidance["architect_schema"] = ARCHITECT_GUIDE_SCHEMA
-    guidance["architecture_diagram_schema"] = ARCHITECTURE_DIAGRAM_SCHEMA
-    guidance["mcu_schema"] = MCU_GUIDE_SCHEMA
-    guidance.pop("implement_schema", None)
-    guidance["circuit_schema"] = CIRCUIT_GUIDE_SCHEMA
-    guidance["build_test_schema"] = BUILD_TEST_GUIDE_SCHEMA
-    guidance["brief_schema"] = BRIEF_GUIDE_SCHEMA
-    guidance["approval_schema"] = APPROVAL_GUIDE_SCHEMA
-    guidance["policy_schema"] = POLICY_GUIDE_SCHEMA
-    guidance["status_schema"] = STATUS_SCHEMA
-    guidance["circuit_review_schema"] = CIRCUIT_REVIEW_SCHEMA
-    pins["guidance"] = guidance
-    outputs = {
-        policy_path: policy_contents,
-        agents_path: _render_agents(spec, tool_root),
-        pins_path: yaml.safe_dump(pins, sort_keys=False),
-    }
-    legacy_brief = project_dir / "brief.md"
-    placement_brief = project_dir / "docs" / "placement-brief.md"
-    if legacy_brief.exists() and placement_brief.exists():
-        raise PolicyInputError(
-            "refusing to overwrite docs/placement-brief.md during migration"
-        )
-    brief_move = (
-        (legacy_brief, placement_brief)
-        if legacy_brief.exists()
-        else None
-    )
-    originals = {
-        path: path.read_bytes() if path.exists() else None
-        for path in outputs
-    }
-    installed: list[Path] = []
-    moved = False
-    try:
-        if brief_move is not None:
-            source, target = brief_move
-            target.parent.mkdir(parents=True, exist_ok=True)
-            os.replace(source, target)
-            moved = True
-        for path, contents in outputs.items():
-            _atomic_write(path, contents)
-            installed.append(path)
-    except OSError as exc:
-        for path in reversed(installed):
-            original = originals[path]
-            try:
-                if original is None:
-                    path.unlink(missing_ok=True)
-                else:
-                    _atomic_write(path, original.decode("utf-8"))
-            except OSError:
-                pass
-        if moved and brief_move is not None:
-            source, target = brief_move
-            try:
-                if target.exists():
-                    os.replace(target, source)
-            except OSError:
-                pass
-        raise PolicyError(f"could not migrate policy atomically: {exc}") from exc
-
-    review_items = list(ASSURANCE_RULES)
-    review_items.extend(sourcing_ids)
-    review_items.extend(advanced_packages)
-    if advanced_vias:
-        review_items.append("advanced-vias")
-    return PolicyMigrationResult(
-        project_dir,
-        True,
-        tuple(review_items),
-    )
-
-
-def _atomic_write(path: Path, contents: str) -> None:
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{path.name}.",
-        suffix=".tmp",
-        dir=path.parent,
-        text=True,
-    )
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
-            output.write(contents)
-        os.replace(temporary_name, path)
-    except OSError:
-        Path(temporary_name).unlink(missing_ok=True)
-        raise

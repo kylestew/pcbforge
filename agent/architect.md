@@ -1,4 +1,4 @@
-<!-- pcbforge-architect-schema: 5 -->
+<!-- pcbforge-architect-schema: 1 -->
 # pcbforge — ARCHITECT playbook
 
 This playbook operationalizes the ARCHITECT phase in
@@ -73,9 +73,12 @@ This approval is bound to the current `spec.md`, `docs/architecture.md`, and
 `docs/mcu.md` fingerprints. Any change to one of those artifacts invalidates
 it and requires another presentation and approval before coding continues.
 
-On schema-9-or-newer projects, creating architecture source before this event makes the
-dashboard report ARCHITECT blocked. Stop source changes and present the current
-diagram rather than attempting to work through that blocker.
+Creating architecture source before the first proposal approval makes the
+dashboard report ARCHITECT blocked. If source was legitimately created under an
+earlier proposal approval and that proposal later becomes stale, the changed
+proposal may be presented for renewed approval with the existing source still
+present. Stop source changes while renewal is pending; only resume
+implementation after the renewed proposal fingerprint is explicitly approved.
 
 ## Write the code skeleton
 

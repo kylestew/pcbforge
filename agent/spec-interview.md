@@ -82,7 +82,7 @@ Vendor-neutral: any agent with file read/write follows this document.
 | C0 | cheapest, small flash | trivial logic, cost floor |
 | G0 | modern budget workhorse, USB FS on some | default hobby choice |
 | G4 | analog-rich (fast ADC, comparators, timers) | motor, power, precision analog |
-| F4 | classic performance, big community | heavier compute, legacy examples |
+| F4 | classic performance, big community | heavier compute, older examples |
 | L4 / U5 | low power | battery life matters |
 | H7 | heavy compute | rarely justified in this flow |
 

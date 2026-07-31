@@ -34,7 +34,7 @@ Non-negotiable rules:
 4. **Ordering/money is human.** Generate `fab/` outputs; stop there.
 5. The user reviews capture at their chosen depth — surface meaningful
    diffs; don't bury decisions in bulk edits.
-6. **The schema-14 workflow and its policy are binding.** Read `policy.yaml`; run
+6. **The current workflow and its policy are binding.** Read `policy.yaml`; run
    `pcbforge check-policy`; never invent or self-approve an exception.
 
 ## Decision authority (global constraint)
@@ -98,8 +98,16 @@ may be selected autonomously, and those assumptions must be stated.
    evidence, compiler, build-test, parts-policy, technology-policy,
    layout-handoff, IOC, and DRC check fingerprints, and explicit human gates;
    a note never overrides missing evidence.
-3. Report the current focus, blockers, and next actions, then wait for the
-   user where the workflow requires a gate.
+3. Run `pcbforge status --next` when you need the concise handoff view. Report
+   the latest valid milestone, any previously performed transition that is now
+   inactive, the current state, next owner, one primary action, and its command.
+   Then wait for the user where the workflow requires a gate.
+
+`Complete` means a gate currently authorizes forward progress. `Performed,
+inactive` means a transition ran previously but its upstream phase was
+reopened; preserve that history, return to the upstream phase, and do not
+present the transition as current completion. `Stale` means the upstream phase
+is current but the transition evidence or fingerprint must be refreshed.
 
 Refresh `STATUS.md` after meaningful transitions. When a phase's evidence is
 ready, run `pcbforge status review <phase>` and present its exact artifacts,
@@ -117,9 +125,7 @@ source coding begins.
 `policy.yaml` requests exceptions but never approves them. After the user
 explicitly accepts one, record it with
 `pcbforge policy approve-exception <id> --note "<decision>"`. A changed
-exception fingerprint becomes stale and reopens its profile-mapped phase. A
-schema-7-through-9 migration separately requires
-`pcbforge policy approve-baseline`.
+exception fingerprint becomes stale and reopens its profile-mapped phase.
 After FAB-OUT, refresh live sourcing evidence and record the user's final
 review with `pcbforge policy confirm-sourcing`; ORDER remains blocked without
 it.
@@ -132,12 +138,9 @@ playbooks, `pcbforge check-ioc`, `pcbforge check-parts`,
 `pcbforge check-build-test`, the tracked CIRCUIT acceptance report, an explicit
 empty module catalog, `pcbforge prepare-layout` /
 `pcbforge check-layout-handoff`, the placement schema and handoff gate,
-schema-15 authored circuit SVG/model,
+authored circuit SVG/model,
 compiled-parity, deterministic acceptance, and universal phase approvals,
-`policy.yaml`,
-`pcbforge check-policy`, explicit policy approval commands, and
-`pcbforge migrate-policy` / `pcbforge migrate-approvals` /
-`pcbforge migrate-phase-transitions`.
+`policy.yaml`, `pcbforge check-policy`, and explicit policy approval commands.
 
 Not built yet (do manually, per DESIGN.md, and say you're doing it manually):
 `ioc2code` (derive `src/mcu.ato` from the checked `.ioc` yourself and perform

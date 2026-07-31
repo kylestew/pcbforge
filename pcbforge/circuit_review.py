@@ -1,4 +1,4 @@
-"""Human-readable circuit review and compiled parity for schema-14 projects."""
+"""Human-readable circuit review and compiled parity."""
 
 from __future__ import annotations
 
@@ -22,12 +22,12 @@ from pcbforge.build_test import (
     read_board_evidence,
 )
 from pcbforge.initialize import InitInputError, read_spec
-from pcbforge.schematic import BASELINE_PATH, baseline_is_current
 
-CIRCUIT_REVIEW_SCHEMA = 2
+CIRCUIT_REVIEW_SCHEMA = 1
 CIRCUIT_MODEL_SCHEMA = 1
-PROJECT_PIN_SCHEMA = 15
+PROJECT_PIN_SCHEMA = 1
 CONTRACT_FILENAME = "circuit-review.yaml"
+BASELINE_PATH = Path("review/circuit/source-baseline.json")
 STAGES = {"proposal", "final"}
 
 _COMPONENT_KINDS = {
@@ -232,14 +232,12 @@ def _safe_path(value: Any, field: str, *, suffix: str, prefix: Path) -> Path:
 
 def _read_pins(project_dir: Path) -> None:
     pins = _load_yaml(project_dir / ".pcbforge")
-    if pins.get("schema") not in {14, PROJECT_PIN_SCHEMA}:
-        raise CircuitReviewInputError(
-            "project is not migrated for circuit review; run "
-            "`pcbforge migrate-circuit-review`"
-        )
+    if type(pins.get("schema")) is not int or pins.get("schema") != PROJECT_PIN_SCHEMA:
+        raise CircuitReviewInputError("unsupported version — restart the project")
     guidance = pins.get("guidance")
     if (
         not isinstance(guidance, dict)
+        or type(guidance.get("circuit_review_schema")) is not int
         or guidance.get("circuit_review_schema") != CIRCUIT_REVIEW_SCHEMA
     ):
         raise CircuitReviewInputError(
@@ -248,8 +246,70 @@ def _read_pins(project_dir: Path) -> None:
         )
 
 
+def _source_baseline_payload(project_dir: Path) -> dict[str, Any]:
+    try:
+        spec = read_spec(project_dir / "spec.md")
+    except InitInputError as exc:
+        raise CircuitReviewInputError(str(exc)) from exc
+    sources = [
+        {
+            "path": path.relative_to(project_dir).as_posix(),
+            "sha256": hashlib.sha256(ato_source_semantic_bytes(path)).hexdigest(),
+        }
+        for path in sorted(project_dir.glob("src/**/*.ato"))
+    ]
+    board = project_dir / f"{spec.name}.kicad_pcb"
+    try:
+        board_hash = hashlib.sha256(
+            board_topology_bytes(read_board_evidence(board))
+        ).hexdigest()
+    except BuildTestError as exc:
+        raise CircuitReviewInputError(str(exc)) from exc
+    payload: dict[str, Any] = {
+        "source_baseline_schema": 1,
+        "sources": sources,
+        "board_topology_sha256": board_hash,
+    }
+    payload["fingerprint"] = hashlib.sha256(
+        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+    ).hexdigest()
+    return payload
+
+
+def capture_implementation_baseline(project_dir: Path) -> Path:
+    """Capture the source/board handoff after combined ARCHITECT approval."""
+    project_dir = project_dir.expanduser().resolve()
+    _read_pins(project_dir)
+    path = project_dir / BASELINE_PATH
+    _atomic_write(
+        path,
+        json.dumps(_source_baseline_payload(project_dir), indent=2, sort_keys=True)
+        + "\n",
+    )
+    return BASELINE_PATH
+
+
+def baseline_is_current(project_dir: Path) -> tuple[bool, str]:
+    """Check that physical circuit source did not change before approval."""
+    project_dir = project_dir.expanduser().resolve()
+    path = project_dir / BASELINE_PATH
+    try:
+        saved = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return False, f"missing {BASELINE_PATH.as_posix()}; reapprove final ARCHITECT work"
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        return False, f"invalid {BASELINE_PATH.as_posix()}: {exc}"
+    current = _source_baseline_payload(project_dir)
+    if not isinstance(saved, dict) or saved.get("fingerprint") != current["fingerprint"]:
+        return (
+            False,
+            "physical source or board topology changed before proposal approval",
+        )
+    return True, "pre-CIRCUIT source baseline is unchanged"
+
+
 def read_circuit_review_contract(project_dir: Path) -> CircuitReviewContract:
-    """Read the strict schema-14 circuit review contract."""
+    """Read the strict circuit review contract."""
     project_dir = project_dir.expanduser().resolve()
     data = _load_yaml(project_dir / CONTRACT_FILENAME)
     keys = {
@@ -261,10 +321,10 @@ def read_circuit_review_contract(project_dir: Path) -> CircuitReviewContract:
         "final_narrative",
     }
     _strict_keys(data, allowed=keys, required=keys, field=CONTRACT_FILENAME)
-    if data.get("circuit_review_schema") != CIRCUIT_REVIEW_SCHEMA:
-        raise CircuitReviewInputError(
-            f"circuit_review_schema: expected integer {CIRCUIT_REVIEW_SCHEMA}"
-        )
+    if type(data.get("circuit_review_schema")) is not int or data.get(
+        "circuit_review_schema"
+    ) != CIRCUIT_REVIEW_SCHEMA:
+        raise CircuitReviewInputError("unsupported version — restart the project")
     build = _text(data.get("build"), "build")
     model = _safe_path(
         data.get("model"),
@@ -319,10 +379,10 @@ def read_circuit_model(path: Path) -> CircuitModel:
     data = _load_yaml(path)
     keys = {"circuit_model_schema", "components", "nets", "groups", "paths"}
     _strict_keys(data, allowed=keys, required=keys, field=path.name)
-    if data.get("circuit_model_schema") != CIRCUIT_MODEL_SCHEMA:
-        raise CircuitReviewInputError(
-            f"circuit_model_schema: expected integer {CIRCUIT_MODEL_SCHEMA}"
-        )
+    if type(data.get("circuit_model_schema")) is not int or data.get(
+        "circuit_model_schema"
+    ) != CIRCUIT_MODEL_SCHEMA:
+        raise CircuitReviewInputError("unsupported version — restart the project")
 
     components = []
     component_keys = {

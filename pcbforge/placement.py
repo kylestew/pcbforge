@@ -28,10 +28,9 @@ from pcbforge.initialize import InitInputError, read_spec
 
 PLACEMENT_SCHEMA = 1
 BRIEF_SCHEMA = 1
-PROJECT_PIN_SCHEMA = 15
+PROJECT_PIN_SCHEMA = 1
 PLACEMENT_FILENAME = "placement.yaml"
 BRIEF_FILENAME = "docs/placement-brief.md"
-LEGACY_BRIEF_FILENAME = "brief.md"
 OWNED_CLASS_PREFIX = "pcbforge:"
 CONTROLLED_CLASS_FIELDS = (
     "name",
@@ -295,35 +294,18 @@ def _read_rules(
 def _read_project_pins(project_dir: Path) -> Mapping[str, Any]:
     data = _load_yaml(project_dir / ".pcbforge", ".pcbforge")
     errors = []
-    if data.get("schema") not in {11, 12, 13, 14, PROJECT_PIN_SCHEMA}:
-        errors.append(
-            f"schema: expected integer 11, 12, 13, 14, or {PROJECT_PIN_SCHEMA}"
-        )
+    if type(data.get("schema")) is not int or data.get("schema") != PROJECT_PIN_SCHEMA:
+        errors.append("schema: unsupported version — restart the project")
     guidance = data.get("guidance")
     if not isinstance(guidance, dict):
         errors.append("guidance: expected a mapping")
     else:
-        schema = data.get("schema")
-        expected_brief = {11: 1, 12: 2, 13: 3, 14: 5}.get(schema)
-        expected_approval = {11: 2, 12: 3, 13: 4, 14: 5, 15: 6}.get(schema)
-        if schema == 15:
-            if guidance.get("layout_handoff_schema") != 1:
-                errors.append(
-                    "guidance.layout_handoff_schema: expected integer 1"
-                )
-        elif guidance.get("brief_schema") != expected_brief:
-            errors.append(
-                f"guidance.brief_schema: expected integer {expected_brief}"
-            )
-        if guidance.get("approval_schema") != expected_approval:
-            errors.append(
-                f"guidance.approval_schema: expected integer {expected_approval}"
-            )
-        if guidance.get("policy_schema") != 1:
-            errors.append("guidance.policy_schema: expected integer 1")
+        for key in ("layout_handoff_schema", "approval_schema", "policy_schema"):
+            if type(guidance.get(key)) is not int or guidance.get(key) != 1:
+                errors.append(f"guidance.{key}: unsupported version — restart the project")
     if errors:
         raise PlacementInputError(
-            "project guidance is not migrated for the layout handoff:\n  - "
+            "invalid project guidance for the layout handoff:\n  - "
             + "\n  - ".join(errors)
         )
     return data
@@ -770,8 +752,10 @@ def read_placement_contract(
         PLACEMENT_FILENAME,
         errors,
     )
-    if data.get("placement_schema") != PLACEMENT_SCHEMA:
-        errors.append(f"placement_schema: expected integer {PLACEMENT_SCHEMA}")
+    if type(data.get("placement_schema")) is not int or data.get(
+        "placement_schema"
+    ) != PLACEMENT_SCHEMA:
+        errors.append("placement_schema: unsupported version — restart the project")
     board_raw = data.get("board")
     strategy = ""
     board_rules: tuple[str, ...] = ()
@@ -1132,20 +1116,8 @@ def brief_inputs(project_dir: Path) -> tuple[Path, ...]:
 
 
 def brief_document_path(project_dir: Path) -> Path:
-    """Return the generated brief path selected by the pinned guidance schema."""
-    project_dir = project_dir.expanduser().resolve()
-    try:
-        pins = _load_yaml(project_dir / ".pcbforge", ".pcbforge")
-    except PlacementInputError:
-        return project_dir / BRIEF_FILENAME
-    guidance = pins.get("guidance")
-    if (
-        isinstance(guidance, dict)
-        and type(guidance.get("brief_schema")) is int
-        and guidance["brief_schema"] < 5
-    ):
-        return project_dir / LEGACY_BRIEF_FILENAME
-    return project_dir / BRIEF_FILENAME
+    """Return the current generated placement-brief path."""
+    return project_dir.expanduser().resolve() / BRIEF_FILENAME
 
 
 def _distance(constraint: PlacementConstraint) -> str:

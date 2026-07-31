@@ -63,7 +63,7 @@ user unambiguously accepts it.
 
 ### Manufacturing-policy invariant
 
-Schema-12 projects consume the hash-pinned
+Projects consume the hash-pinned
 `policies/pcbforge-standard-v1.yaml` profile and track their declarations,
 evidence, sourcing, and exception requests in `policy.yaml`. The profile—not
 the editable project contract—defines hard rules, exception-capable defaults,
@@ -84,6 +84,13 @@ exception approval reopens the profile-mapped completed phase.
 
 ## Decision record
 
+- **2026-07-31 — v1 clean break.** PCBForge supports freshly initialized
+  projects only. All artifact and guidance schemas reset to integer `1` with
+  one accepted value. Unsupported versions fail with “unsupported version —
+  restart the project.” Schema migrations, feature gates, compatibility
+  branches, old numbered phases, deprecated CLI aliases, and native generated
+  KiCad schematic review were removed. The sole workflow is the nine-phase
+  model plus initialize and layout-handoff transitions described below.
 - **2026-07-29 — schema-15 streamlines phase boundaries.** INIT becomes the
   visible, automatic SPEC-to-ARCHITECT transition; MCU becomes a subordinate
   ARCHITECT workstream; BRIEF becomes the visible CIRCUIT-to-LAYOUT handoff.
@@ -293,7 +300,7 @@ presence, or agent judgment alone. ARCHITECT and CIRCUIT each have an
 additional proposal-stage approval before affected source; optional PUBLISH
 may instead be explicitly skipped.
 
-### Phase 3 — ARCHITECT
+### Phase 2 — ARCHITECT, including MCU
 
 The agent follows `agent/architect.md`. It first maps every spec requirement to
 a proposed functional block and compiler-native typed interface in
@@ -304,10 +311,10 @@ and diagram.
 
 Only after proposal approval does the agent keep `src/main.ato` as a thin graph
 and place project-local interface skeletons in separate source files. The MCU
-remains an interface-only per-project boundary until the AI-led MCU phase.
+plan and implementation are part of ARCHITECT.
 
-ARCHITECT contains no physical parts, footprints, pin assignments, or layout
-work. The skeleton must compile without changing the KiCad board. The review
+ARCHITECT contains no non-MCU physical parts, footprints, or layout work. The
+skeleton must compile without changing the KiCad board. The review
 package covers the tracked `docs/architecture.md` Mermaid graph, interfaces,
 spec coverage, reuse evidence, risks, source-to-diagram audit, diff, and build
 result. The diagram is the approved architecture contract and source remains
@@ -318,10 +325,10 @@ typed interfaces, never parts, pins, or spatial detail.
 After build and audit, the user gives separate final approval. Its append-only
 STATUS event is fingerprint-bound to the spec, diagram, and thin top-level
 source graph. Artifact changes make approval stale and the next dashboard write
-records a durable reopen before the workflow may move to MCU. Design rationale
+records a durable reopen before the workflow may move to CIRCUIT. Design rationale
 may remain in the `spec.md` Decisions log, but prose is not the workflow gate.
 
-### Phase 4 — MCU
+#### MCU workstream inside ARCHITECT
 
 The agent follows `agent/mcu.md`. It converts the approved interface contract
 into a resource checklist, selects the exact orderable STM32/package, and asks
@@ -338,9 +345,9 @@ check.
 
 `ioc2code` remains debt. Until it exists, the agent derives `src/mcu.ato`
 manually from the checked `.ioc`, independently audits every mapping, and
-builds before moving to CIRCUIT.
+builds before final ARCHITECT approval and the move to CIRCUIT.
 
-### Phase 1 — SPEC (unchanged from B)
+### Phase 1 — SPEC
 
 Spec is a conversation, not a script. U opens empty project dir, starts AI
 session, and gives the trigger ("pcbforge: new board"). Agent reads
@@ -358,11 +365,17 @@ names a part. Schema lives in `agent/spec-interview.md`.
 `STATUS.md` is created after the first valid spec draft and survives `init`.
 Its YAML frontmatter contains append-only workflow events and fingerprints for
 saved build, IOC, and DRC results. Its generated body is the single user-facing
-dashboard: current focus, required-phase count, blockers, next actions, all 13
-phases in legacy projects or all 12 phases in schema 14, and recent progress.
-Static refreshes inspect files; explicit
-`--check` refreshes deterministic evidence. Human-owned gates are never
-inferred from board contents.
+dashboard: latest valid milestone, any performed-but-inactive transition,
+current phase or transition and reason, next owner, one primary action and
+command, required-phase count, blockers, the complete workflow, and recent
+history.
+
+A transition is `Complete` only while it currently authorizes its target.
+Reopening its upstream phase makes prior work `Performed, inactive`; current
+upstream work plus changed transition inputs makes it `Stale`. Static refreshes
+inspect files; explicit `--check` refreshes deterministic evidence. `status
+--next` renders the same handoff without the full dashboard. Human-owned gates
+are never inferred from board contents.
 
 ## Layout copilot — serving the art
 
@@ -371,7 +384,8 @@ Tool's job in the art phase: prime, spot, audit. Never move copper.
 **Pre-layout — prime the canvas:**
 - The agent records exact board-specific constraints in `placement.yaml`
   (`max_mm`, keepouts, differential-pair settings, thermal and access notes).
-- `pcbforge brief` emits **placement brief** (`docs/placement-brief.md`):
+- `pcbforge prepare-layout` emits the **placement brief**
+  (`docs/placement-brief.md`):
   per-block
   constraints, net priorities, suggested regions.
 - PCBForge-owned net classes are pre-seeded into `.kicad_pro`; the PCB and
@@ -453,7 +467,7 @@ what's encoded. AI netlist review stays as second layer; catches what nobody
 encoded yet.
 
 Electrical validation is **compiler-native** (connectivity/drive checks on the
-resolved graph) and independently reviewable. Step 5 binds a deliberately
+resolved graph) and independently reviewable. CIRCUIT binds a deliberately
 authored explanatory SVG to an exact pre-source proposal model, then compares
 that model directly with the compiled BOM/PCB. DRC runs later on the product
 `.kicad_pcb`; no review derivative owns or updates that PCB.
@@ -482,6 +496,15 @@ user artwork. Compiler-owned identity/connectivity may change while CIRCUIT is
 being implemented, but its final review begins only once another identical
 build is a spatial no-op.
 
+CIRCUIT also owns every compiled KiCad net name. Before LAYOUT, each resolved
+net receives a concise, human-readable name from explicit circuit source and
+the approved proposal model records that exact `compiler_name`. Routable nets
+use functional names rather than compiler fallbacks such as `hv`, `lv`,
+`line`, numeric-only labels, or hierarchy-generated names. Intentional
+single-pad unused nets use `NC_<REF>_<PIN>`. The final parity check proves the
+approved names match the compiled PCB, and the LAYOUT handoff references only
+those exact names. Net names are never repaired directly in the KiCad PCB.
+
 A full passing checked write atomically produces tracked
 `docs/build-test.md`: input/tool versions and hashes, resolved BOM, assertion
 locations, connectivity totals/hash, artifact hashes, and preservation
@@ -490,7 +513,7 @@ stale reopens CIRCUIT. Failure never overwrites the previous passing report.
 
 This deterministic gate does not pretend to prove live JLC stock or price,
 placement/routing quality, KiCad PCB DRC, or fab output. Circuit comprehension
-and exact compiled parity are already mandatory in Step 5.
+and exact compiled parity are already mandatory in CIRCUIT.
 
 `pcbforge check-policy` cross-checks the exact CIRCUIT LCSC set against tracked
 offline sourcing evidence without making normal status network-dependent.
@@ -498,8 +521,8 @@ After FAB-OUT, the user confirms a newly researched sourcing snapshot. That
 approval fingerprints the sourcing entries, exact build-test contract, and current
 fabrication outputs; ORDER cannot complete while it is absent or stale.
 
-Step 6 makes the pre-layout handoff equally explicit. `placement.yaml` schema
-1 is authoritative and board-specific. It records a qualitative board
+The CIRCUIT-to-LAYOUT transition makes the pre-layout handoff equally explicit.
+`placement.yaml` schema 1 is authoritative and board-specific. It records a qualitative board
 strategy, board-wide rules, ordered placement groups, typed spatial
 constraints, exact-net routing classes, and a review checklist. Every resolved
 PCB reference belongs to exactly one group. Constraint endpoints must resolve
@@ -508,26 +531,26 @@ current net; wildcards are not inferred. Manufacturing dimensions must meet
 the pinned conservative JLC profile, including annular width and optional
 differential-pair width/gaps.
 
-`pcbforge brief` requires current CIRCUIT evidence, then stages
+`pcbforge prepare-layout` requires current CIRCUIT evidence, then stages
 `docs/placement-brief.md` and a
 merged KiCad project before committing either. It owns only net classes named
 `pcbforge:<name>` and their exact patterns in `.kicad_pro`; it preserves the
 Default class, user classes/assignments, unknown JSON fields, `.kicad_dru`, and
 all non-owned settings. Conflicting user assignments fail rather than being
 overridden. `.kicad_pcb` is read-only and confirmed byte-identical.
-`pcbforge check-brief` validates those outputs without mutation.
+`pcbforge check-layout-handoff` validates those outputs without mutation.
 
 The generated brief contains no coordinates and creates no geometric keepouts.
-It is guidance for the human placer, not spatial source. Step 6 is a combined
+It is guidance for the human placer, not spatial source. The handoff is a combined
 machine/human gate: the checker must pass, then the user approves
 `docs/placement-brief.md`
 beside the current CIRCUIT overview. Missing, stale, or inadequate
 circuit-review evidence blocks the phase before layout.
 
-Saved CIRCUIT and BRIEF evidence fingerprints circuit-owned PCB semantics
+Saved CIRCUIT and layout-handoff evidence fingerprint circuit-owned PCB semantics
 (references, selected footprints, pads, and connectivity), not placement,
 side, tracks, vias, zones, outline, graphics, or artwork. Circuit/topology
-changes stale both phases. Spatial edits do not. BRIEF additionally
+changes stale both gates. Spatial edits do not. The handoff additionally
 fingerprints `placement.yaml`, generated `docs/placement-brief.md`, and PCBForge-owned
 net-class semantics; unrelated user net classes remain outside its ownership
 and staleness boundary.
@@ -617,13 +640,12 @@ shell + file read/write drives them. No plugin binding. Vendor-neutral.
 
 ## Command set
 
-`status`, `init`, `check-ioc`, `check-parts`, `check-build-test`, `build`,
-`test`, `brief`, `check-brief`,
-`verify`, `verify-stock`,
-`fab-out`, `publish`, `ioc2code`, `migrate`. Spec is not a verb — chat.
-**`init` is create-only** — refuses to touch an initialized project. Layer
-changes go through `migrate` (backup, rules swap, revalidation) — never
-re-`init`.
+`status`, `init`, `check-ioc`, `check-parts`, `check-policy`,
+`check-circuit-review`, `check-build-test`, `prepare-layout`,
+`check-layout-handoff`, `verify`, `verify-stock`, `fab-out`, `publish`, and
+`ioc2code`. Spec is not a verb — chat. **`init` is create-only** and refuses
+to touch an initialized project. PCBForge v1 does not change layers or upgrade
+an initialized project; restart it from the revised SPEC.
 
 ## Docs & bootstrap (kept from B, verbs updated)
 
@@ -642,7 +664,7 @@ audits + render review), sourcing verify, fab output gen.
 
 **IS NOT (v1):** placement/routing by tool or AI, simulation,
 ordering/payments, making explanatory review evidence authoritative, or
-silently treating legacy adoption as pre-source approval.
+adopting an existing project as if it had pre-source approval.
 
 ## Known costs (accepted 2026-07-24)
 
@@ -654,7 +676,7 @@ silently treating legacy adoption as pre-source approval.
 | Pin swap during routing re-coded by hand | KiCad is forward-annotation-dominant anyway |
 | Weird analog corner easier drawn | raw-netlist island module; ugly but contained |
 | Refdes churn breaks placement mapping | designator lock file (pilot criterion) |
-| KiCad pinned to previous major (9.x) while 10 is current | time-boxed: migration trigger + acceptance rerun defined in decision record; v1 hobby scope needs nothing 10-exclusive |
+| KiCad pinned to previous major (9.x) while 10 is current | time-boxed: upgrade trigger + acceptance rerun defined in decision record; v1 hobby scope needs nothing 10-exclusive |
 
 ## Pilot (gate before full build)
 
@@ -668,14 +690,14 @@ byte-stable, KiCad renders result) → **KiCad pinned 9.x** (decision record).
 Evidence: `pilots/*/REPORT.md` + `results/`.
 
 Phase 2 — **the first fresh board is the pilot vehicle** (mixer port
-descoped; legacy adoption a non-goal). Remaining pass/fail, tested in board
+descoped; existing-project adoption is a non-goal). Remaining pass/fail, tested in board
 order:
 
 1. MCU slice: AI-authored `.ioc` + `check-ioc` is implemented; remaining gate
    is ioc2code feasibility (parse checked `.ioc` → MCU module).
 2. Typed-interface + assertion expressiveness covers the JLC rule set;
    compiler-native electrical checks plus exact circuit-model parity are adequate.
-3. **In-loop visual circuit review** (schema-14 implementation ready for
+3. **In-loop visual circuit review** (implementation ready for
    pilot): complete authored explanatory SVG and exact model before source,
    passive-purpose annotations, semantic coverage, exact compiled parity, and
    deterministic acceptance before final CIRCUIT approval.

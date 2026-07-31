@@ -39,9 +39,8 @@ code, it reads the target project's `.pcbforge` file and selects a clean
 registered Git worktree at that exact revision with the matching lockfile and
 installed environment. If the pinned worktree is unavailable, the command
 stops without touching the project and prints the `git worktree add` and
-`uv sync` commands needed to install it. New projects and explicit migrations
-must run from a clean checkout; dirty tool state is never recorded as a
-reproducible pin.
+`uv sync` commands needed to install it. New projects must run from a clean
+checkout; dirty tool state is never recorded as a reproducible pin.
 
 ## Start a new board
 
@@ -103,6 +102,7 @@ records conversational approvals for you):
 ```bash
 pcbforge status
 pcbforge status --check --write
+pcbforge status --next
 pcbforge status review layout
 pcbforge status approve layout --fingerprint <sha256> \
   --note "Placement reviewed and explicitly approved"
@@ -121,7 +121,7 @@ Static status is read-only and fast. `--check` runs applicable pinned build,
 CIRCUIT acceptance, layout-handoff, parts-policy, CubeMX, and KiCad DRC
 validation before rendering the same status model.
 
-Schema 15 has nine numbered phases, eight required. MCU work is inside
+The workflow has nine numbered phases, eight required. MCU work is inside
 ARCHITECT; physical implementation and build + test form one CIRCUIT phase;
 initialization and the layout handoff are visible transitions. CIRCUIT combines
 authored circuit review, deterministic acceptance,
@@ -178,8 +178,6 @@ pcbforge status approve layout --stage handoff \
   --fingerprint <sha256> --note "..."
 ```
 
-The old brief commands remain deprecated aliases for one migration cycle.
-
 After FAB-OUT, refresh live JLC availability and lifecycle evidence for the
 exact BOM. Once the user confirms it, record
 `pcbforge policy confirm-sourcing --note "..."`. ORDER cannot complete unless
@@ -201,87 +199,5 @@ fabrication outputs.
 | `modules/` | indexed circuit module library (explicitly empty at start) |
 | `pilots/` | pilot evidence: reports, scripts, machine-readable results |
 
-Existing initialized projects are not rewritten automatically. Migrate a
-generated schema-7-through-9 project explicitly:
-
-```bash
-pcbforge migrate-policy /path/to/project
-pcbforge check-policy /path/to/project
-pcbforge policy approve-baseline /path/to/project \
-  --note "Approved migrated policy baseline"
-```
-
-This migrates directly to schema 14. It pins the profile, generates
-`policy.yaml` from discoverable facts, updates generated guidance, and leaves
-applicability and sourcing items for review. It never infers approval.
-
-For a generated schema-10 policy project, run:
-
-```bash
-pcbforge migrate-approvals /path/to/project
-```
-
-Current artifact-bound SPEC, ARCHITECT, and BRIEF approvals are preserved when
-their fingerprints still match and every preceding required approval remains
-current. Completed phases without a provable sequential approval reopen and
-require `status review` plus explicit approval. Approved policy exceptions
-retain their targeted reopening behavior. Temper was the first
-universal-approval migration pilot.
-
-For an existing schema-11 project, use the legacy migration alias to reach the
-current circuit-review workflow:
-
-```bash
-pcbforge migrate-schematic-review /path/to/project
-```
-
-An already completed legacy IMPLEMENT phase must first be rewound, or migrated
-with `--adopt-existing`. Adoption is labelled in STATUS and never claims the
-circuit received pre-source proposal approval. A clean migration reopens MCU
-once so its renewed approval captures the current source baseline.
-
-For an existing schema-12 project, replace the native KiCad review gate:
-
-```bash
-pcbforge migrate-circuit-review /path/to/project
-```
-
-Legacy KiCad review files are preserved but ignored. A current MCU handoff
-baseline is retained; changed post-baseline source requires explicit
-`--adopt-existing`. The migration never generates or deletes review artwork.
-
-For an existing schema-13 project, merge the old IMPLEMENT and build + test
-phases into CIRCUIT:
-
-```bash
-pcbforge migrate-circuit-phase /path/to/project
-```
-
-The migration renames active review artifacts to `review/circuit` and
-`docs/circuit-*`, and relocates an existing generated `brief.md` to
-`docs/placement-brief.md`. CIRCUIT remains complete only when both old phase
-approvals are current; otherwise it reopens at the combined gate. Running the
-command again is a no-op.
-
-For an existing schema-14 project, relocate the generated placement brief and
-refresh its pinned guidance:
-
-```bash
-pcbforge migrate-placement-brief /path/to/project
-```
-
-The migration is atomic and idempotent. If a current root `brief.md` exists,
-its bytes move unchanged to `docs/placement-brief.md`; missing briefs are not
-invented.
-
-Then adopt the streamlined phase model:
-
-```bash
-pcbforge migrate-phase-transitions /path/to/project
-```
-
-This atomic, idempotent migration removes INIT, MCU, and BRIEF from the
-numbered sequence, combines current ARCHITECT/MCU approvals only when their
-equivalence is provable, converts current BRIEF evidence to the LAYOUT handoff,
-and preserves downstream approvals only while the entire predecessor chain is
-current. It does not automatically migrate Blinky, Temper, or any other board.
+PCBForge v1 supports freshly initialized projects only. Projects created with
+an earlier workflow must be restarted rather than upgraded in place.

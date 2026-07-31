@@ -21,7 +21,7 @@ from pcbforge.initialize import InitInputError, read_spec
 
 BUILD_TEST_SCHEMA = 1
 BUILD_TEST_REPORT_SCHEMA = 1
-PROJECT_PIN_SCHEMA = 15
+PROJECT_PIN_SCHEMA = 1
 BUILD_TEST_FILENAME = "build-test.yaml"
 BUILD_TEST_REPORT = Path("docs/build-test.md")
 
@@ -201,8 +201,10 @@ def read_build_test_contract(project_dir: Path) -> BuildTestContract:
     unknown = sorted(set(data) - allowed, key=str)
     if unknown:
         errors.append(f"unknown keys: {', '.join(map(str, unknown))}")
-    if data.get("build_test_schema") != BUILD_TEST_SCHEMA:
-        errors.append(f"build_test_schema: expected integer {BUILD_TEST_SCHEMA}")
+    if type(data.get("build_test_schema")) is not int or data.get(
+        "build_test_schema"
+    ) != BUILD_TEST_SCHEMA:
+        errors.append("build_test_schema: unsupported version — restart the project")
 
     build = _required_text(data, "build", "build-test", errors)
     if build and BUILD_RE.fullmatch(build) is None:
@@ -290,10 +292,8 @@ def read_build_test_contract(project_dir: Path) -> BuildTestContract:
 def _read_pin_metadata(project_dir: Path) -> Mapping[str, Any]:
     data = _load_yaml(project_dir / ".pcbforge", label=".pcbforge")
     errors = []
-    if data.get("schema") not in {11, 12, 13, 14, PROJECT_PIN_SCHEMA}:
-        errors.append(
-            f"schema: expected integer 11, 12, 13, 14, or {PROJECT_PIN_SCHEMA}"
-        )
+    if type(data.get("schema")) is not int or data.get("schema") != PROJECT_PIN_SCHEMA:
+        errors.append("schema: unsupported version — restart the project")
     toolchain = data.get("toolchain")
     if not isinstance(toolchain, dict):
         errors.append("toolchain: expected a mapping")
@@ -304,15 +304,15 @@ def _read_pin_metadata(project_dir: Path) -> Mapping[str, Any]:
     guidance = data.get("guidance")
     if not isinstance(guidance, dict):
         errors.append("guidance: expected a mapping")
-    elif guidance.get("build_test_schema") != BUILD_TEST_SCHEMA:
-        errors.append(
-            f"guidance.build_test_schema: expected integer {BUILD_TEST_SCHEMA}"
-        )
-    elif guidance.get("policy_schema") != 1:
-        errors.append("guidance.policy_schema: expected integer 1")
+    else:
+        for key in ("build_test_schema", "policy_schema"):
+            if type(guidance.get(key)) is not int or guidance.get(key) != 1:
+                errors.append(
+                    f"guidance.{key}: unsupported version — restart the project"
+                )
     if errors:
         raise BuildTestInputError(
-            "project guidance is not migrated for CIRCUIT acceptance:\n  - "
+            "invalid project guidance for CIRCUIT acceptance:\n  - "
             + "\n  - ".join(errors)
         )
     return data
@@ -846,7 +846,9 @@ def saved_report_status(project_dir: Path, fingerprint: str) -> tuple[bool, str]
         return False, f"missing {BUILD_TEST_REPORT.as_posix()}"
     except (OSError, UnicodeError, BuildTestError) as exc:
         return False, str(exc)
-    if data.get("pcbforge_build_test_report_schema") != BUILD_TEST_REPORT_SCHEMA:
+    if type(data.get("pcbforge_build_test_report_schema")) is not int or data.get(
+        "pcbforge_build_test_report_schema"
+    ) != BUILD_TEST_REPORT_SCHEMA:
         return False, "build-test report schema is unsupported"
     if data.get("result") != "pass":
         return False, "build-test report does not record a pass"

@@ -44,7 +44,6 @@ class BootstrapArgumentTests(unittest.TestCase):
         cases = {
             ("init", "board"): cwd / "board",
             ("check-circuit-review", "--stage", "final", "board"): cwd / "board",
-            ("policy", "approve-baseline", "board", "--note", "yes"): cwd / "board",
             (
                 "policy",
                 "approve-exception",
@@ -81,9 +80,6 @@ class BootstrapArgumentTests(unittest.TestCase):
                 "--note",
                 "yes",
             ): cwd / "board",
-            ("migrate-circuit-phase", "board"): cwd / "board",
-            ("migrate-placement-brief", "board"): cwd / "board",
-            ("migrate-phase-transitions", "board"): cwd / "board",
             ("prepare-layout", "board"): cwd / "board",
             ("check-layout-handoff", "board"): cwd / "board",
         }
@@ -217,10 +213,10 @@ class BootstrapResolutionTests(unittest.TestCase):
 
         self.assertEqual(before, after)
 
-    def test_dirty_pin_fails_but_explicit_migration_uses_clean_current(self) -> None:
+    def test_dirty_pin_fails_without_a_compatibility_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            repository, old_checkout, first, second = self._repository(root)
+            repository, old_checkout, first, _ = self._repository(root)
             project = self._project(
                 root,
                 first,
@@ -235,16 +231,8 @@ class BootstrapResolutionTests(unittest.TestCase):
                     ["status", str(project)],
                     cwd=root,
                 )
-            migration = bootstrap.resolve_execution(
-                repository,
-                ["migrate-circuit-phase", str(project)],
-                cwd=root,
-            )
-
             after = _tree_hash(project)
 
-        self.assertEqual(migration.checkout, repository.resolve())
-        self.assertEqual(migration.revision, second)
         self.assertEqual(before, after)
 
     def test_rejects_mismatched_lock_or_missing_pinned_environment(self) -> None:

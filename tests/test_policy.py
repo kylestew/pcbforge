@@ -14,7 +14,6 @@ from pcbforge.policy import (
     PolicyInputError,
     check_policy,
     load_policy_profile,
-    migrate_policy,
     policy_exception_fingerprints,
     render_default_policy,
 )
@@ -84,7 +83,7 @@ class PolicyFixture(unittest.TestCase):
         self,
         root: Path,
         *,
-        schema: int = 11,
+        schema: int = 1,
         board: str = BOARD_0603,
         complete_evidence: bool = True,
         include_build_test: bool = True,
@@ -112,57 +111,27 @@ class PolicyFixture(unittest.TestCase):
             encoding="utf-8",
         )
         _, _, policy_hash = load_policy_profile(TOOL_ROOT)
-        policy_pin = (
-            f"""policy:
+        policy_pin = f"""policy:
   profile: pcbforge-standard-v1
   profile_sha256: {policy_hash}
   baseline_approval: spec
 """
-            if schema in {10, 11, 14, 15}
-            else ""
-        )
-        pcbforge_pin = (
-            """pcbforge:
+        pcbforge_pin = """pcbforge:
   revision: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
   dirty: false
 """
-            if schema in {14, 15}
-            else ""
-        )
-        guidance = (
-            """  agents_schema: 15
-  architect_schema: 4
+        guidance = """  agents_schema: 1
+  architect_schema: 1
   architecture_diagram_schema: 1
-  mcu_schema: 3
+  mcu_schema: 1
   circuit_schema: 1
-  circuit_review_schema: 2
-  policy_schema: 1
-  build_test_schema: 1
-  brief_schema: 5
-  approval_schema: 5
-  status_schema: 3
-"""
-            if schema == 14
-            else """  agents_schema: 16
-  architect_schema: 5
-  architecture_diagram_schema: 1
-  mcu_schema: 4
-  circuit_schema: 1
-  circuit_review_schema: 2
+  circuit_review_schema: 1
   policy_schema: 1
   build_test_schema: 1
   layout_handoff_schema: 1
-  approval_schema: 6
-  status_schema: 4
+  approval_schema: 1
+  status_schema: 1
 """
-            if schema == 15
-            else f"""  agents_schema: {schema}
-  policy_schema: 1
-  build_test_schema: 1
-  brief_schema: 1
-  approval_schema: {2 if schema == 11 else 1}
-"""
-        )
         (project / ".pcbforge").write_text(
             f"""schema: {schema}
 project: garden-logger
@@ -205,11 +174,11 @@ guidance:
 class PolicyCheckerTests(PolicyFixture):
     def test_standard_policy_passes_offline(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            project = self.project(Path(temporary), schema=15)
+            project = self.project(Path(temporary))
             result = check_policy(
                 project,
                 tool_root=TOOL_ROOT,
-                through_phase="implement",
+                through_phase="circuit",
             )
 
         self.assertTrue(result.ok)
@@ -231,7 +200,7 @@ class PolicyCheckerTests(PolicyFixture):
             implement_result = check_policy(
                 project,
                 tool_root=TOOL_ROOT,
-                through_phase="implement",
+                through_phase="circuit",
             )
 
         self.assertTrue(spec_result.ok)
@@ -293,7 +262,7 @@ class PolicyCheckerTests(PolicyFixture):
             blocked = check_policy(
                 project,
                 tool_root=TOOL_ROOT,
-                through_phase="implement",
+                through_phase="circuit",
             )
             fingerprint = policy_exception_fingerprints(
                 project,
@@ -302,19 +271,13 @@ class PolicyCheckerTests(PolicyFixture):
             approved = check_policy(
                 project,
                 tool_root=TOOL_ROOT,
-                through_phase="implement",
+                through_phase="circuit",
                 exception_approvals={"allow-r1-0402": fingerprint},
             )
 
         self.assertFalse(blocked.ok)
         self.assertIn("lacks current explicit approval", blocked.violations[0].message)
         self.assertTrue(approved.ok)
-
-    def test_schema_nine_requires_explicit_migration(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            project = self.project(Path(temporary), schema=9)
-            with self.assertRaisesRegex(PolicyInputError, "migrate-policy"):
-                check_policy(project, tool_root=TOOL_ROOT)
 
     def test_tampered_toolchain_and_rules_pins_are_hard_failures(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -331,7 +294,7 @@ class PolicyCheckerTests(PolicyFixture):
             result = check_policy(
                 project,
                 tool_root=TOOL_ROOT,
-                through_phase="init",
+                through_phase="architect",
             )
 
         violations = {
@@ -341,7 +304,7 @@ class PolicyCheckerTests(PolicyFixture):
         self.assertTrue(violations["hard.fabricator-rules"].hard)
 
 
-class PolicyApprovalAndMigrationTests(PolicyFixture):
+class PolicyApprovalTests(PolicyFixture):
     def test_new_project_spec_approval_is_bound_to_policy_baseline(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = Path(temporary) / "garden-logger"
@@ -403,18 +366,14 @@ class PolicyApprovalAndMigrationTests(PolicyFixture):
                 yaml.safe_dump(policy, sort_keys=False),
                 encoding="utf-8",
             )
-            phases = ("spec", "architect", "mcu", "implement")
+            phases = ("spec", "architect", "circuit")
             events = tuple(
                 StatusEvent(
                     f"2026-07-27T10:0{index}:00+00:00",
                     phase,
                     "complete",
                     f"{phase} complete",
-                    (
-                        _approval_fingerprint(project, phase)
-                        if phase in {"spec", "architect"}
-                        else ""
-                    ),
+                    _approval_fingerprint(project, phase),
                 )
                 for index, phase in enumerate(phases)
             )
@@ -432,118 +391,12 @@ class PolicyApprovalAndMigrationTests(PolicyFixture):
                     now="2026-07-27T12:00:00+00:00",
                 )
 
-        self.assertEqual(marked.report.document.events[-1].phase, "implement")
+        self.assertEqual(marked.report.document.events[-1].phase, "circuit")
         self.assertEqual(marked.report.document.events[-1].action, "reopened")
         self.assertEqual(
             marked.report.document.policy_events[-1].action,
             "exception-approved",
         )
-
-    def test_schema_nine_migration_requires_separate_baseline_approval(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            project = self.project(
-                Path(temporary),
-                schema=9,
-                include_build_test=False,
-            )
-            (project / "policy.yaml").unlink()
-            (project / "AGENTS.md").write_text(
-                "<!-- pcbforge-agents-schema: 9 -->\n# generated\n",
-                encoding="utf-8",
-            )
-            mark_status(project, "spec", "complete", "User approved spec")
-
-            migration = migrate_policy(project, tool_root=TOOL_ROOT)
-            pins = yaml.safe_load(
-                (project / ".pcbforge").read_text(encoding="utf-8")
-            )
-            blocked = check_policy(
-                project,
-                tool_root=TOOL_ROOT,
-                through_phase="spec",
-            )
-            dashboard_before_approval = inspect_status(project)
-            approved = mark_policy(
-                project,
-                "baseline-approved",
-                "User approved migrated policy baseline",
-                tool_root=TOOL_ROOT,
-            )
-            second = migrate_policy(project, tool_root=TOOL_ROOT)
-            migrated_agents = (project / "AGENTS.md").read_text(encoding="utf-8")
-
-        self.assertTrue(migration.wrote)
-        self.assertEqual(pins["schema"], 14)
-        self.assertEqual(pins["policy"]["baseline_approval"], "policy-event")
-        self.assertFalse(blocked.ok)
-        self.assertIn(
-            "policy baseline requires explicit user approval",
-            dashboard_before_approval.current.detail,
-        )
-        self.assertEqual(
-            approved.report.document.policy_events[-1].action,
-            "baseline-approved",
-        )
-        self.assertFalse(second.wrote)
-        self.assertIn("pcbforge-agents-schema: 15", migrated_agents)
-        self.assertIn("schema-14 workflow", migrated_agents)
-        self.assertIn("MCU — exact STM32", migrated_agents)
-        self.assertNotIn("opens ARCHITECT directly", migrated_agents)
-
-    def test_schema_seven_migrates_directly_and_reopens_unbound_spec(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            project = self.project(
-                Path(temporary),
-                schema=7,
-                include_build_test=False,
-            )
-            (project / "policy.yaml").unlink()
-            (project / "AGENTS.md").write_text(
-                "<!-- pcbforge-agents-schema: 7 -->\n# generated\n",
-                encoding="utf-8",
-            )
-            write_status(
-                project,
-                document=StatusDocument(
-                    "",
-                    (
-                        StatusEvent(
-                            "2026-07-27T09:00:00+00:00",
-                            "spec",
-                            "complete",
-                            "Legacy unbound user approval",
-                        ),
-                    ),
-                    {},
-                ),
-            )
-
-            migration = migrate_policy(project, tool_root=TOOL_ROOT)
-            refreshed = write_status(project)
-            pins = yaml.safe_load(
-                (project / ".pcbforge").read_text(encoding="utf-8")
-            )
-
-        self.assertTrue(migration.wrote)
-        self.assertEqual(pins["schema"], 14)
-        self.assertEqual(
-            pins["guidance"],
-            {
-                "agents_schema": 15,
-                "policy_schema": 1,
-                "build_test_schema": 1,
-                "brief_schema": 5,
-                "approval_schema": 5,
-                "architect_schema": 4,
-                "architecture_diagram_schema": 1,
-                "mcu_schema": 3,
-                "circuit_schema": 1,
-                "status_schema": 3,
-                "circuit_review_schema": 2,
-            },
-        )
-        self.assertEqual(refreshed.report.document.events[-1].phase, "spec")
-        self.assertEqual(refreshed.report.document.events[-1].action, "reopened")
 
     def test_policy_change_durably_reopens_approval(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -592,12 +445,8 @@ class PolicyApprovalAndMigrationTests(PolicyFixture):
             (project / "fab" / "board.zip").write_bytes(b"fabrication package")
             manual_phases = (
                 "spec",
-                "init",
                 "architect",
-                "mcu",
-                "implement",
-                "build",
-                "brief",
+                "circuit",
                 "layout",
                 "route",
                 "verify",
@@ -630,6 +479,9 @@ class PolicyApprovalAndMigrationTests(PolicyFixture):
             with mock.patch(
                 "pcbforge.status._static_evidence",
                 side_effect=evidence,
+            ), mock.patch(
+                "pcbforge.status._current_layout_handoff",
+                return_value=mock.sentinel.current_handoff,
             ):
                 written = write_status(
                     project,
@@ -670,8 +522,8 @@ class PolicyApprovalAndMigrationTests(PolicyFixture):
             restored = inspect_status(project)
 
         self.assertIn("post-FAB sourcing confirmation", blocked.current.detail)
-        self.assertTrue(written.report.phases[10].complete)
-        self.assertTrue(ordered.report.phases[11].complete)
+        self.assertTrue(written.report.phases[6].complete)
+        self.assertTrue(ordered.report.phases[7].complete)
         self.assertEqual(
             invalidated.report.document.policy_events[-1].action,
             "reopened",
@@ -684,13 +536,13 @@ class PolicyApprovalAndMigrationTests(PolicyFixture):
             invalidated.report.document.events[-1].action,
             "reopened",
         )
-        self.assertFalse(restored.phases[11].complete)
+        self.assertFalse(restored.phases[7].complete)
 
 
 class PolicyCliTests(PolicyFixture):
     def test_check_policy_exit_categories(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            project = self.project(Path(temporary), schema=15)
+            project = self.project(Path(temporary))
             with mock.patch("builtins.print"):
                 self.assertEqual(main(["check-policy", str(project)]), 0)
 
@@ -707,7 +559,7 @@ class PolicyCliTests(PolicyFixture):
             pins = project / ".pcbforge"
             pins.write_text(
                 pins.read_text(encoding="utf-8").replace(
-                    "schema: 15",
+                    "schema: 1",
                     "schema: 9",
                     1,
                 ),

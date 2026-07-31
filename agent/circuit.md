@@ -7,7 +7,7 @@ The goal is an understandable, explicitly approved circuit proposal followed
 by a physical circuit definition whose compiled connectivity and exact parts
 are proven to match that proposal.
 
-The schema-14 workflow's `policy.yaml` is part of the circuit contract. JLCPCB,
+The project's `policy.yaml` is part of the circuit contract. JLCPCB,
 STM32, 2/4 layers, SWD, pinned tools, exact part identity, official commodity
 libraries, spatial ownership, and human ordering authority are hard rules.
 Standard construction, 0603-or-larger ordinary R/C/LED packages, conventional
@@ -23,7 +23,7 @@ connectivity, or the product PCB until the topology proposal below is approved.
 Create `circuit-review.yaml`:
 
 ```yaml
-circuit_review_schema: 2
+circuit_review_schema: 1
 build: default
 model: review/circuit/circuit.yaml
 diagram: review/circuit/circuit.svg
@@ -167,6 +167,30 @@ Use an atopile `Resistor`, `Capacitor`, or `LED` primitive, constrain its value
 and package, and retain the selected MPN/LCSC identity as part-selection
 metadata. A small source wrapper for shared constraints is acceptable; local
 `.kicad_sym`, `.kicad_mod`, `.step`, or `.wrl` assets are not.
+
+## Routing-ready net names
+
+Before final CIRCUIT review, give every resolved PCB net a concise,
+human-readable name owned by Atopile source. Record the same exact value as
+`compiler_name` on every net in the approved circuit model so final parity
+checks it against the compiled PCB.
+
+Use short functional upper-snake-case names such as `VBAT`, `GND`, `SWDIO`,
+`BUTTON_N`, or `LED_A_PWM`. Do not leave routable nets with compiler fallbacks
+such as `hv`, `lv`, `line`, numeric-only names, or hierarchy-generated labels.
+Name intentional single-pad unused nets `NC_<REF>_<PIN>`, zero-padding the pin
+when useful for sorting, for example `NC_U1_02`.
+
+Implement names with explicit Atopile net-name traits and synchronize them
+through the pinned compiler. Never rename nets only in `.kicad_pcb`: circuit
+source owns connectivity metadata, and a later build must reproduce the same
+names. Prove a name-only synchronization preserves endpoint membership,
+footprint placement/side, tracks, vias, zones, outline, graphics, and user
+artwork. Update `placement.yaml` net classes to reference the resulting exact
+names.
+
+Changing the approved name map changes the CIRCUIT proposal contract even
+when endpoint topology is unchanged. Repeat Gate A before changing source.
 
 ## Required audit
 

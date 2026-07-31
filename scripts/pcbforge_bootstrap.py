@@ -15,15 +15,6 @@ from typing import Any, Callable, Mapping, Sequence
 
 import yaml
 
-MIGRATION_COMMANDS = {
-    "migrate-policy",
-    "migrate-approvals",
-    "migrate-schematic-review",
-    "migrate-circuit-review",
-    "migrate-circuit-phase",
-    "migrate-placement-brief",
-    "migrate-phase-transitions",
-}
 OPTIONS_WITH_VALUES = {"--stage", "--note", "--fingerprint"}
 SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
 
@@ -119,15 +110,11 @@ def project_argument(argv: Sequence[str], cwd: Path) -> Path | None:
         "init",
         "check-ioc",
         "check-parts",
-        "check-schematic",
         "check-circuit-review",
         "check-build-test",
-        "brief",
-        "check-brief",
         "prepare-layout",
         "check-layout-handoff",
         "check-policy",
-        *MIGRATION_COMMANDS,
     }:
         if values:
             project = values[0]
@@ -261,15 +248,13 @@ def resolve_execution(
     launcher_root = launcher_root.resolve()
     cwd = (cwd or Path.cwd()).resolve()
     project_dir = project_argument(argv, cwd)
-    command = argv[0] if argv else ""
-    migration = command in MIGRATION_COMMANDS
     pin_path = project_dir / ".pcbforge" if project_dir is not None else None
 
-    if migration or pin_path is None or not pin_path.is_file():
+    if pin_path is None or not pin_path.is_file():
         if not _is_clean(launcher_root, runner):
             raise BootstrapError(
                 "the launcher checkout is dirty; commit or stash PCBForge changes "
-                "before initialization, migration, or unpinned project work"
+                "before initialization or unpinned project work"
             )
         revision = _run(
             runner,
@@ -287,7 +272,7 @@ def resolve_execution(
     if pin.dirty:
         raise BootstrapError(
             f"{pin_path} records pcbforge.dirty: true and is not reproducible; "
-            "use an explicit migrate-* command from a clean checkout"
+            "restart the project with a clean PCBForge checkout"
         )
 
     candidates = [

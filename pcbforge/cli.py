@@ -33,7 +33,6 @@ from pcbforge.policy import (
     PolicyError,
     PolicyInputError,
     check_policy,
-    migrate_policy,
     render_policy_result,
 )
 from pcbforge.placement import (
@@ -41,11 +40,6 @@ from pcbforge.placement import (
     PlacementInputError,
     check_brief,
     generate_brief,
-)
-from pcbforge.schematic import (
-    SchematicError,
-    SchematicInputError,
-    check_schematic,
 )
 from pcbforge.status import (
     StatusCheckError,
@@ -55,15 +49,10 @@ from pcbforge.status import (
     inspect_status,
     mark_policy,
     mark_status,
-    migrate_approvals,
-    migrate_circuit_phase,
-    migrate_circuit_review,
-    migrate_phase_transitions,
-    migrate_placement_brief,
-    migrate_schematic_review,
     policy_approval_context,
     read_status_document,
     record_initialization_blocker,
+    render_next,
     render_phase_review,
     render_terminal,
     review_phase,
@@ -129,33 +118,6 @@ def _parser() -> argparse.ArgumentParser:
         help="initialized pcbforge project (default: current directory)",
     )
 
-    check_schematic_parser = subcommands.add_parser(
-        "check-schematic",
-        help="run the legacy schema-12 native KiCad review gate",
-        description=(
-            "Run pinned KiCad ERC and SVG export for the proposal or final "
-            "review-only schematic. Final checks also prove compiled "
-            "Atopile-to-schematic identity and connectivity parity."
-        ),
-    )
-    check_schematic_parser.add_argument(
-        "project_dir",
-        nargs="?",
-        default=".",
-        metavar="PROJECT_DIR",
-        help="initialized pcbforge project (default: current directory)",
-    )
-    check_schematic_parser.add_argument(
-        "--stage",
-        required=True,
-        choices=("proposal", "final"),
-    )
-    check_schematic_parser.add_argument(
-        "--write",
-        action="store_true",
-        help="atomically write canonical evidence and SVG render pages",
-    )
-
     check_circuit_review_parser = subcommands.add_parser(
         "check-circuit-review",
         help="validate the authored CIRCUIT review gate",
@@ -205,39 +167,6 @@ def _parser() -> argparse.ArgumentParser:
         help="atomically write docs/build-test.md after a full pass",
     )
 
-    brief_parser = subcommands.add_parser(
-        "brief",
-        help="deprecated alias for prepare-layout",
-        description=(
-            "Validate placement.yaml against the current CIRCUIT PCB topology, "
-            "generate docs/placement-brief.md, and merge only PCBForge-owned net "
-            "classes into the KiCad project. Never changes the PCB."
-        ),
-    )
-    brief_parser.add_argument(
-        "project_dir",
-        nargs="?",
-        default=".",
-        metavar="PROJECT_DIR",
-        help="initialized pcbforge project (default: current directory)",
-    )
-
-    check_brief_parser = subcommands.add_parser(
-        "check-brief",
-        help="deprecated alias for check-layout-handoff",
-        description=(
-            "Read-only validation of placement.yaml, docs/placement-brief.md, "
-            "the current non-spatial PCB topology, and PCBForge-owned KiCad "
-            "net classes."
-        ),
-    )
-    check_brief_parser.add_argument(
-        "project_dir",
-        nargs="?",
-        default=".",
-        metavar="PROJECT_DIR",
-        help="initialized pcbforge project (default: current directory)",
-    )
     prepare_layout_parser = subcommands.add_parser(
         "prepare-layout",
         help="prepare the CIRCUIT-to-LAYOUT handoff",
@@ -290,18 +219,6 @@ def _parser() -> argparse.ArgumentParser:
         dest="policy_command",
         required=True,
     )
-    baseline_parser = policy_commands.add_parser(
-        "approve-baseline",
-        help="record explicit approval of a migrated policy baseline",
-    )
-    baseline_parser.add_argument(
-        "project_dir",
-        nargs="?",
-        default=".",
-        metavar="PROJECT_DIR",
-    )
-    baseline_parser.add_argument("--note", required=True)
-
     exception_parser = policy_commands.add_parser(
         "approve-exception",
         help="record explicit approval of one declared policy exception",
@@ -327,103 +244,6 @@ def _parser() -> argparse.ArgumentParser:
     )
     sourcing_parser.add_argument("--note", required=True)
 
-    migrate_parser = subcommands.add_parser(
-        "migrate-policy",
-        help="explicitly migrate a schema-7-through-9 project to schema 14",
-    )
-    migrate_parser.add_argument(
-        "project_dir",
-        nargs="?",
-        default=".",
-        metavar="PROJECT_DIR",
-        help="initialized schema-7-through-9 project (default: current directory)",
-    )
-
-    migrate_approvals_parser = subcommands.add_parser(
-        "migrate-approvals",
-        help="migrate a schema-10 project to current approvals and circuit review",
-    )
-    migrate_approvals_parser.add_argument(
-        "project_dir",
-        nargs="?",
-        default=".",
-        metavar="PROJECT_DIR",
-        help="initialized schema-10 project (default: current directory)",
-    )
-
-    migrate_schematic_parser = subcommands.add_parser(
-        "migrate-schematic-review",
-        help="legacy alias: migrate schema 11 to current circuit review",
-    )
-    migrate_schematic_parser.add_argument(
-        "project_dir",
-        nargs="?",
-        default=".",
-        metavar="PROJECT_DIR",
-        help="initialized schema-11 project (default: current directory)",
-    )
-    migrate_schematic_parser.add_argument(
-        "--adopt-existing",
-        action="store_true",
-        help=(
-            "explicitly label an already implemented circuit as legacy adoption; "
-            "never claims that pre-source proposal approval occurred"
-        ),
-    )
-
-    migrate_circuit_parser = subcommands.add_parser(
-        "migrate-circuit-review",
-        help="migrate a schema-12 project to authored SVG circuit review",
-    )
-    migrate_circuit_parser.add_argument(
-        "project_dir",
-        nargs="?",
-        default=".",
-        metavar="PROJECT_DIR",
-        help="initialized schema-12 project (default: current directory)",
-    )
-    migrate_circuit_parser.add_argument(
-        "--adopt-existing",
-        action="store_true",
-        help=(
-            "explicitly adopt source that changed after the MCU baseline; "
-            "never claims that pre-source proposal approval occurred"
-        ),
-    )
-    migrate_phase_parser = subcommands.add_parser(
-        "migrate-circuit-phase",
-        help="merge schema-13 IMPLEMENT and build phases into CIRCUIT",
-    )
-    migrate_phase_parser.add_argument(
-        "project_dir",
-        nargs="?",
-        default=".",
-        metavar="PROJECT_DIR",
-        help="initialized schema-13 project (default: current directory)",
-    )
-    migrate_brief_parser = subcommands.add_parser(
-        "migrate-placement-brief",
-        help="relocate the schema-14 placement brief into docs",
-    )
-    migrate_brief_parser.add_argument(
-        "project_dir",
-        nargs="?",
-        default=".",
-        metavar="PROJECT_DIR",
-        help="initialized schema-14 project (default: current directory)",
-    )
-    migrate_transitions_parser = subcommands.add_parser(
-        "migrate-phase-transitions",
-        help="replace INIT, MCU, and BRIEF phases with schema-15 transitions",
-    )
-    migrate_transitions_parser.add_argument(
-        "project_dir",
-        nargs="?",
-        default=".",
-        metavar="PROJECT_DIR",
-        help="initialized schema-14 project (default: current directory)",
-    )
-
     status_parser = subcommands.add_parser(
         "status",
         help="show or update the project's tracked workflow dashboard",
@@ -444,9 +264,10 @@ def _status_show_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pcbforge status",
         description=(
-            "Show the current workflow phase. Static inspection is read-only; "
-            "--check runs applicable pinned validators and --write refreshes "
-            "the tracked STATUS.md dashboard."
+            "Show the current workflow handoff. Static inspection is read-only; "
+            "--next shows the compact last/current/next view, --check runs "
+            "applicable pinned validators, and --write refreshes the tracked "
+            "STATUS.md dashboard."
         ),
     )
     parser.add_argument(
@@ -469,6 +290,11 @@ def _status_show_parser() -> argparse.ArgumentParser:
             "layout-handoff, IOC, and DRC checks"
         ),
     )
+    parser.add_argument(
+        "--next",
+        action="store_true",
+        help="show only the last, current, and next workflow handoff",
+    )
     return parser
 
 
@@ -477,13 +303,13 @@ def _status_mark_parser() -> argparse.ArgumentParser:
         prog="pcbforge status mark",
         description=(
             "Append a non-approval workflow event and refresh STATUS.md. "
-            "Schema-11 completion uses `pcbforge status approve`."
+            "Phase completion uses `pcbforge status approve`."
         ),
     )
     parser.add_argument("phase", help="workflow phase key, such as layout or order")
     parser.add_argument(
         "action",
-        help="complete, proposal-approved, blocked, reopened, or skipped",
+        help="blocked, reopened, or skipped",
     )
     parser.add_argument(
         "project_dir",
@@ -613,7 +439,11 @@ def _run_status_cli(argv: list[str]) -> int:
                 check=status_args.check,
             )
             report = result.report
-            print(render_terminal(report))
+            print(
+                render_next(report)
+                if status_args.next
+                else render_terminal(report)
+            )
             print(f"pcbforge: {'updated' if result.wrote else 'unchanged'} STATUS.md")
         else:
             project_dir = Path(status_args.project_dir)
@@ -621,7 +451,11 @@ def _run_status_cli(argv: list[str]) -> int:
             if status_args.check:
                 document = run_status_checks(project_dir, document)
             report = inspect_status(project_dir, document=document)
-            print(render_terminal(report))
+            print(
+                render_next(report)
+                if status_args.next
+                else render_terminal(report)
+            )
         return 1 if status_args.check and report.checks_failed else 0
     except CompatibilityError as exc:
         print(f"pcbforge status: {exc}", file=sys.stderr)
@@ -644,16 +478,7 @@ def main(argv: list[str] | None = None) -> int:
 
     args = _parser().parse_args(raw_argv)
 
-    if args.command not in {
-        "init",
-        "migrate-policy",
-        "migrate-approvals",
-        "migrate-schematic-review",
-        "migrate-circuit-review",
-        "migrate-circuit-phase",
-        "migrate-placement-brief",
-        "migrate-phase-transitions",
-    }:
+    if args.command != "init":
         try:
             validate_project_compatibility(Path(args.project_dir))
         except CompatibilityError as exc:
@@ -732,25 +557,6 @@ def main(argv: list[str] | None = None) -> int:
         print(render_parts_audit(result))
         return 0 if result.ok else 1
 
-    if args.command == "check-schematic":
-        try:
-            result = check_schematic(
-                Path(args.project_dir),
-                args.stage,
-                write=args.write,
-            )
-        except SchematicInputError as exc:
-            print(f"pcbforge check-schematic: {exc}", file=sys.stderr)
-            return 2
-        except SchematicError as exc:
-            print(f"pcbforge check-schematic: {exc}", file=sys.stderr)
-            return 1
-        state = "wrote" if args.write and result.wrote else "validated"
-        print(f"pcbforge: {state} {result.stage} schematic evidence")
-        print(f"pcbforge: {result.summary}")
-        print(f"pcbforge: evidence fingerprint {result.fingerprint}")
-        return 0
-
     if args.command == "check-circuit-review":
         try:
             result = check_circuit_review(
@@ -799,7 +605,6 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "policy":
         action = {
-            "approve-baseline": "baseline-approved",
             "approve-exception": "exception-approved",
             "confirm-sourcing": "sourcing-confirmed",
         }[args.policy_command]
@@ -823,144 +628,6 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
-    if args.command == "migrate-policy":
-        try:
-            migration = migrate_policy(Path(args.project_dir))
-            if migration.wrote:
-                write_status(Path(args.project_dir))
-        except PolicyInputError as exc:
-            print(f"pcbforge migrate-policy: {exc}", file=sys.stderr)
-            return 2
-        except (PolicyError, StatusError) as exc:
-            print(f"pcbforge migrate-policy: {exc}", file=sys.stderr)
-            return 1
-        state = "migrated" if migration.wrote else "already migrated"
-        print(f"pcbforge: {state} policy in {migration.project_dir}")
-        if migration.review_items:
-            print(
-                "pcbforge: review required for "
-                + ", ".join(migration.review_items)
-            )
-        if migration.wrote:
-            print(
-                "pcbforge: explicit policy baseline approval is still required"
-            )
-        return 0
-
-    if args.command == "migrate-approvals":
-        try:
-            migration = migrate_approvals(Path(args.project_dir))
-        except StatusInputError as exc:
-            print(f"pcbforge migrate-approvals: {exc}", file=sys.stderr)
-            return 2
-        except StatusError as exc:
-            print(f"pcbforge migrate-approvals: {exc}", file=sys.stderr)
-            return 1
-        state = "migrated" if migration.wrote else "already migrated"
-        print(f"pcbforge: {state} approvals in {migration.project_dir}")
-        if migration.reopened_phases:
-            print(
-                "pcbforge: explicit reapproval required for "
-                + ", ".join(migration.reopened_phases)
-            )
-        return 0
-
-    if args.command == "migrate-schematic-review":
-        try:
-            migration = migrate_schematic_review(
-                Path(args.project_dir),
-                adopt_existing=args.adopt_existing,
-            )
-        except StatusInputError as exc:
-            print(f"pcbforge migrate-schematic-review: {exc}", file=sys.stderr)
-            return 2
-        except StatusError as exc:
-            print(f"pcbforge migrate-schematic-review: {exc}", file=sys.stderr)
-            return 1
-        state = "migrated" if migration.wrote else "already migrated"
-        print(f"pcbforge: {state} schematic workflow in {migration.project_dir}")
-        if migration.reopened_phases:
-            print(
-                "pcbforge: explicit reapproval required for "
-                + ", ".join(migration.reopened_phases)
-            )
-        return 0
-
-    if args.command == "migrate-circuit-review":
-        try:
-            migration = migrate_circuit_review(
-                Path(args.project_dir),
-                adopt_existing=args.adopt_existing,
-            )
-        except StatusInputError as exc:
-            print(f"pcbforge migrate-circuit-review: {exc}", file=sys.stderr)
-            return 2
-        except StatusError as exc:
-            print(f"pcbforge migrate-circuit-review: {exc}", file=sys.stderr)
-            return 1
-        state = "migrated" if migration.wrote else "already migrated"
-        print(f"pcbforge: {state} circuit review workflow in {migration.project_dir}")
-        if migration.reopened_phases:
-            print(
-                "pcbforge: explicit reapproval required for "
-                + ", ".join(migration.reopened_phases)
-            )
-        return 0
-
-    if args.command == "migrate-circuit-phase":
-        try:
-            migration = migrate_circuit_phase(Path(args.project_dir))
-        except StatusInputError as exc:
-            print(f"pcbforge migrate-circuit-phase: {exc}", file=sys.stderr)
-            return 2
-        except StatusError as exc:
-            print(f"pcbforge migrate-circuit-phase: {exc}", file=sys.stderr)
-            return 1
-        state = "migrated" if migration.wrote else "already migrated"
-        print(f"pcbforge: {state} CIRCUIT workflow in {migration.project_dir}")
-        if migration.reopened_phases:
-            print(
-                "pcbforge: explicit reapproval required for "
-                + ", ".join(migration.reopened_phases)
-            )
-        return 0
-
-    if args.command == "migrate-placement-brief":
-        try:
-            migration = migrate_placement_brief(Path(args.project_dir))
-        except StatusInputError as exc:
-            print(f"pcbforge migrate-placement-brief: {exc}", file=sys.stderr)
-            return 2
-        except StatusError as exc:
-            print(f"pcbforge migrate-placement-brief: {exc}", file=sys.stderr)
-            return 1
-        state = "migrated" if migration.wrote else "already migrated"
-        print(
-            f"pcbforge: {state} placement brief in {migration.project_dir}"
-        )
-        return 0
-
-    if args.command == "migrate-phase-transitions":
-        try:
-            migration = migrate_phase_transitions(Path(args.project_dir))
-        except StatusInputError as exc:
-            print(f"pcbforge migrate-phase-transitions: {exc}", file=sys.stderr)
-            return 2
-        except StatusError as exc:
-            print(f"pcbforge migrate-phase-transitions: {exc}", file=sys.stderr)
-            return 1
-        state = "migrated" if migration.wrote else "already migrated"
-        print(
-            f"pcbforge: {state} streamlined workflow in "
-            f"{migration.project_dir}"
-        )
-        if migration.reopened_phases:
-            print(
-                "pcbforge: explicit reapproval required for "
-                + ", ".join(migration.reopened_phases)
-            )
-        return 0
-
     if args.command == "check-build-test":
         try:
             result = check_build_test(
@@ -980,27 +647,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"pcbforge: {state} {result.report_path.as_posix()}")
         return 0
 
-    if args.command in {
-        "prepare-layout",
-        "check-layout-handoff",
-        "brief",
-        "check-brief",
-    }:
-        if args.command in {"brief", "check-brief"}:
-            replacement = (
-                "prepare-layout"
-                if args.command == "brief"
-                else "check-layout-handoff"
-            )
-            print(
-                f"pcbforge: `{args.command}` is deprecated; use "
-                f"`pcbforge {replacement}`",
-                file=sys.stderr,
-            )
+    if args.command in {"prepare-layout", "check-layout-handoff"}:
         try:
             result = (
                 generate_brief(Path(args.project_dir))
-                if args.command in {"brief", "prepare-layout"}
+                if args.command == "prepare-layout"
                 else check_brief(Path(args.project_dir))
             )
         except PlacementInputError as exc:
@@ -1011,7 +662,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
         print(f"pcbforge: placement brief passed — {result.summary}")
-        if args.command in {"brief", "prepare-layout"}:
+        if args.command == "prepare-layout":
             brief_state = "updated" if result.wrote_brief else "unchanged"
             project_state = "updated" if result.wrote_project else "unchanged"
             print(

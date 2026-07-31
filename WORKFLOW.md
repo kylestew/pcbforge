@@ -144,6 +144,8 @@ Final evidence includes current:
 - `pcbforge check-policy`;
 - authored model/SVG versus source, BOM, and PCB parity;
 - `build-test.yaml`, marked assertions, and `docs/build-test.md`;
+- concise source-owned KiCad net names matching every proposal-model
+  `compiler_name`, with unused single-pad nets named `NC_<REF>_<PIN>`;
 - circuit-owned PCB topology with spatial data preserved.
 
 One final CIRCUIT approval covers the implemented circuit and its acceptance
@@ -171,9 +173,6 @@ policy evidence, `placement.yaml`, generated brief, exact board topology, and
 PCBForge-owned net classes. A topology or contract change reopens the handoff;
 ordinary spatial placement does not.
 
-`pcbforge brief` and `pcbforge check-brief` remain deprecated aliases for one
-migration cycle.
-
 ## 4–9. Physical and release phases
 
 LAYOUT and ROUTE are user-owned. The agent may prime constraints, spot issues,
@@ -198,23 +197,19 @@ pcbforge status --check --write /absolute/path/to/project
 Report the current numbered phase or transition, blockers, and next actions.
 Never edit the dashboard body or use `status mark ... complete`.
 
-## Schema-14 migration
-
-Upgrade an existing combined-CIRCUIT project explicitly:
+For a compact session handoff, run:
 
 ```text
-pcbforge migrate-phase-transitions /absolute/path/to/project
+pcbforge status --next /absolute/path/to/project
 ```
 
-The schema-15 migration is atomic and idempotent. It:
+Both views identify the latest valid milestone, current phase or transition,
+next owner, one primary action, and its exact command. A transition that ran
+before its upstream phase was reopened is shown as `Performed, inactive`; it
+remains in history but does not authorize forward progress. `Stale` instead
+means the upstream phase is current while transition evidence must be
+refreshed.
 
-- removes INIT, MCU, and BRIEF from the numbered phase sequence;
-- combines ARCHITECT and MCU evidence only when both approvals and the
-  ARCHITECT proposal are provably current;
-- turns current BRIEF evidence and approval into the LAYOUT handoff;
-- refreshes generated guidance and compatible evidence fingerprints;
-- preserves downstream approvals only in a provably current sequence;
-- reopens any gate whose equivalence cannot be proven.
-
-The migration updates only the target project. Rolling out this tool version
-does not automatically migrate Blinky, Temper, or any other board.
+PCBForge v1 is a clean break: only freshly initialized projects are supported.
+An unsupported artifact version must be restarted rather than upgraded in
+place.

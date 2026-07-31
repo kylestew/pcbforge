@@ -12,11 +12,7 @@ import yaml
 
 from pcbforge.build_test import fingerprint_inputs
 from pcbforge.cli import main
-from pcbforge.policy import (
-    load_policy_profile,
-    policy_status_fingerprint,
-    render_default_policy,
-)
+from pcbforge.policy import load_policy_profile, render_default_policy
 from pcbforge.placement import (
     BRIEF_FILENAME,
     BriefResult,
@@ -26,16 +22,6 @@ from pcbforge.placement import (
     check_brief,
     generate_brief,
     read_placement_contract,
-)
-from pcbforge.status import (
-    CheckRecord,
-    StatusDocument,
-    StatusEvent,
-    StatusInputError,
-    _approval_fingerprint,
-    approve_phase,
-    review_phase,
-    write_status,
 )
 
 TOOL_ROOT = Path(__file__).resolve().parents[1]
@@ -208,15 +194,15 @@ class PlacementFixture(unittest.TestCase):
         )
         _, _, policy_hash = load_policy_profile(TOOL_ROOT)
         (project / ".pcbforge").write_text(
-            f"""schema: 11
+            f"""schema: 1
 toolchain:
   atopile: 0.15.7
   kicad: 9.0.9
   uv_lock_sha256: {TOOLCHAIN_LOCK_HASH}
 guidance:
   build_test_schema: 1
-  brief_schema: 1
-  approval_schema: 2
+  layout_handoff_schema: 1
+  approval_schema: 1
   policy_schema: 1
 policy:
   profile: pcbforge-standard-v1
@@ -339,12 +325,12 @@ class SchemaTests(PlacementFixture):
             ):
                 read_placement_contract(project, tool_root=TOOL_ROOT)
 
-    def test_requires_migrated_step_seven_guidance(self) -> None:
+    def test_requires_supported_layout_handoff_guidance(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))
             pins = project / ".pcbforge"
             pins.write_text(
-                pins.read_text(encoding="utf-8").replace("schema: 11", "schema: 9"),
+                pins.read_text(encoding="utf-8").replace("schema: 1", "schema: 9", 1),
                 encoding="utf-8",
             )
             report = project / "docs" / "build-test.md"
@@ -361,7 +347,7 @@ fingerprint: {fingerprint_inputs(project)}
             )
             with self.assertRaisesRegex(
                 PlacementInputError,
-                "not migrated for the layout handoff",
+                "unsupported version — restart the project",
             ):
                 generate_brief(project, tool_root=TOOL_ROOT)
 
@@ -402,15 +388,6 @@ class GeneratorTests(PlacementFixture):
     def test_current_guidance_generates_placement_brief_under_docs(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))
-            pins_path = project / ".pcbforge"
-            pins = yaml.safe_load(pins_path.read_text(encoding="utf-8"))
-            pins["schema"] = 14
-            pins["guidance"]["brief_schema"] = 5
-            pins["guidance"]["approval_schema"] = 5
-            pins_path.write_text(
-                yaml.safe_dump(pins, sort_keys=False),
-                encoding="utf-8",
-            )
             fingerprint = fingerprint_inputs(project)
             (project / "docs" / "build-test.md").write_text(
                 f"""---
@@ -426,11 +403,11 @@ fingerprint: {fingerprint}
 
             result = generate_brief(project, tool_root=TOOL_ROOT)
             brief_exists = (project / result.brief_path).is_file()
-            legacy_exists = (project / "brief.md").exists()
+            root_alias_exists = (project / "brief.md").exists()
 
         self.assertEqual(result.brief_path, Path("docs/placement-brief.md"))
         self.assertTrue(brief_exists)
-        self.assertFalse(legacy_exists)
+        self.assertFalse(root_alias_exists)
 
     def test_generation_is_safe_preserving_idempotent_and_checkable(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -629,92 +606,6 @@ fingerprint: {step6}
 
 
 class StatusAndCliTests(PlacementFixture):
-    def _prior_events(self, project: Path) -> tuple[StatusEvent, ...]:
-        return tuple(
-            StatusEvent(
-                f"2026-07-27T10:0{index}:00+00:00",
-                phase,
-                "complete",
-                f"{phase} complete",
-                _approval_fingerprint(project, phase),
-            )
-            for index, phase in enumerate(
-                ("spec", "init", "architect", "mcu", "implement", "build")
-            )
-        )
-
-    def test_brief_completion_requires_machine_evidence_and_approval_note(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            project = self.project(Path(temporary))
-            generate_brief(project, tool_root=TOOL_ROOT)
-            document = StatusDocument("", self._prior_events(project), {})
-            with mock.patch(
-                "pcbforge.status._static_evidence",
-                return_value=(True, "current evidence", True),
-            ):
-                write_status(project, document=document)
-                fingerprint = brief_status_fingerprint(project)
-                checked = StatusDocument(
-                    "",
-                    self._prior_events(project),
-                    {
-                        "build-test": CheckRecord(
-                            "2026-07-27T11:00:00+00:00",
-                            fingerprint_inputs(project),
-                            "pass",
-                            "build + test passed",
-                        ),
-                        "brief": CheckRecord(
-                            "2026-07-27T11:00:00+00:00",
-                            fingerprint,
-                            "pass",
-                            "placement brief passed",
-                        ),
-                        "policy": CheckRecord(
-                            "2026-07-27T11:00:00+00:00",
-                            policy_status_fingerprint(
-                                project,
-                                tool_root=TOOL_ROOT,
-                            ),
-                            "pass",
-                            "policy passed",
-                        ),
-                    },
-                )
-                with mock.patch(
-                    "pcbforge.status.run_status_checks",
-                    return_value=checked,
-                ):
-                    review = review_phase(
-                        project,
-                        "brief",
-                        tool_root=TOOL_ROOT,
-                    )
-                    with self.assertRaisesRegex(
-                        StatusInputError,
-                        "schematic review: adequate",
-                    ):
-                        approve_phase(
-                            project,
-                            "brief",
-                            review.fingerprint,
-                            "Approved brief.md only",
-                            tool_root=TOOL_ROOT,
-                        )
-                    marked = approve_phase(
-                        project,
-                        "brief",
-                        review.fingerprint,
-                        "Approved brief.md; schematic review: adequate",
-                        tool_root=TOOL_ROOT,
-                    )
-
-        self.assertTrue(marked.report.phases[6].complete)
-        self.assertEqual(marked.report.current.phase.key, "layout")
-        self.assertTrue(
-            marked.report.document.events[-1].approval_fingerprint
-        )
-
     def test_cli_commands_report_results_and_error_categories(self) -> None:
         result = BriefResult(
             Path("/tmp/project"),
@@ -723,7 +614,7 @@ class StatusAndCliTests(PlacementFixture):
             3,
             2,
             2,
-            Path("brief.md"),
+            Path("docs/placement-brief.md"),
             Path("board.kicad_pro"),
             True,
             False,

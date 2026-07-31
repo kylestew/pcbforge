@@ -46,9 +46,9 @@ exception_rules:
   assurance.test-points:
     earliest_phase: circuit
   assurance.polarity-marking:
-    earliest_phase: brief
+    earliest_phase: layout
   assurance.pin1-marking:
-    earliest_phase: brief
+    earliest_phase: layout
   sourcing.unavailable:
     earliest_phase: circuit
   sourcing.lifecycle:

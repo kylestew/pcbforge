@@ -7,24 +7,24 @@ from typing import Any, Mapping
 
 import yaml
 
-PIN_SCHEMA = 15
-STATUS_SCHEMA = 4
+PIN_SCHEMA = 1
+STATUS_SCHEMA = 1
 EXPECTED_GUIDANCE = {
-    "agents_schema": 16,
-    "architect_schema": 5,
+    "agents_schema": 1,
+    "architect_schema": 1,
     "architecture_diagram_schema": 1,
-    "mcu_schema": 4,
+    "mcu_schema": 1,
     "circuit_schema": 1,
     "build_test_schema": 1,
     "layout_handoff_schema": 1,
-    "approval_schema": 6,
-    "circuit_review_schema": 2,
+    "approval_schema": 1,
+    "circuit_review_schema": 1,
     "policy_schema": 1,
-    "status_schema": 4,
+    "status_schema": 1,
 }
 STRUCTURED_ARTIFACT_SCHEMAS = {
     "policy.yaml": ("policy_schema", 1),
-    "circuit-review.yaml": ("circuit_review_schema", 2),
+    "circuit-review.yaml": ("circuit_review_schema", 1),
     "build-test.yaml": ("build_test_schema", 1),
     "placement.yaml": ("placement_schema", 1),
 }
@@ -104,11 +104,8 @@ def validate_project_compatibility(project_dir: Path) -> None:
         return
     pins = _load_yaml(pins_path, ".pcbforge")
     errors: list[str] = []
-    if pins.get("schema") != PIN_SCHEMA:
-        errors.append(
-            f".pcbforge schema is {pins.get('schema')!r}; expected {PIN_SCHEMA} "
-            "or an explicit migrate-* command"
-        )
+    if type(pins.get("schema")) is not int or pins.get("schema") != PIN_SCHEMA:
+        errors.append(".pcbforge schema: unsupported version — restart the project")
     pcbforge = pins.get("pcbforge")
     if not isinstance(pcbforge, dict):
         errors.append(".pcbforge pcbforge must be a mapping")
@@ -119,19 +116,19 @@ def validate_project_compatibility(project_dir: Path) -> None:
         errors.append(".pcbforge guidance must be a mapping")
     else:
         for key, expected in EXPECTED_GUIDANCE.items():
-            if guidance.get(key) != expected:
+            if type(guidance.get(key)) is not int or guidance.get(key) != expected:
                 errors.append(
-                    f".pcbforge guidance.{key} is {guidance.get(key)!r}; "
-                    f"expected {expected}"
+                    f".pcbforge guidance.{key}: unsupported version — restart the project"
                 )
 
     status_path = project_dir / "STATUS.md"
     if status_path.is_file():
         status = _status_metadata(status_path)
-        if status.get("pcbforge_status_schema") != STATUS_SCHEMA:
+        if type(status.get("pcbforge_status_schema")) is not int or status.get(
+            "pcbforge_status_schema"
+        ) != STATUS_SCHEMA:
             errors.append(
-                "STATUS.md pcbforge_status_schema is "
-                f"{status.get('pcbforge_status_schema')!r}; expected {STATUS_SCHEMA}"
+                "STATUS.md pcbforge_status_schema: unsupported version — restart the project"
             )
 
     for filename, (key, expected) in STRUCTURED_ARTIFACT_SCHEMAS.items():
@@ -139,9 +136,9 @@ def validate_project_compatibility(project_dir: Path) -> None:
         if not path.is_file():
             continue
         artifact = _load_yaml(path, filename)
-        if artifact.get(key) != expected:
+        if type(artifact.get(key)) is not int or artifact.get(key) != expected:
             errors.append(
-                f"{filename} {key} is {artifact.get(key)!r}; expected {expected}"
+                f"{filename} {key}: unsupported version — restart the project"
             )
 
     if errors:

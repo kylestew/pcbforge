@@ -334,25 +334,25 @@ class InitializeTests(unittest.TestCase):
             self.assertIn("kicad: 9.0.9", pins)
             self.assertIn("jlc-2layer-conservative-v1", pins)
             pin_data = yaml.safe_load(pins)
-            self.assertEqual(pin_data["schema"], 15)
+            self.assertEqual(pin_data["schema"], 1)
             self.assertNotIn("brief_schema", pin_data["guidance"])
             self.assertEqual(pin_data["guidance"]["layout_handoff_schema"], 1)
-            self.assertEqual(pin_data["guidance"]["approval_schema"], 6)
-            self.assertEqual(pin_data["guidance"]["agents_schema"], 16)
+            self.assertEqual(pin_data["guidance"]["approval_schema"], 1)
+            self.assertEqual(pin_data["guidance"]["agents_schema"], 1)
             self.assertEqual(pin_data["guidance"]["policy_schema"], 1)
-            self.assertEqual(pin_data["guidance"]["architect_schema"], 5)
+            self.assertEqual(pin_data["guidance"]["architect_schema"], 1)
             self.assertEqual(
                 pin_data["guidance"]["architecture_diagram_schema"],
                 1,
             )
-            self.assertEqual(pin_data["guidance"]["mcu_schema"], 4)
+            self.assertEqual(pin_data["guidance"]["mcu_schema"], 1)
             self.assertEqual(pin_data["guidance"]["circuit_schema"], 1)
             self.assertNotIn("implement_schema", pin_data["guidance"])
             self.assertEqual(pin_data["guidance"]["build_test_schema"], 1)
-            self.assertEqual(pin_data["guidance"]["status_schema"], 4)
+            self.assertEqual(pin_data["guidance"]["status_schema"], 1)
             self.assertEqual(
                 pin_data["guidance"]["circuit_review_schema"],
-                2,
+                1,
             )
             self.assertEqual(
                 pin_data["policy"]["profile"],
@@ -368,7 +368,7 @@ class InitializeTests(unittest.TestCase):
             )
 
             agents = (project / "AGENTS.md").read_text(encoding="utf-8")
-            self.assertIn("pcbforge-agents-schema: 16", agents)
+            self.assertIn("pcbforge-agents-schema: 1", agents)
             self.assertIn("agent/layout-handoff.md", agents)
             self.assertIn("Never place, route, move", agents)
             self.assertIn("opens ARCHITECT directly", agents)
@@ -382,6 +382,8 @@ class InitializeTests(unittest.TestCase):
             self.assertIn("status review architect --stage proposal", agents)
             self.assertIn("Final approval captures the pre-CIRCUIT source baseline", agents)
             self.assertIn("status approve architect", agents)
+            self.assertIn("pcbforge status --next", agents)
+            self.assertIn("`Performed, inactive`", agents)
             self.assertIn("## Manufacturing and technology policy", agents)
             self.assertIn("pcbforge check-policy", agents)
             self.assertIn("policy confirm-sourcing", agents)
@@ -528,7 +530,7 @@ class InitializeTests(unittest.TestCase):
 
         self.assertEqual(runner.calls, [])
 
-    def test_rejects_legacy_unbound_spec_approval_before_init(self) -> None:
+    def test_rejects_spec_approval_without_a_fingerprint_before_init(self) -> None:
         runner = FakeRunner()
         with tempfile.TemporaryDirectory() as temporary:
             project = self._project(Path(temporary), "garden-logger")
@@ -595,7 +597,11 @@ class InitializeTests(unittest.TestCase):
             self.assertEqual(report.events[0].phase, "spec")
             dashboard = (project / "STATUS.md").read_text(encoding="utf-8")
             self.assertIn("1 of 8 required phases complete", dashboard)
-            self.assertIn("**Phase:** 2. ARCHITECT — Ready", dashboard)
+            self.assertIn("**Current:** 2. ARCHITECT — Ready", dashboard)
+            self.assertIn(
+                "**Just completed:** SPEC → ARCHITECT: initialize",
+                dashboard,
+            )
             self.assertIn(
                 "SPEC → ARCHITECT: initialize | Tool | ✅ Complete",
                 dashboard,
@@ -705,7 +711,7 @@ class GuidanceTests(unittest.TestCase):
     def test_architect_playbook_and_empty_catalog_are_explicit(self) -> None:
         playbook = (TOOL_ROOT / "agent" / "architect.md").read_text(encoding="utf-8")
         for required in (
-            "pcbforge-architect-schema: 5",
+            "pcbforge-architect-schema: 1",
             "src/modules/<snake_case>.ato",
             "src/mcu.ato",
             "ElectricPower",
@@ -724,7 +730,7 @@ class GuidanceTests(unittest.TestCase):
 
         mcu_playbook = (TOOL_ROOT / "agent" / "mcu.md").read_text(encoding="utf-8")
         for required in (
-            "pcbforge-mcu-schema: 4",
+            "pcbforge-mcu-schema: 1",
             "firmware/<project>.ioc",
             "DEBUG_UART_TX",
             "check-ioc",

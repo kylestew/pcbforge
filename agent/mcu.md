@@ -1,4 +1,4 @@
-<!-- pcbforge-mcu-schema: 4 -->
+<!-- pcbforge-mcu-schema: 1 -->
 # pcbforge — MCU workstream inside ARCHITECT
 
 This subordinate playbook operationalizes the MCU portion of ARCHITECT in
