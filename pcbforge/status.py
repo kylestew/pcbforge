@@ -204,6 +204,8 @@ class StatusEvent:
     action: str
     note: str
     approval_fingerprint: str = ""
+    content_fingerprint: str = ""
+    renewed_from: str = ""
 
 
 @dataclass(frozen=True)
@@ -230,6 +232,8 @@ class TransitionEvent:
     action: str
     note: str
     approval_fingerprint: str = ""
+    content_fingerprint: str = ""
+    renewed_from: str = ""
 
 
 @dataclass(frozen=True)
@@ -331,6 +335,42 @@ class PhaseReview:
     artifacts: tuple[str, ...]
     checks: tuple[PhaseReviewCheck, ...]
     stage: str = "final"
+
+
+@dataclass(frozen=True)
+class CascadeGateReview:
+    key: str
+    label: str
+    action: str
+    classification: str
+    detail: str
+    previous_fingerprint: str
+    approval_fingerprint: str
+    content_fingerprint: str
+    artifacts: tuple[str, ...]
+    checks: tuple[PhaseReviewCheck, ...]
+
+
+@dataclass(frozen=True)
+class CascadeReview:
+    project_dir: Path
+    ready: bool
+    detail: str
+    root_gate: str
+    changed_slices: tuple[str, ...]
+    unchanged_slices: tuple[str, ...]
+    gates: tuple[CascadeGateReview, ...]
+    fingerprint: str
+
+
+@dataclass(frozen=True)
+class _ApprovalGate:
+    key: str
+    label: str
+    phase: str
+    action: str
+    stage: str
+    transition: str = ""
 
 
 class _UniqueStatusLoader(yaml.SafeLoader):
@@ -521,6 +561,8 @@ def read_status_document(project_dir: Path) -> StatusDocument:
                 "action",
                 "note",
                 "approval_fingerprint",
+                "content_fingerprint",
+                "renewed_from",
             }:
                 errors.append(f"{prefix}: contains unknown keys")
             at = _text(raw.get("at"), f"{prefix}.at", errors)
@@ -533,6 +575,24 @@ def read_status_document(project_dir: Path) -> StatusDocument:
                 errors,
                 required=False,
             )
+            content_fingerprint = _text(
+                raw.get("content_fingerprint"),
+                f"{prefix}.content_fingerprint",
+                errors,
+                required=False,
+            )
+            renewed_from = _text(
+                raw.get("renewed_from"),
+                f"{prefix}.renewed_from",
+                errors,
+                required=False,
+            )
+            for field, value in (
+                ("content_fingerprint", content_fingerprint),
+                ("renewed_from", renewed_from),
+            ):
+                if value and re.fullmatch(r"[0-9a-f]{64}", value) is None:
+                    errors.append(f"{prefix}.{field}: expected a lowercase SHA-256")
             if phase and phase not in PHASE_BY_KEY:
                 errors.append(f"{prefix}.phase: unknown phase {phase!r}")
             if action and action not in EVENT_ACTIONS:
@@ -544,6 +604,8 @@ def read_status_document(project_dir: Path) -> StatusDocument:
                     action=action,
                     note=note,
                     approval_fingerprint=approval_fingerprint,
+                    content_fingerprint=content_fingerprint,
+                    renewed_from=renewed_from,
                 )
             )
 
@@ -603,6 +665,8 @@ def read_status_document(project_dir: Path) -> StatusDocument:
                 "action",
                 "note",
                 "approval_fingerprint",
+                "content_fingerprint",
+                "renewed_from",
             }:
                 errors.append(f"{prefix}: contains unknown keys")
             at = _text(raw.get("at"), f"{prefix}.at", errors)
@@ -619,6 +683,24 @@ def read_status_document(project_dir: Path) -> StatusDocument:
                 errors,
                 required=False,
             )
+            content_fingerprint = _text(
+                raw.get("content_fingerprint"),
+                f"{prefix}.content_fingerprint",
+                errors,
+                required=False,
+            )
+            renewed_from = _text(
+                raw.get("renewed_from"),
+                f"{prefix}.renewed_from",
+                errors,
+                required=False,
+            )
+            for field, value in (
+                ("content_fingerprint", content_fingerprint),
+                ("renewed_from", renewed_from),
+            ):
+                if value and re.fullmatch(r"[0-9a-f]{64}", value) is None:
+                    errors.append(f"{prefix}.{field}: expected a lowercase SHA-256")
             if transition and transition not in {
                 "initialize",
                 "layout-handoff",
@@ -635,6 +717,8 @@ def read_status_document(project_dir: Path) -> StatusDocument:
                     action,
                     note,
                     approval_fingerprint,
+                    content_fingerprint,
+                    renewed_from,
                 )
             )
 
@@ -759,6 +843,49 @@ def _approval_fingerprint(
     document: StatusDocument | None = None,
 ) -> str:
     project_dir = _project_dir(project_dir)
+    return _payload_fingerprint(
+        _approval_payload(project_dir, phase, action, document)
+    )
+
+
+UPSTREAM_APPROVAL_FIELDS = frozenset(
+    {
+        "spec_contract",
+        "policy_baseline",
+        "policy_circuit",
+        "circuit_approval",
+        "predecessor_approval",
+        "predecessor_approvals",
+    }
+)
+
+
+def _payload_fingerprint(payload: Mapping[str, Any]) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            payload,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+    ).hexdigest()
+
+
+def _content_fingerprint(payload: Mapping[str, Any]) -> str:
+    return _payload_fingerprint(
+        {
+            key: value
+            for key, value in payload.items()
+            if key not in UPSTREAM_APPROVAL_FIELDS
+        }
+    )
+
+
+def _approval_payload(
+    project_dir: Path,
+    phase: str,
+    action: str = "complete",
+    document: StatusDocument | None = None,
+) -> Mapping[str, Any]:
     if action == "proposal-approved":
         if phase == "architect":
             paths = {
@@ -804,20 +931,14 @@ def _approval_fingerprint(
             ),
             "checks": checks,
         }
-        return hashlib.sha256(
-            json.dumps(
-                payload,
-                separators=(",", ":"),
-                sort_keys=True,
-            ).encode()
-        ).hexdigest()
+        return payload
     if action == "complete":
         document = (
             document
             if document is not None
             else read_status_document(project_dir)
         )
-        return _phase_approval_fingerprint(project_dir, phase, document)
+        return _phase_approval_payload(project_dir, phase, document)
     raise AssertionError(f"{phase} has no approval fingerprint")
 
 
@@ -1305,11 +1426,11 @@ def _approval_check_semantics(
     ]
 
 
-def _phase_approval_fingerprint(
+def _phase_approval_payload(
     project_dir: Path,
     phase: str,
     document: StatusDocument,
-) -> str:
+) -> Mapping[str, Any]:
     spec = read_spec(project_dir / "spec.md")
     artifacts = _phase_artifact_paths(project_dir, spec, phase)
     payload: dict[str, Any] = {
@@ -1368,13 +1489,17 @@ def _phase_approval_fingerprint(
             payload["sourcing"] = policy_sourcing_fingerprint(project_dir)
         except PolicyError as exc:
             payload["sourcing"] = f"<invalid:{exc}>"
-    return hashlib.sha256(
-        json.dumps(
-            payload,
-            separators=(",", ":"),
-            sort_keys=True,
-        ).encode()
-    ).hexdigest()
+    return payload
+
+
+def _phase_approval_fingerprint(
+    project_dir: Path,
+    phase: str,
+    document: StatusDocument,
+) -> str:
+    return _payload_fingerprint(
+        _phase_approval_payload(project_dir, phase, document)
+    )
 
 
 def _static_evidence(
@@ -1552,6 +1677,15 @@ def _layout_handoff_fingerprint(
     project_dir: Path,
     document: StatusDocument,
 ) -> str:
+    return _payload_fingerprint(
+        _layout_handoff_payload(project_dir, document)
+    )
+
+
+def _layout_handoff_payload(
+    project_dir: Path,
+    document: StatusDocument,
+) -> Mapping[str, Any]:
     latest, _ = _latest_events(document.events)
     circuit = latest.get("circuit")
     circuit_approval = (
@@ -1570,7 +1704,7 @@ def _layout_handoff_fingerprint(
             if path.is_file()
         )
     )
-    payload = {
+    return {
         "approval_schema": 1,
         "transition": "layout-handoff",
         "source_phase": "circuit",
@@ -1582,9 +1716,6 @@ def _layout_handoff_fingerprint(
             for name in ("build-test", "layout-handoff", "policy")
         ],
     }
-    return hashlib.sha256(
-        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
-    ).hexdigest()
 
 
 def _current_layout_handoff(
@@ -2982,6 +3113,528 @@ def _prepare_layout_handoff_review(
     )
 
 
+def _approval_gate_sequence() -> tuple[_ApprovalGate, ...]:
+    gates: list[_ApprovalGate] = []
+    for phase in PHASES:
+        if phase.key in {"architect", "circuit"}:
+            gates.append(
+                _ApprovalGate(
+                    f"{phase.key}:proposal",
+                    f"{phase.label} proposal",
+                    phase.key,
+                    "proposal-approved",
+                    "proposal",
+                )
+            )
+        gates.append(
+            _ApprovalGate(
+                phase.key,
+                f"{phase.label} final",
+                phase.key,
+                "complete",
+                "final",
+            )
+        )
+        if phase.key == "circuit":
+            gates.append(
+                _ApprovalGate(
+                    "layout:handoff",
+                    "CIRCUIT → LAYOUT handoff",
+                    "layout",
+                    "approved",
+                    "handoff",
+                    "layout-handoff",
+                )
+            )
+    return tuple(gates)
+
+
+def _gate_prior_approval(
+    document: StatusDocument,
+    gate: _ApprovalGate,
+) -> tuple[int, StatusEvent | TransitionEvent] | None:
+    if gate.transition:
+        for index in range(len(document.transition_events) - 1, -1, -1):
+            event = document.transition_events[index]
+            if event.transition == gate.transition and event.action == gate.action:
+                return index, event
+        return None
+    if gate.phase == "publish":
+        latest = next(
+            (
+                event
+                for event in reversed(document.events)
+                if event.phase == "publish"
+            ),
+            None,
+        )
+        if latest is not None and latest.action == "skipped":
+            return None
+    for index in range(len(document.events) - 1, -1, -1):
+        event = document.events[index]
+        if event.phase == gate.phase and event.action == gate.action:
+            return index, event
+    return None
+
+
+def _automatic_approval_reopen(event: StatusEvent | TransitionEvent) -> bool:
+    return event.action == "reopened" and event.note.startswith(
+        "Approval invalidated automatically because"
+    )
+
+
+def _gate_control_after(
+    document: StatusDocument,
+    gate: _ApprovalGate,
+    approval_index: int,
+) -> tuple[str, bool]:
+    events: Sequence[StatusEvent | TransitionEvent]
+    if gate.transition:
+        events = document.transition_events[approval_index + 1 :]
+        relevant = (
+            event
+            for event in events
+            if isinstance(event, TransitionEvent)
+            and event.transition == gate.transition
+        )
+    else:
+        events = document.events[approval_index + 1 :]
+        relevant = (
+            event
+            for event in events
+            if isinstance(event, StatusEvent) and event.phase == gate.phase
+        )
+    automatically_reopened = False
+    for event in relevant:
+        if _automatic_approval_reopen(event):
+            if gate.stage != "proposal":
+                automatically_reopened = True
+            continue
+        if event.action == "reopened":
+            return "gate was explicitly reopened", automatically_reopened
+        if event.action == "blocked":
+            return "gate was explicitly blocked", automatically_reopened
+    return "", automatically_reopened
+
+
+def _gate_payload(
+    project_dir: Path,
+    gate: _ApprovalGate,
+    document: StatusDocument,
+) -> Mapping[str, Any]:
+    if gate.transition:
+        return _layout_handoff_payload(project_dir, document)
+    return _approval_payload(
+        project_dir,
+        gate.phase,
+        gate.action,
+        document,
+    )
+
+
+def _gate_artifacts(
+    project_dir: Path,
+    spec: ProjectSpec,
+    gate: _ApprovalGate,
+    payload: Mapping[str, Any],
+) -> tuple[str, ...]:
+    if gate.stage == "final":
+        return tuple(
+            path.relative_to(project_dir).as_posix()
+            for path in _phase_review_artifact_paths(
+                project_dir,
+                spec,
+                gate.phase,
+            )
+        )
+    artifacts = {
+        str(item["path"])
+        for item in payload.get("artifacts", [])
+        if isinstance(item, dict) and isinstance(item.get("path"), str)
+    }
+    if gate.stage == "proposal":
+        artifacts.add("spec.md")
+    return tuple(sorted(artifacts))
+
+
+def _gate_check_names(gate: _ApprovalGate) -> tuple[str, ...]:
+    if gate.stage == "proposal":
+        return ("circuit-proposal",) if gate.phase == "circuit" else ()
+    if gate.stage == "handoff":
+        return ("build-test", "layout-handoff", "policy")
+    return APPROVAL_CHECKS.get(gate.phase, ())
+
+
+def _gate_check_reviews(
+    project_dir: Path,
+    spec: ProjectSpec,
+    document: StatusDocument,
+    gate: _ApprovalGate,
+) -> tuple[tuple[PhaseReviewCheck, ...], tuple[str, ...]]:
+    reviews: list[PhaseReviewCheck] = []
+    failures: list[str] = []
+    for name in _gate_check_names(gate):
+        current, detail = _current_check(project_dir, spec, document, name)
+        record = document.checks.get(name)
+        reviews.append(
+            PhaseReviewCheck(
+                name,
+                (
+                    record.outcome
+                    if current and record is not None
+                    else "stale"
+                    if record is not None
+                    else "missing"
+                ),
+                record.summary if current and record is not None else detail,
+                record.fingerprint if record is not None else "",
+            )
+        )
+        if not current:
+            failures.append(detail)
+    return tuple(reviews), tuple(failures)
+
+
+def _append_gate_approval(
+    document: StatusDocument,
+    gate: _ApprovalGate,
+    *,
+    at: str,
+    note: str,
+    approval_fingerprint: str,
+    content_fingerprint: str,
+    renewed_from: str,
+) -> StatusDocument:
+    if gate.transition:
+        event = TransitionEvent(
+            at=at,
+            transition=gate.transition,
+            action=gate.action,
+            note=note,
+            approval_fingerprint=approval_fingerprint,
+            content_fingerprint=content_fingerprint,
+            renewed_from=renewed_from,
+        )
+        return replace(
+            document,
+            transition_events=(*document.transition_events, event),
+        )
+    event = StatusEvent(
+        at=at,
+        phase=gate.phase,
+        action=gate.action,
+        note=note,
+        approval_fingerprint=approval_fingerprint,
+        content_fingerprint=content_fingerprint,
+        renewed_from=renewed_from,
+    )
+    return replace(document, events=(*document.events, event))
+
+
+def prepare_cascade_review(
+    project_dir: Path,
+    document: StatusDocument | None = None,
+) -> CascadeReview:
+    """Prove which stale approvals can be renewed without full ceremony."""
+    project_dir = _project_dir(project_dir)
+    document = document if document is not None else read_status_document(project_dir)
+    spec = read_spec(project_dir / "spec.md")
+    gates = _approval_gate_sequence()
+    prior = {
+        gate.key: _gate_prior_approval(document, gate)
+        for gate in gates
+    }
+    root_index: int | None = None
+    root_error = ""
+    for index, gate in enumerate(gates):
+        approval = prior[gate.key]
+        if approval is None:
+            continue
+        approval_index, event = approval
+        explicit, automatic = _gate_control_after(
+            document,
+            gate,
+            approval_index,
+        )
+        try:
+            current_fingerprint = _payload_fingerprint(
+                _gate_payload(project_dir, gate, document)
+            )
+        except (
+            BuildTestError,
+            CircuitReviewError,
+            PlacementError,
+            PolicyError,
+            StatusError,
+            OSError,
+        ) as exc:
+            root_index = index
+            root_error = str(exc).splitlines()[0]
+            break
+        if explicit or automatic or event.approval_fingerprint != current_fingerprint:
+            root_index = index
+            root_error = explicit
+            break
+    if root_index is None:
+        return CascadeReview(
+            project_dir,
+            False,
+            "no stale approval chain is available for cascade renewal",
+            "",
+            (),
+            (),
+            (),
+            "",
+        )
+
+    provisional = document
+    reviews: list[CascadeGateReview] = []
+    eligible_fingerprints: list[dict[str, str]] = []
+    stopped = False
+    changed_slices: tuple[str, ...] = ()
+    unchanged_slices: tuple[str, ...] = ()
+    for index, gate in enumerate(gates[root_index:], start=root_index):
+        approval = prior[gate.key]
+        if approval is None:
+            continue
+        approval_index, event = approval
+        explicit, _ = _gate_control_after(document, gate, approval_index)
+        payload: Mapping[str, Any] = {}
+        payload_error = ""
+        try:
+            payload = _gate_payload(project_dir, gate, provisional)
+            approval_fingerprint = _payload_fingerprint(payload)
+            content_fingerprint = _content_fingerprint(payload)
+            artifacts = _gate_artifacts(project_dir, spec, gate, payload)
+        except (
+            BuildTestError,
+            CircuitReviewError,
+            PlacementError,
+            PolicyError,
+            StatusError,
+            OSError,
+        ) as exc:
+            approval_fingerprint = ""
+            content_fingerprint = ""
+            artifacts = ()
+            payload_error = str(exc).splitlines()[0]
+        checks, check_failures = _gate_check_reviews(
+            project_dir,
+            spec,
+            provisional,
+            gate,
+        )
+
+        if stopped:
+            classification = "deferred"
+            detail = "requires full ceremony after the earlier cascade stop"
+        elif explicit:
+            classification = "blocked"
+            detail = explicit
+        elif payload_error:
+            classification = "blocked"
+            detail = f"cannot compute current approval payload: {payload_error}"
+        elif check_failures:
+            classification = "blocked"
+            detail = (
+                "required saved checks are not current and passing: "
+                + "; ".join(check_failures)
+            )
+        elif not event.content_fingerprint:
+            classification = "delta"
+            detail = "prior approval has no content fingerprint; full review required"
+        elif event.content_fingerprint != content_fingerprint:
+            classification = "delta"
+            detail = "gate-owned semantic content changed; full review required"
+        else:
+            classification = "eligible"
+            detail = "gate-owned semantic content is unchanged"
+            eligible_fingerprints.append(
+                {
+                    "gate": gate.key,
+                    "action": gate.action,
+                    "approval_fingerprint": approval_fingerprint,
+                }
+            )
+            provisional = _append_gate_approval(
+                provisional,
+                gate,
+                at="cascade-review",
+                note="cascade renewal simulation",
+                approval_fingerprint=approval_fingerprint,
+                content_fingerprint=content_fingerprint,
+                renewed_from=event.approval_fingerprint,
+            )
+
+        reviews.append(
+            CascadeGateReview(
+                gate.key,
+                gate.label,
+                gate.action,
+                classification,
+                detail,
+                event.approval_fingerprint,
+                approval_fingerprint,
+                content_fingerprint,
+                artifacts,
+                checks,
+            )
+        )
+        if index == root_index:
+            upstream = sorted(set(payload) & UPSTREAM_APPROVAL_FIELDS)
+            if classification == "eligible":
+                changed_slices = (
+                    (
+                        "upstream approval scope changed (one or more): "
+                        + ", ".join(upstream)
+                    )
+                    if upstream
+                    and event.approval_fingerprint != approval_fingerprint
+                    else "predecessor approval ordering changed",
+                )
+                unchanged_slices = (
+                    "gate-owned semantic content: " + content_fingerprint,
+                    *(f"artifact: {artifact}" for artifact in artifacts),
+                )
+            elif classification == "delta":
+                changed_slices = (
+                    "gate-owned semantic content changed or cannot be proven unchanged",
+                )
+            else:
+                changed_slices = (root_error or detail,)
+        if classification in {"delta", "blocked"}:
+            stopped = True
+
+    fingerprint = (
+        _payload_fingerprint(
+            {
+                "cascade_schema": 1,
+                "gates": eligible_fingerprints,
+            }
+        )
+        if eligible_fingerprints
+        else ""
+    )
+    ready = bool(eligible_fingerprints)
+    stop = next(
+        (
+            review
+            for review in reviews
+            if review.classification in {"delta", "blocked"}
+        ),
+        None,
+    )
+    detail = (
+        f"{len(eligible_fingerprints)} unchanged gate(s) can be renewed"
+        + (
+            f"; cascade stops at {stop.label}: {stop.detail}"
+            if stop is not None
+            else ""
+        )
+        if ready
+        else (
+            f"cascade cannot renew {reviews[0].label}: {reviews[0].detail}"
+            if reviews
+            else "no prior approvals are available for renewal"
+        )
+    )
+    return CascadeReview(
+        project_dir,
+        ready,
+        detail,
+        gates[root_index].key,
+        changed_slices,
+        unchanged_slices,
+        tuple(reviews),
+        fingerprint,
+    )
+
+
+def render_cascade_review(review: CascadeReview) -> str:
+    """Render a consolidated, human-reviewable cascade renewal packet."""
+    lines = [
+        "pcbforge cascade review",
+        f"readiness: {'AWAITING APPROVAL' if review.ready else 'BLOCKED'}",
+        f"detail: {review.detail}",
+        f"root gate: {review.root_gate or '(none)'}",
+        "changed slices:",
+    ]
+    lines.extend(f"  - {item}" for item in review.changed_slices)
+    if not review.changed_slices:
+        lines.append("  - (none)")
+    lines.append("unchanged slices:")
+    lines.extend(f"  - {item}" for item in review.unchanged_slices)
+    if not review.unchanged_slices:
+        lines.append("  - (none proven)")
+    lines.append("gates:")
+    for gate in review.gates:
+        lines.append(
+            f"  - {gate.label}: {gate.classification.upper()} — {gate.detail}"
+        )
+        if gate.classification == "eligible":
+            lines.append(
+                "    approval: "
+                f"{gate.previous_fingerprint} -> {gate.approval_fingerprint}"
+            )
+        for check in gate.checks:
+            lines.append(
+                f"    check {check.name}: {check.outcome} — {check.summary}"
+            )
+    if review.fingerprint:
+        lines.append(f"cascade fingerprint: {review.fingerprint}")
+    if review.ready:
+        lines.append(
+            "next: present this packet and wait for explicit user approval"
+        )
+    return "\n".join(lines)
+
+
+def renew_cascade(
+    project_dir: Path,
+    expected_fingerprint: str,
+    note: str,
+    *,
+    now: str | None = None,
+) -> StatusResult:
+    """Record one explicit decision across an eligible approval cascade."""
+    project_dir = _project_dir(project_dir)
+    expected_fingerprint = expected_fingerprint.strip().lower()
+    note = note.strip()
+    if not note:
+        raise StatusInputError("--note must be a non-empty approval explanation")
+    if re.fullmatch(r"[0-9a-f]{64}", expected_fingerprint) is None:
+        raise StatusInputError("--fingerprint must be a lowercase SHA-256 value")
+    document = read_status_document(project_dir)
+    review = prepare_cascade_review(project_dir, document)
+    if review.fingerprint != expected_fingerprint:
+        raise StatusInputError(
+            "cannot renew cascade: reviewed fingerprint is stale or does not "
+            "match current evidence"
+        )
+    if not review.ready:
+        raise StatusInputError(f"cannot renew cascade: {review.detail}")
+    event_time = now or _now()
+    gate_by_key = {gate.key: gate for gate in _approval_gate_sequence()}
+    renewed = document
+    for item in review.gates:
+        if item.classification != "eligible":
+            break
+        renewed = _append_gate_approval(
+            renewed,
+            gate_by_key[item.key],
+            at=event_time,
+            note=note,
+            approval_fingerprint=item.approval_fingerprint,
+            content_fingerprint=item.content_fingerprint,
+            renewed_from=item.previous_fingerprint,
+        )
+    return write_status(
+        project_dir,
+        now=event_time,
+        document=renewed,
+    )
+
+
 def review_phase(
     project_dir: Path,
     phase: str,
@@ -3128,12 +3781,14 @@ def approve_phase(
             f"match current evidence (expected {review.fingerprint})"
         )
     if stage == "handoff":
+        payload = _layout_handoff_payload(project_dir, checked)
         transition_event = TransitionEvent(
-            event_time,
-            "layout-handoff",
-            "approved",
-            note,
-            review.fingerprint,
+            at=event_time,
+            transition="layout-handoff",
+            action="approved",
+            note=note,
+            approval_fingerprint=review.fingerprint,
+            content_fingerprint=_content_fingerprint(payload),
         )
         checked = replace(
             checked,
@@ -3143,12 +3798,20 @@ def approve_phase(
             ),
         )
     else:
-        event = StatusEvent(
-            event_time,
+        action = "proposal-approved" if stage == "proposal" else "complete"
+        payload = _approval_payload(
+            project_dir,
             phase,
-            "proposal-approved" if stage == "proposal" else "complete",
-            note,
-            review.fingerprint,
+            action,
+            checked,
+        )
+        event = StatusEvent(
+            at=event_time,
+            phase=phase,
+            action=action,
+            note=note,
+            approval_fingerprint=review.fingerprint,
+            content_fingerprint=_content_fingerprint(payload),
         )
         checked = replace(checked, events=(*checked.events, event))
     if stage == "final" and phase == "architect":
@@ -3173,6 +3836,10 @@ def _metadata(document: StatusDocument) -> dict[str, Any]:
         }
         if event.approval_fingerprint:
             item["approval_fingerprint"] = event.approval_fingerprint
+        if event.content_fingerprint:
+            item["content_fingerprint"] = event.content_fingerprint
+        if event.renewed_from:
+            item["renewed_from"] = event.renewed_from
         events.append(item)
     policy_events = []
     for event in document.policy_events:
@@ -3195,6 +3862,10 @@ def _metadata(document: StatusDocument) -> dict[str, Any]:
         }
         if event.approval_fingerprint:
             item["approval_fingerprint"] = event.approval_fingerprint
+        if event.content_fingerprint:
+            item["content_fingerprint"] = event.content_fingerprint
+        if event.renewed_from:
+            item["renewed_from"] = event.renewed_from
         transition_events.append(item)
     return {
         "pcbforge_status_schema": STATUS_SCHEMA,

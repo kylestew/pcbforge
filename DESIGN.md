@@ -84,6 +84,15 @@ exception approval reopens the profile-mapped completed phase.
 
 ## Decision record
 
+- **2026-07-31 — unchanged approval chains renew as one explicit decision.**
+  Approval events now retain a phase-owned content fingerprint in addition to
+  the full upstream-bound fingerprint. `status review --cascade` uses current
+  saved checks and those content hashes to prove an unchanged prefix, including
+  proposal gates and the layout handoff; it stops at the first delta or
+  blocker. One user-approved `status renew` appends ordinary approval actions
+  linked to their prior fingerprints. Existing events without content hashes
+  remain valid but are not renewal-eligible. STATUS stays schema 1 and no
+  migration or inferred approval is introduced.
 - **2026-07-31 — approval fingerprints follow contract ownership.** Raw shared
   files no longer make downstream evidence reopen earlier phases. The SPEC
   digest canonicalizes YAML frontmatter and binds every body byte except the

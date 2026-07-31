@@ -4,6 +4,7 @@ import hashlib
 import subprocess
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
@@ -22,16 +23,23 @@ from pcbforge.status import (
     StatusInputError,
     TransitionEvent,
     _approval_fingerprint,
+    _approval_payload,
+    _content_fingerprint,
     _derive_transitions,
+    _layout_handoff_payload,
+    _payload_fingerprint,
     _phase_review_artifact_paths,
     approve_phase,
     inspect_status,
     mark_status,
     read_status_document,
     record_initialization_blocker,
+    render_cascade_review,
     render_dashboard,
     review_phase,
     run_status_checks,
+    prepare_cascade_review,
+    renew_cascade,
     spec_contract_digest,
     write_status,
 )
@@ -204,6 +212,48 @@ flowchart LR
             runner=runner,
             now=now,
         )
+
+    def approve_through_architect(self, project: Path) -> None:
+        self.add_architecture_proposal(project)
+        self.approve(project, "spec", "User approved the SPEC contract")
+        proposal = review_phase(
+            project,
+            "architect",
+            stage="proposal",
+            tool_root=TOOL_ROOT,
+        )
+        approve_phase(
+            project,
+            "architect",
+            proposal.fingerprint,
+            "User approved the architecture proposal",
+            stage="proposal",
+            tool_root=TOOL_ROOT,
+        )
+        self.add_architecture(project)
+        with mock.patch(
+            "pcbforge.status.check_ioc",
+            return_value=mock.Mock(part_number="STM32G071KBT6"),
+        ):
+            self.approve(
+                project,
+                "architect",
+                "User approved the compiled architecture",
+                runner=FakeRunner(),
+            )
+
+    def refresh_architect_checks(self, project: Path) -> None:
+        with mock.patch(
+            "pcbforge.status.check_ioc",
+            return_value=mock.Mock(part_number="STM32G071KBT6"),
+        ):
+            checked = run_status_checks(
+                project,
+                read_status_document(project),
+                tool_root=TOOL_ROOT,
+                runner=FakeRunner(),
+            )
+        write_status(project, document=checked)
 
 
 class DashboardTests(StatusFixture):
@@ -1118,6 +1168,319 @@ checks: {}
             with self.assertRaisesRegex(StatusInputError, "duplicate key"):
                 read_status_document(project)
 
+class CascadeRenewalTests(StatusFixture):
+    def test_invalid_content_fingerprint_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            (project / "STATUS.md").write_text(
+                """---
+pcbforge_status_schema: 1
+updated_at: "2026-07-31T10:00:00+00:00"
+events:
+  - at: "2026-07-31T10:00:00+00:00"
+    phase: spec
+    action: complete
+    note: Approved
+    approval_fingerprint: old
+    content_fingerprint: invalid
+checks: {}
+---
+""",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                StatusInputError,
+                "content_fingerprint: expected a lowercase SHA-256",
+            ):
+                read_status_document(project)
+
+    def test_approvals_store_and_round_trip_content_fingerprints(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            approved = self.approve(project, "spec", "User approved SPEC")
+            event = approved.report.document.events[-1]
+            reread = read_status_document(project).events[-1]
+
+        self.assertRegex(event.content_fingerprint, r"^[0-9a-f]{64}$")
+        self.assertEqual(event, reread)
+        self.assertEqual(event.renewed_from, "")
+
+    def test_spec_edit_renews_unchanged_architect_chain_once(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            self.approve_through_architect(project)
+            spec = project / "spec.md"
+            spec.write_text(
+                spec.read_text(encoding="utf-8").replace(
+                    "board_mm: [50, 40]",
+                    "board_mm: [45, 40]",
+                ),
+                encoding="utf-8",
+            )
+            self.refresh_architect_checks(project)
+
+            cascade = prepare_cascade_review(project)
+            rendered = render_cascade_review(cascade)
+
+            self.assertTrue(cascade.ready)
+            self.assertEqual(cascade.root_gate, "spec")
+            self.assertEqual(
+                [item.key for item in cascade.gates],
+                ["spec", "architect:proposal", "architect"],
+            )
+            self.assertEqual(
+                {item.classification for item in cascade.gates},
+                {"eligible"},
+            )
+            self.assertIn("upstream approval scope changed", rendered)
+            renewed = renew_cascade(
+                project,
+                cascade.fingerprint,
+                "User approved the unchanged architecture cascade",
+                now="2026-07-31T12:00:00+00:00",
+            )
+
+        renewal_events = [
+            event
+            for event in renewed.report.document.events
+            if event.renewed_from
+        ]
+        self.assertEqual(len(renewal_events), 3)
+        self.assertEqual(
+            [event.action for event in renewal_events],
+            ["complete", "proposal-approved", "complete"],
+        )
+        self.assertEqual(
+            {event.note for event in renewal_events},
+            {"User approved the unchanged architecture cascade"},
+        )
+        self.assertTrue(renewed.report.phases[0].complete)
+        self.assertTrue(renewed.report.phases[1].complete)
+
+    def test_downstream_delta_renews_only_eligible_prefix(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            self.approve_through_architect(project)
+            spec = project / "spec.md"
+            spec.write_text(
+                spec.read_text(encoding="utf-8").replace(
+                    "board_mm: [50, 40]",
+                    "board_mm: [45, 40]",
+                ),
+                encoding="utf-8",
+            )
+            mcu = project / "src" / "mcu.ato"
+            mcu.write_text(
+                mcu.read_text(encoding="utf-8") + "# changed implementation\n",
+                encoding="utf-8",
+            )
+            self.refresh_architect_checks(project)
+
+            document = read_status_document(project)
+            layout_payload = _approval_payload(
+                project,
+                "layout",
+                "complete",
+                document,
+            )
+            later_layout = StatusEvent(
+                "2026-07-31T11:00:00+00:00",
+                "layout",
+                "complete",
+                "Earlier layout approval fixture",
+                _payload_fingerprint(layout_payload),
+                _content_fingerprint(layout_payload),
+            )
+            cascade = prepare_cascade_review(
+                project,
+                replace(document, events=(*document.events, later_layout)),
+            )
+
+            self.assertEqual(
+                [item.classification for item in cascade.gates],
+                ["eligible", "eligible", "delta", "deferred"],
+            )
+            renewed = renew_cascade(
+                project,
+                cascade.fingerprint,
+                "User renewed the unchanged prefix",
+            )
+
+        renewal_events = [
+            event
+            for event in renewed.report.document.events
+            if event.renewed_from
+        ]
+        self.assertEqual(len(renewal_events), 2)
+        self.assertTrue(renewed.report.phases[0].complete)
+        self.assertFalse(renewed.report.phases[1].complete)
+        self.assertEqual(renewed.report.phases[1].state, "Awaiting approval")
+
+    def test_cascade_requires_current_saved_checks_without_running_tools(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            self.approve_through_architect(project)
+            spec = project / "spec.md"
+            spec.write_text(
+                spec.read_text(encoding="utf-8").replace(
+                    "board_mm: [50, 40]",
+                    "board_mm: [45, 40]",
+                ),
+                encoding="utf-8",
+            )
+
+            with mock.patch(
+                "pcbforge.status.run_status_checks",
+                side_effect=AssertionError("cascade review must not run checks"),
+            ):
+                cascade = prepare_cascade_review(project)
+
+        self.assertFalse(cascade.ready)
+        self.assertEqual(cascade.gates[0].classification, "blocked")
+        self.assertIn("saved checks", cascade.gates[0].detail)
+
+    def test_stale_combined_fingerprint_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            self.approve_through_architect(project)
+            spec = project / "spec.md"
+            spec.write_text(
+                spec.read_text(encoding="utf-8").replace(
+                    "board_mm: [50, 40]",
+                    "board_mm: [45, 40]",
+                ),
+                encoding="utf-8",
+            )
+            self.refresh_architect_checks(project)
+            cascade = prepare_cascade_review(project)
+            spec.write_text(
+                spec.read_text(encoding="utf-8").replace(
+                    "board_mm: [45, 40]",
+                    "board_mm: [44, 40]",
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(StatusInputError, "fingerprint is stale"):
+                renew_cascade(
+                    project,
+                    cascade.fingerprint,
+                    "User approved the earlier cascade",
+                )
+
+    def test_missing_content_fingerprint_requires_full_review(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            self.approve_through_architect(project)
+            spec = project / "spec.md"
+            spec.write_text(
+                spec.read_text(encoding="utf-8").replace(
+                    "board_mm: [50, 40]",
+                    "board_mm: [45, 40]",
+                ),
+                encoding="utf-8",
+            )
+            self.refresh_architect_checks(project)
+            document = read_status_document(project)
+            events = list(document.events)
+            spec_index = next(
+                index
+                for index, event in enumerate(events)
+                if event.phase == "spec" and event.action == "complete"
+            )
+            events[spec_index] = replace(
+                events[spec_index],
+                content_fingerprint="",
+            )
+            cascade = prepare_cascade_review(
+                project,
+                replace(document, events=tuple(events)),
+            )
+
+        self.assertFalse(cascade.ready)
+        self.assertEqual(cascade.gates[0].classification, "delta")
+        self.assertIn("no content fingerprint", cascade.gates[0].detail)
+
+    def test_explicit_reopen_cannot_be_overridden_by_cascade(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            self.approve(project, "spec", "User approved SPEC")
+            mark_status(
+                project,
+                "spec",
+                "reopened",
+                "User intentionally reopened requirements",
+            )
+
+            cascade = prepare_cascade_review(project)
+
+        self.assertFalse(cascade.ready)
+        self.assertEqual(cascade.gates[0].classification, "blocked")
+        self.assertIn("explicitly reopened", cascade.gates[0].detail)
+
+    def test_handoff_fingerprint_uses_simulated_circuit_renewal(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True).resolve()
+            document = StatusDocument(updated_at="", events=(), checks={})
+            circuit_payload = _approval_payload(
+                project,
+                "circuit",
+                "complete",
+                document,
+            )
+            circuit_event = StatusEvent(
+                "2026-07-31T10:00:00+00:00",
+                "circuit",
+                "complete",
+                "Approved circuit",
+                _payload_fingerprint(circuit_payload),
+                _content_fingerprint(circuit_payload),
+            )
+            document = replace(document, events=(circuit_event,))
+            handoff_payload = _layout_handoff_payload(project, document)
+            handoff_event = TransitionEvent(
+                "2026-07-31T10:05:00+00:00",
+                "layout-handoff",
+                "approved",
+                "Approved handoff",
+                _payload_fingerprint(handoff_payload),
+                _content_fingerprint(handoff_payload),
+            )
+            document = replace(
+                document,
+                transition_events=(handoff_event,),
+            )
+            spec = project / "spec.md"
+            spec.write_text(
+                spec.read_text(encoding="utf-8").replace(
+                    "board_mm: [50, 40]",
+                    "board_mm: [45, 40]",
+                ),
+                encoding="utf-8",
+            )
+
+            with mock.patch(
+                "pcbforge.status._gate_check_reviews",
+                return_value=((), ()),
+            ):
+                cascade = prepare_cascade_review(project, document)
+
+        self.assertEqual(
+            [item.classification for item in cascade.gates],
+            ["eligible", "eligible"],
+        )
+        renewed_circuit, renewed_handoff = cascade.gates
+        self.assertNotEqual(
+            handoff_event.approval_fingerprint,
+            renewed_handoff.approval_fingerprint,
+        )
+        self.assertNotEqual(
+            circuit_event.approval_fingerprint,
+            renewed_circuit.approval_fingerprint,
+        )
+
+
 class CheckTests(StatusFixture):
     def test_static_status_runs_no_tools_and_checked_status_saves_build(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1237,6 +1600,79 @@ component R_10K_0603:
         self.assertEqual(len(runner.calls), 2)
 
 class StatusCliTests(StatusFixture):
+    def test_cascade_review_and_renew_cli(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            self.approve_through_architect(project)
+            spec = project / "spec.md"
+            spec.write_text(
+                spec.read_text(encoding="utf-8").replace(
+                    "board_mm: [50, 40]",
+                    "board_mm: [45, 40]",
+                ),
+                encoding="utf-8",
+            )
+            self.refresh_architect_checks(project)
+            cascade = prepare_cascade_review(project)
+
+            with (
+                mock.patch("pcbforge.cli.validate_project_compatibility"),
+                mock.patch("builtins.print") as output,
+            ):
+                reviewed = main(
+                    ["status", "review", "--cascade", str(project)]
+                )
+            rendered = "\n".join(
+                str(call.args[0]) for call in output.call_args_list
+            )
+            with (
+                mock.patch("pcbforge.cli.validate_project_compatibility"),
+                mock.patch("builtins.print"),
+            ):
+                renewed = main(
+                    [
+                        "status",
+                        "renew",
+                        str(project),
+                        "--fingerprint",
+                        cascade.fingerprint,
+                        "--note",
+                        "User approved the cascade packet",
+                    ]
+                )
+
+        self.assertEqual(reviewed, 0)
+        self.assertIn("pcbforge cascade review", rendered)
+        self.assertIn("cascade fingerprint:", rendered)
+        self.assertEqual(renewed, 0)
+
+    def test_cascade_review_rejects_phase_or_stage_combinations(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            with mock.patch("builtins.print"):
+                phase_result = main(
+                    [
+                        "status",
+                        "review",
+                        "spec",
+                        "--cascade",
+                        str(project),
+                    ]
+                )
+                stage_result = main(
+                    [
+                        "status",
+                        "review",
+                        "--cascade",
+                        "--stage",
+                        "proposal",
+                        str(project),
+                    ]
+                )
+
+        self.assertEqual(phase_result, 2)
+        self.assertEqual(stage_result, 2)
+
     def test_static_cli_does_not_create_dashboard(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))

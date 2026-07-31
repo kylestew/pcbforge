@@ -129,6 +129,23 @@ The command persists approval but never constitutes it. Never use
 `status approve <phase> --stage proposal --fingerprint ...` before affected
 source coding begins.
 
+After a root artifact change, refresh the dashboard checks, then run
+`pcbforge status review --cascade` before presenting separate phase packets.
+The packet labels each prior gate `eligible`, `delta`, `blocked`, or `deferred`
+and provides one fingerprint for the unchanged eligible prefix. It does not run
+checks; stale or failed saved evidence blocks renewal. Present the complete
+packet and stop. Only after the user explicitly approves the root change and
+listed unchanged gates may you record:
+
+```text
+pcbforge status renew --fingerprint <sha256> --note "<approval>"
+```
+
+Renewal reuses the existing proposal/final/handoff actions and cites each old
+approval fingerprint. Never use it across a `delta`, a failed check, or a gate
+the user explicitly reopened. Events without content fingerprints require the
+normal per-gate review ceremony.
+
 `policy.yaml` requests exceptions but never approves them. After the user
 explicitly accepts one, record it with
 `pcbforge policy approve-exception <id> --note "<decision>"`. A changed

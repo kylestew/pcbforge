@@ -116,6 +116,9 @@ pcbforge status --next
 pcbforge status review layout
 pcbforge status approve layout --fingerprint <sha256> \
   --note "Placement reviewed and explicitly approved"
+pcbforge status review --cascade
+pcbforge status renew --fingerprint <sha256> \
+  --note "Reviewed the root change and unchanged downstream gates"
 pcbforge check-policy
 pcbforge policy approve-exception <id> --note "Approved tradeoff"
 pcbforge check-circuit-review --stage proposal --write
@@ -130,6 +133,11 @@ pcbforge status review layout --stage handoff
 Static status is read-only and fast. `--check` runs applicable pinned build,
 CIRCUIT acceptance, layout-handoff, parts-policy, CubeMX, and KiCad DRC
 validation before rendering the same status model.
+
+After an upstream edit, cascade review can consolidate renewal of downstream
+gates whose phase-owned content is provably unchanged. It uses saved current
+checks, stops before any real delta, and still requires one explicit
+conversational approval before the agent records the renewal.
 
 The workflow has nine numbered phases, eight required. MCU work is inside
 ARCHITECT; physical implementation and build + test form one CIRCUIT phase;

@@ -69,6 +69,20 @@ pcbforge status approve <phase> --stage proposal \
 Changed approved artifacts reopen the affected gate. Restoring old bytes or
 rerunning checks does not revive approval.
 
+When an upstream contract changes, refresh saved checks and run
+`pcbforge status review --cascade` before repeating individual gates. The
+cascade packet proves which gate-owned semantic slices are unchanged and stops
+at the first real delta or non-current check. After the user explicitly
+approves that consolidated packet, record the eligible prefix once:
+
+```text
+pcbforge status renew --fingerprint <sha256> --note "<approval>"
+```
+
+Renewal appends ordinary proposal/final/handoff approval events with links to
+their prior fingerprints; it never infers approval or crosses a changed gate.
+Cascade review consumes current saved checks and does not run tools itself.
+
 Fingerprint scope follows phase ownership. `spec.md` contributes canonical
 YAML frontmatter plus all body bytes except the exact `## Decisions log`
 section. SPEC binds the policy profile, manufacturing/component declarations,

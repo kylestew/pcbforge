@@ -50,13 +50,16 @@ from pcbforge.status import (
     mark_policy,
     mark_status,
     policy_approval_context,
+    prepare_cascade_review,
     read_status_document,
     record_initialization_blocker,
+    render_cascade_review,
     render_next,
     render_phase_review,
     render_terminal,
     review_phase,
     run_status_checks,
+    renew_cascade,
     write_status,
 )
 
@@ -334,7 +337,16 @@ def _status_review_parser() -> argparse.ArgumentParser:
             "packet and fingerprint that may be presented for user approval."
         ),
     )
-    parser.add_argument("phase", help="workflow phase key, such as architect or circuit")
+    parser.add_argument(
+        "phase",
+        nargs="?",
+        help="workflow phase key, such as architect or circuit",
+    )
+    parser.add_argument(
+        "--cascade",
+        action="store_true",
+        help="review a stale approval chain for consolidated renewal",
+    )
     parser.add_argument(
         "--stage",
         choices=("proposal", "handoff", "final"),
@@ -347,6 +359,34 @@ def _status_review_parser() -> argparse.ArgumentParser:
         default=".",
         metavar="PROJECT_DIR",
         help="project containing spec.md (default: current directory)",
+    )
+    return parser
+
+
+def _status_renew_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="pcbforge status renew",
+        description=(
+            "Record one explicit user decision across the unchanged prefix "
+            "printed by `pcbforge status review --cascade`."
+        ),
+    )
+    parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+        help="project containing spec.md (default: current directory)",
+    )
+    parser.add_argument(
+        "--fingerprint",
+        required=True,
+        help="exact SHA-256 printed by the cascade review command",
+    )
+    parser.add_argument(
+        "--note",
+        required=True,
+        help="the explicit user approval recorded across renewed gate history",
     )
     return parser
 
@@ -387,16 +427,33 @@ def _status_approve_parser() -> argparse.ArgumentParser:
 
 
 def _run_status_cli(argv: list[str]) -> int:
-    mode = argv[0] if argv and argv[0] in {"mark", "review", "approve"} else "show"
+    mode = (
+        argv[0]
+        if argv and argv[0] in {"mark", "review", "approve", "renew"}
+        else "show"
+    )
     parser = {
         "mark": _status_mark_parser,
         "review": _status_review_parser,
         "approve": _status_approve_parser,
+        "renew": _status_renew_parser,
         "show": _status_show_parser,
     }[mode]()
     status_args = parser.parse_args(argv[1:] if mode != "show" else argv)
     try:
-        validate_project_compatibility(Path(status_args.project_dir))
+        status_project_dir = status_args.project_dir
+        if mode == "review" and status_args.cascade:
+            if status_args.stage != "final":
+                raise StatusInputError(
+                    "cascade review cannot be combined with --stage"
+                )
+            if status_args.project_dir != "." and status_args.phase is not None:
+                raise StatusInputError(
+                    "cascade review accepts one optional project directory"
+                )
+            if status_args.phase is not None:
+                status_project_dir = status_args.phase
+        validate_project_compatibility(Path(status_project_dir))
         if mode == "mark":
             result = mark_status(
                 Path(status_args.project_dir),
@@ -411,6 +468,14 @@ def _run_status_cli(argv: list[str]) -> int:
             )
             return 0
         if mode == "review":
+            if status_args.cascade:
+                cascade = prepare_cascade_review(Path(status_project_dir))
+                print(render_cascade_review(cascade))
+                return 0 if cascade.ready else 1
+            if status_args.phase is None:
+                raise StatusInputError(
+                    "phase is required unless --cascade is used"
+                )
             review = review_phase(
                 Path(status_args.project_dir),
                 status_args.phase,
@@ -418,6 +483,18 @@ def _run_status_cli(argv: list[str]) -> int:
             )
             print(render_phase_review(review))
             return 0 if review.ready else 1
+        if mode == "renew":
+            result = renew_cascade(
+                Path(status_args.project_dir),
+                status_args.fingerprint,
+                status_args.note,
+            )
+            print(render_terminal(result.report))
+            print(
+                "pcbforge: recorded explicit cascade renewal; "
+                f"{'updated' if result.wrote else 'unchanged'} STATUS.md"
+            )
+            return 0
         if mode == "approve":
             result = approve_phase(
                 Path(status_args.project_dir),
