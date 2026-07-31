@@ -56,7 +56,7 @@ Passing tools never grants approval. The normal gate is:
 ```text
 pcbforge status review <phase>
 # present the packet and wait for the user
-pcbforge status approve <phase> --fingerprint <sha256> --note "<approval>"
+pcbforge status approve <phase> --last-reviewed --note "<approval>"
 ```
 
 ARCHITECT and CIRCUIT have proposal gates before affected source work:
@@ -64,7 +64,7 @@ ARCHITECT and CIRCUIT have proposal gates before affected source work:
 ```text
 pcbforge status review <phase> --stage proposal
 pcbforge status approve <phase> --stage proposal \
-  --fingerprint <sha256> --note "<approval>"
+  --last-reviewed --note "<approval>"
 ```
 
 After implementing and auditing the approved ARCHITECT proposal, record its
@@ -84,12 +84,14 @@ at the first real delta or non-current check. After the user explicitly
 approves that consolidated packet, record the eligible prefix once:
 
 ```text
-pcbforge status renew --fingerprint <sha256> --note "<approval>"
+pcbforge status renew --last-reviewed --note "<approval>"
 ```
 
 Renewal appends ordinary proposal/final/handoff approval events with links to
 their prior fingerprints; it never infers approval or crosses a changed gate.
 Cascade review consumes current saved checks and does not run tools itself.
+The explicit `--fingerprint <sha256>` form remains available as a fallback;
+`--last-reviewed` recomputes and rejects any packet changed since review.
 
 Fingerprint scope follows phase ownership. `spec.md` contributes canonical
 YAML frontmatter plus all body bytes except the exact `## Decisions log`
@@ -197,7 +199,7 @@ pcbforge check-layout-handoff
 pcbforge status review layout --stage handoff
 # present the packet and wait for the user
 pcbforge status approve layout --stage handoff \
-  --fingerprint <sha256> --note "<approval>"
+  --last-reviewed --note "<approval>"
 ```
 
 `prepare-layout` generates `docs/placement-brief.md` and merges only

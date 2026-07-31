@@ -715,14 +715,14 @@ saved workflow gates, compiler output, and the KiCad board.
   explicit approval.
 - Before requesting approval, run `pcbforge status review <phase>` and present
   its exact artifacts, check results, and fingerprint. After an unambiguous
-  approval of that packet, record the same fingerprint with
-  `pcbforge status approve <phase> --fingerprint <sha256> --note "<approval>"`.
+  approval of that packet, record the saved review with
+  `pcbforge status approve <phase> --last-reviewed --note "<approval>"`.
 - Approvals are phase-specific and fingerprint-bound. A changed approved
   artifact requires renewed approval; rerunning checks cannot revive an old
   gate.
 - ARCHITECT and CIRCUIT proposals use
   `status review <phase> --stage proposal` followed, only after explicit user
-  approval, by `status approve <phase> --stage proposal --fingerprint ...`.
+  approval, by `status approve <phase> --stage proposal --last-reviewed`.
 - Only local, reversible details that do not alter an approved contract may be
   chosen autonomously, and their assumptions must be stated.
 
@@ -777,7 +777,7 @@ saved workflow gates, compiler output, and the KiCad board.
 - Never use `status mark <phase> complete`. After checks pass, run
   `{tool_root}/scripts/pcbforge status review <phase>`, present the packet, and
   stop. Only after explicit user approval, run
-  `{tool_root}/scripts/pcbforge status approve <phase> --fingerprint <sha256> --note "<approval>"`.
+  `{tool_root}/scripts/pcbforge status approve <phase> --last-reviewed --note "<approval>"`.
   The command persists approval already expressed; it never constitutes it.
 - Use `blocked` with a concrete reason, `reopened` when an approved phase
   changes, and `skipped` only for optional publish. Never infer user approval,
@@ -810,7 +810,7 @@ audit:
    sourcing, and material tradeoffs. Do both before writing source or the IOC.
 6. Run `pcbforge status review architect --stage proposal`, present the exact
    packet, and stop. After approval, record
-   `{tool_root}/scripts/pcbforge status approve architect --stage proposal --fingerprint <sha256> --note "<approved choices>; diagram: docs/architecture.md"`.
+   `{tool_root}/scripts/pcbforge status approve architect --stage proposal --last-reviewed --note "<approved choices>; diagram: docs/architecture.md"`.
    A spec, diagram, or MCU-plan change invalidates this approval.
 7. Only after proposal approval, write the module skeleton, create
    `firmware/{spec.name}.ioc`, and derive `src/mcu.ato` from it.

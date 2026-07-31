@@ -118,10 +118,10 @@ pcbforge status --check --force-checks --write
 pcbforge status --next
 pcbforge finish-architect
 pcbforge status review layout
-pcbforge status approve layout --fingerprint <sha256> \
+pcbforge status approve layout --last-reviewed \
   --note "Placement and routing declared complete"
 pcbforge status review --cascade
-pcbforge status renew --fingerprint <sha256> \
+pcbforge status renew --last-reviewed \
   --note "Reviewed the root change and unchanged downstream gates"
 pcbforge check-policy
 pcbforge policy approve-exception <id> --note "Approved tradeoff"
@@ -201,7 +201,7 @@ record that gate with:
 
 ```bash
 pcbforge status approve layout --stage handoff \
-  --fingerprint <sha256> --note "..."
+  --last-reviewed --note "..."
 ```
 
 After the checked FAB-OUT transition, refresh live JLC availability and

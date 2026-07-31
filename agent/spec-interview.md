@@ -47,7 +47,7 @@ Vendor-neutral: any agent with file read/write follows this document.
 6. Once technically ready, run `pcbforge status review spec` and present the
    exact artifacts, checks, and fingerprint. Iterate until the user explicitly
    approves that packet in conversation. Only then record the gate with
-   `pcbforge status approve spec --fingerprint <sha256> --note "<approval summary>"`.
+   `pcbforge status approve spec --last-reviewed --note "<approval summary>"`.
    The command persists the approval; it does not constitute approval by
    itself.
 7. Remind: `spec.md` and `policy.yaml` are **living contracts**. Later

@@ -122,7 +122,7 @@ user approval may you run:
 
 ```sh
 pcbforge status approve circuit --stage proposal \
-  --fingerprint <sha256> --note "<approved topology and material choices>"
+  --last-reviewed --note "<approved topology and material choices>"
 ```
 
 Any proposal model, SVG, narrative, upstream contract, or baseline change
@@ -260,7 +260,7 @@ Before requesting final CIRCUIT completion:
 12. Run `pcbforge status review circuit`, present the exact artifacts, checks,
    and fingerprint, and stop.
 13. Only after explicit user approval, run
-    `pcbforge status approve circuit --fingerprint <sha256> --note "<approval>"`.
+    `pcbforge status approve circuit --last-reviewed --note "<approval>"`.
 
 ## Deterministic acceptance contract
 

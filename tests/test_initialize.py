@@ -380,6 +380,7 @@ class InitializeTests(unittest.TestCase):
             self.assertIn("## Decision authority", agents)
             self.assertIn("never originate", agents)
             self.assertIn("status review architect --stage proposal", agents)
+            self.assertIn("--last-reviewed", agents)
             self.assertIn("finish-architect", agents)
             self.assertIn("opens CIRCUIT without another", agents)
             self.assertIn("pcbforge status --next", agents)
@@ -722,6 +723,7 @@ class GuidanceTests(unittest.TestCase):
             "board hash",
             "status review architect --stage proposal",
             "status approve architect --stage proposal",
+            "--last-reviewed",
             "finish-architect",
             "MCU workstream",
             "docs/architecture.md",

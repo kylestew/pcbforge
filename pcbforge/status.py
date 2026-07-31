@@ -8,7 +8,7 @@ import os
 import re
 import subprocess
 import tempfile
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
@@ -87,6 +87,18 @@ TRANSITIONS = {
     "architecture-baseline",
     "layout-handoff",
     "fab-out",
+}
+REVIEW_KEYS = {
+    "spec",
+    "architect:proposal",
+    "circuit:proposal",
+    "circuit",
+    "layout:handoff",
+    "layout",
+    "verify",
+    "order",
+    "publish",
+    "cascade",
 }
 POLICY_EVENT_ACTIONS = {
     "exception-approved",
@@ -222,6 +234,12 @@ class CheckRecord:
 
 
 @dataclass(frozen=True)
+class ReviewRecord:
+    at: str
+    fingerprint: str
+
+
+@dataclass(frozen=True)
 class PolicyEvent:
     at: str
     action: str
@@ -248,6 +266,7 @@ class StatusDocument:
     checks: Mapping[str, CheckRecord]
     policy_events: tuple[PolicyEvent, ...] = ()
     transition_events: tuple[TransitionEvent, ...] = ()
+    reviews: Mapping[str, ReviewRecord] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -376,6 +395,20 @@ class _ApprovalGate:
     action: str
     stage: str
     transition: str = ""
+
+
+def _review_key(phase: str, stage: str) -> str:
+    if stage == "final":
+        key = phase
+    elif stage == "proposal":
+        key = f"{phase}:proposal"
+    elif stage == "handoff" and phase == "layout":
+        key = "layout:handoff"
+    else:
+        raise StatusInputError(f"no saved-review key for {phase}:{stage}")
+    if key not in REVIEW_KEYS:
+        raise StatusInputError(f"unsupported review key {key!r}")
+    return key
 
 
 class _UniqueStatusLoader(yaml.SafeLoader):
@@ -539,6 +572,7 @@ def read_status_document(project_dir: Path) -> StatusDocument:
         "events",
         "policy_events",
         "transition_events",
+        "reviews",
         "checks",
     }
     unknown = sorted(set(data) - allowed)
@@ -724,6 +758,36 @@ def read_status_document(project_dir: Path) -> StatusDocument:
                 )
             )
 
+    reviews_raw = data.get("reviews", {})
+    reviews: dict[str, ReviewRecord] = {}
+    if not isinstance(reviews_raw, dict):
+        errors.append("reviews: expected a mapping")
+    else:
+        for key, raw in reviews_raw.items():
+            prefix = f"reviews.{key}"
+            if not isinstance(key, str) or key not in REVIEW_KEYS:
+                errors.append(f"{prefix}: unknown review key")
+                continue
+            if not isinstance(raw, dict):
+                errors.append(f"{prefix}: expected a mapping")
+                continue
+            if set(raw) - {"at", "fingerprint"}:
+                errors.append(f"{prefix}: contains unknown keys")
+            at = _text(raw.get("at"), f"{prefix}.at", errors)
+            fingerprint = _text(
+                raw.get("fingerprint"),
+                f"{prefix}.fingerprint",
+                errors,
+            )
+            if (
+                fingerprint
+                and re.fullmatch(r"[0-9a-f]{64}", fingerprint) is None
+            ):
+                errors.append(
+                    f"{prefix}.fingerprint: expected a lowercase SHA-256"
+                )
+            reviews[key] = ReviewRecord(at, fingerprint)
+
     checks_raw = data.get("checks", {})
     checks: dict[str, CheckRecord] = {}
     if not isinstance(checks_raw, dict):
@@ -767,6 +831,7 @@ def read_status_document(project_dir: Path) -> StatusDocument:
         checks=checks,
         policy_events=tuple(policy_events),
         transition_events=tuple(transition_events),
+        reviews=reviews,
     )
 
 
@@ -3190,6 +3255,11 @@ def _prepare_phase_review(
         runner=runner,
         checked_at=checked_at,
     )
+    checked = _invalidate_stale_approvals(
+        project_dir,
+        checked,
+        at=checked_at,
+    )
     report = inspect_status(project_dir, document=checked)
     spec = report.spec
     target_index = _phase_number(project_dir, phase) - 1
@@ -3283,6 +3353,7 @@ def _prepare_proposal_review(
     project_dir: Path,
     phase: str,
     *,
+    document: StatusDocument | None = None,
     tool_root: Path | None,
     runner: CommandRunner,
     checked_at: str | None,
@@ -3294,25 +3365,13 @@ def _prepare_proposal_review(
         raise StatusInputError(
             "proposal review is only valid for architect or circuit"
         )
-    document = read_status_document(project_dir)
-    report = inspect_status(project_dir, document=document)
-    target_index = _phase_number(project_dir, phase) - 1
-    predecessors = [
-        result for result in report.phases[:target_index] if result.phase.required
-    ]
+    document = (
+        document
+        if document is not None
+        else read_status_document(project_dir)
+    )
     failures: list[str] = []
     checks: list[PhaseReviewCheck] = []
-    if not all(result.complete for result in predecessors):
-        waiting = next(
-            result.phase.label for result in predecessors if not result.complete
-        )
-        failures.append(f"{waiting} is not complete")
-    if report.phases[target_index].complete:
-        failures.append(
-            f"{_workflow_phase_map(project_dir)[phase].label} is already complete"
-        )
-    if phase != "spec" and not _current_policy_baseline(project_dir, document):
-        failures.append("project policy is not bound to the approved SPEC")
 
     if phase == "architect":
         diagram = project_dir / "docs" / "architecture.md"
@@ -3410,6 +3469,27 @@ def _prepare_proposal_review(
                 }
             )
         )
+    document = _invalidate_stale_approvals(
+        project_dir,
+        document,
+        at=checked_at,
+    )
+    report = inspect_status(project_dir, document=document)
+    target_index = _phase_number(project_dir, phase) - 1
+    predecessors = [
+        result for result in report.phases[:target_index] if result.phase.required
+    ]
+    if not all(result.complete for result in predecessors):
+        waiting = next(
+            result.phase.label for result in predecessors if not result.complete
+        )
+        failures.append(f"{waiting} is not complete")
+    if report.phases[target_index].complete:
+        failures.append(
+            f"{_workflow_phase_map(project_dir)[phase].label} is already complete"
+        )
+    if phase != "spec" and not _current_policy_baseline(project_dir, document):
+        failures.append("project policy is not bound to the approved SPEC")
     fingerprint = _approval_fingerprint(
         project_dir,
         phase,
@@ -3438,21 +3518,17 @@ def _prepare_proposal_review(
 def _prepare_layout_handoff_review(
     project_dir: Path,
     *,
+    document: StatusDocument | None = None,
     tool_root: Path | None,
     runner: CommandRunner,
     checked_at: str | None,
 ) -> tuple[PhaseReview, StatusDocument]:
     project_dir = _project_dir(project_dir)
-    document = read_status_document(project_dir)
-    report = inspect_status(project_dir, document=document)
-    circuit = next(
-        result for result in report.phases if result.phase.key == "circuit"
+    document = (
+        document
+        if document is not None
+        else read_status_document(project_dir)
     )
-    failures: list[str] = []
-    if not circuit.complete:
-        failures.append("CIRCUIT is not complete")
-    if _current_layout_handoff(project_dir, document) is not None:
-        failures.append("LAYOUT handoff is already approved")
 
     checked = run_status_checks(
         project_dir,
@@ -3461,6 +3537,20 @@ def _prepare_layout_handoff_review(
         runner=runner,
         checked_at=checked_at,
     )
+    checked = _invalidate_stale_approvals(
+        project_dir,
+        checked,
+        at=checked_at,
+    )
+    report = inspect_status(project_dir, document=checked)
+    circuit = next(
+        result for result in report.phases if result.phase.key == "circuit"
+    )
+    failures: list[str] = []
+    if not circuit.complete:
+        failures.append("CIRCUIT is not complete")
+    if _current_layout_handoff(project_dir, checked) is not None:
+        failures.append("LAYOUT handoff is already approved")
     spec = report.spec
     check_reviews: list[PhaseReviewCheck] = []
     for name in ("build-test", "layout-handoff", "policy"):
@@ -3725,13 +3815,47 @@ def _append_gate_approval(
     return replace(document, events=(*document.events, event))
 
 
+def _record_review(
+    project_dir: Path,
+    document: StatusDocument,
+    key: str,
+    fingerprint: str,
+    *,
+    at: str,
+) -> StatusResult:
+    if key not in REVIEW_KEYS:
+        raise StatusInputError(f"unsupported review key {key!r}")
+    if re.fullmatch(r"[0-9a-f]{64}", fingerprint) is None:
+        raise StatusInputError("cannot save a review without a valid fingerprint")
+    return write_status(
+        project_dir,
+        now=at,
+        document=replace(
+            document,
+            reviews={
+                **document.reviews,
+                key: ReviewRecord(at, fingerprint),
+            },
+        ),
+    )
+
+
 def prepare_cascade_review(
     project_dir: Path,
     document: StatusDocument | None = None,
+    *,
+    record: bool = False,
+    reviewed_at: str | None = None,
 ) -> CascadeReview:
     """Prove which stale approvals can be renewed without full ceremony."""
     project_dir = _project_dir(project_dir)
     document = document if document is not None else read_status_document(project_dir)
+    event_time = reviewed_at or _now()
+    document = _invalidate_stale_approvals(
+        project_dir,
+        document,
+        at=event_time,
+    )
     spec = read_spec(project_dir / "spec.md")
     gates = _approval_gate_sequence()
     prior = {
@@ -3954,7 +4078,7 @@ def prepare_cascade_review(
             else "no prior approvals are available for renewal"
         )
     )
-    return CascadeReview(
+    review = CascadeReview(
         project_dir,
         ready,
         detail,
@@ -3964,6 +4088,15 @@ def prepare_cascade_review(
         tuple(reviews),
         fingerprint,
     )
+    if record and review.ready:
+        _record_review(
+            project_dir,
+            document,
+            "cascade",
+            review.fingerprint,
+            at=event_time,
+        )
+    return review
 
 
 def render_cascade_review(review: CascadeReview) -> str:
@@ -4000,36 +4133,97 @@ def render_cascade_review(review: CascadeReview) -> str:
         lines.append(f"cascade fingerprint: {review.fingerprint}")
     if review.ready:
         lines.append(
-            "next: present this packet and wait for explicit user approval"
+            "next: present this packet, wait for explicit user approval, then run "
+            f"`pcbforge status renew --last-reviewed --note \"<approval>\"`"
         )
     return "\n".join(lines)
 
 
+def _validate_review_selector(
+    expected_fingerprint: str | None,
+    *,
+    last_reviewed: bool,
+) -> None:
+    if expected_fingerprint is not None and last_reviewed:
+        raise StatusInputError(
+            "--fingerprint and --last-reviewed are mutually exclusive"
+        )
+    if expected_fingerprint is None and not last_reviewed:
+        raise StatusInputError("one of --fingerprint or --last-reviewed is required")
+
+
+def _resolve_review_fingerprint(
+    document: StatusDocument,
+    key: str,
+    expected_fingerprint: str | None,
+    *,
+    last_reviewed: bool,
+    current_fingerprint: str,
+) -> str:
+    _validate_review_selector(
+        expected_fingerprint,
+        last_reviewed=last_reviewed,
+    )
+    if last_reviewed:
+        record = document.reviews.get(key)
+        if record is None:
+            raise StatusInputError(
+                f"no saved review for {key}; rerun status review"
+            )
+        if record.fingerprint != current_fingerprint:
+            raise StatusInputError(
+                "artifacts changed since review; rerun status review"
+            )
+        return record.fingerprint
+    fingerprint = (expected_fingerprint or "").strip().lower()
+    if re.fullmatch(r"[0-9a-f]{64}", fingerprint) is None:
+        raise StatusInputError("--fingerprint must be a lowercase SHA-256 value")
+    return fingerprint
+
+
 def renew_cascade(
     project_dir: Path,
-    expected_fingerprint: str,
+    expected_fingerprint: str | None,
     note: str,
     *,
+    last_reviewed: bool = False,
     now: str | None = None,
 ) -> StatusResult:
     """Record one explicit decision across an eligible approval cascade."""
     project_dir = _project_dir(project_dir)
-    expected_fingerprint = expected_fingerprint.strip().lower()
     note = note.strip()
     if not note:
         raise StatusInputError("--note must be a non-empty approval explanation")
-    if re.fullmatch(r"[0-9a-f]{64}", expected_fingerprint) is None:
-        raise StatusInputError("--fingerprint must be a lowercase SHA-256 value")
+    _validate_review_selector(
+        expected_fingerprint,
+        last_reviewed=last_reviewed,
+    )
+    event_time = now or _now()
     document = read_status_document(project_dir)
-    review = prepare_cascade_review(project_dir, document)
-    if review.fingerprint != expected_fingerprint:
+    document = _invalidate_stale_approvals(
+        project_dir,
+        document,
+        at=event_time,
+    )
+    review = prepare_cascade_review(
+        project_dir,
+        document,
+        reviewed_at=event_time,
+    )
+    expected = _resolve_review_fingerprint(
+        document,
+        "cascade",
+        expected_fingerprint,
+        last_reviewed=last_reviewed,
+        current_fingerprint=review.fingerprint,
+    )
+    if review.fingerprint != expected:
         raise StatusInputError(
             "cannot renew cascade: reviewed fingerprint is stale or does not "
             "match current evidence"
         )
     if not review.ready:
         raise StatusInputError(f"cannot renew cascade: {review.detail}")
-    event_time = now or _now()
     gate_by_key = {gate.key: gate for gate in _approval_gate_sequence()}
     renewed = document
     for item in review.gates:
@@ -4060,39 +4254,51 @@ def review_phase(
     runner: CommandRunner = subprocess.run,
     checked_at: str | None = None,
 ) -> PhaseReview:
-    """Build a read-only, deterministic phase packet for user review."""
+    """Build and save a deterministic phase packet for user review."""
     project_dir = _project_dir(project_dir)
     phase = phase.lower()
+    event_time = checked_at or _now()
+    document = read_status_document(project_dir)
     if stage == "handoff":
         if phase != "layout":
             raise StatusInputError(
                 "handoff review is only valid for layout"
             )
-        review, _ = _prepare_layout_handoff_review(
+        review, review_document = _prepare_layout_handoff_review(
             project_dir,
+            document=document,
             tool_root=tool_root,
             runner=runner,
-            checked_at=checked_at,
+            checked_at=event_time,
         )
-        return review
-    if stage == "proposal":
-        review, _ = _prepare_proposal_review(
+    elif stage == "proposal":
+        review, review_document = _prepare_proposal_review(
             project_dir,
             phase,
+            document=document,
             tool_root=tool_root,
             runner=runner,
-            checked_at=checked_at,
+            checked_at=event_time,
         )
-        return review
-    if stage != "final":
+    elif stage != "final":
         raise StatusInputError("stage must be proposal, handoff, or final")
-    review, _ = _prepare_phase_review(
-        project_dir,
-        phase,
-        tool_root=tool_root,
-        runner=runner,
-        checked_at=checked_at,
-    )
+    else:
+        review, review_document = _prepare_phase_review(
+            project_dir,
+            phase,
+            document=document,
+            tool_root=tool_root,
+            runner=runner,
+            checked_at=event_time,
+        )
+    if review.ready:
+        _record_review(
+            project_dir,
+            review_document,
+            _review_key(phase, stage),
+            review.fingerprint,
+            at=event_time,
+        )
     return review
 
 
@@ -4131,8 +4337,15 @@ def render_phase_review(review: PhaseReview) -> str:
         lines.append("  - (no automated checks required)")
     lines.append(f"approval fingerprint: {review.fingerprint}")
     if review.ready:
+        stage = (
+            f" --stage {review.stage}"
+            if review.stage in {"proposal", "handoff"}
+            else ""
+        )
         lines.append(
-            "next: present this packet and wait for explicit user approval"
+            "next: present this packet, wait for explicit user approval, then run "
+            f"`pcbforge status approve {review.phase.key}{stage} "
+            "--last-reviewed --note \"<approval>\"`"
         )
     return "\n".join(lines)
 
@@ -4140,10 +4353,11 @@ def render_phase_review(review: PhaseReview) -> str:
 def approve_phase(
     project_dir: Path,
     phase: str,
-    expected_fingerprint: str,
+    expected_fingerprint: str | None,
     note: str,
     *,
     stage: str = "final",
+    last_reviewed: bool = False,
     tool_root: Path | None = None,
     runner: CommandRunner = subprocess.run,
     now: str | None = None,
@@ -4152,12 +4366,14 @@ def approve_phase(
     project_dir = _project_dir(project_dir)
     phase = phase.lower()
     note = note.strip()
-    expected_fingerprint = expected_fingerprint.strip().lower()
     if not note:
         raise StatusInputError("--note must be a non-empty approval explanation")
-    if re.fullmatch(r"[0-9a-f]{64}", expected_fingerprint) is None:
-        raise StatusInputError("--fingerprint must be a lowercase SHA-256 value")
+    _validate_review_selector(
+        expected_fingerprint,
+        last_reviewed=last_reviewed,
+    )
     event_time = now or _now()
+    document = read_status_document(project_dir)
     if stage == "handoff":
         if phase != "layout":
             raise StatusInputError(
@@ -4165,6 +4381,7 @@ def approve_phase(
             )
         review, checked = _prepare_layout_handoff_review(
             project_dir,
+            document=document,
             tool_root=tool_root,
             runner=runner,
             checked_at=event_time,
@@ -4173,6 +4390,7 @@ def approve_phase(
         review, checked = _prepare_proposal_review(
             project_dir,
             phase,
+            document=document,
             tool_root=tool_root,
             runner=runner,
             checked_at=event_time,
@@ -4181,17 +4399,25 @@ def approve_phase(
         review, checked = _prepare_phase_review(
             project_dir,
             phase,
+            document=document,
             tool_root=tool_root,
             runner=runner,
             checked_at=event_time,
         )
     else:
         raise StatusInputError("stage must be proposal, handoff, or final")
+    expected = _resolve_review_fingerprint(
+        checked,
+        _review_key(phase, stage),
+        expected_fingerprint,
+        last_reviewed=last_reviewed,
+        current_fingerprint=review.fingerprint,
+    )
     if not review.ready:
         raise StatusInputError(
             f"cannot approve {phase}: {review.detail}"
         )
-    if review.fingerprint != expected_fingerprint:
+    if review.fingerprint != expected:
         raise StatusInputError(
             "cannot approve phase: reviewed fingerprint is stale or does not "
             f"match current evidence (expected {review.fingerprint})"
@@ -4287,6 +4513,13 @@ def _metadata(document: StatusDocument) -> dict[str, Any]:
         "events": events,
         "policy_events": policy_events,
         "transition_events": transition_events,
+        "reviews": {
+            key: {
+                "at": record.at,
+                "fingerprint": record.fingerprint,
+            }
+            for key, record in sorted(document.reviews.items())
+        },
         "checks": {
             name: {
                 "at": record.at,

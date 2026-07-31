@@ -86,6 +86,14 @@ exception approval reopens the profile-mapped completed phase.
 
 ## Decision record
 
+- **2026-07-31 — ready reviews are saved for hash-free approval commands.**
+  Phase, proposal, layout-handoff, and cascade review commands persist their
+  latest ready fingerprint in the schema-1 STATUS `reviews` map. Approval and
+  renewal prefer `--last-reviewed`, recompute the current packet, and fail
+  closed if any artifact changed; the append-only approval event still stores
+  the full SHA-256. Explicit `--fingerprint` remains available. Bundling policy
+  exceptions into the same review is deferred because it requires richer
+  saved-review metadata and a separate atomic policy-event refactor.
 - **2026-07-31 — v1 trims the happy path to eight user decisions.** The sole
   numbered workflow is SPEC, ARCHITECT, CIRCUIT, LAYOUT, VERIFY, ORDER, and
   optional PUBLISH. Placement and routing remain distinct user tasks inside

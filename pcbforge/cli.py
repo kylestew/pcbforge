@@ -356,8 +356,8 @@ def _status_review_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pcbforge status review",
         description=(
-            "Run read-only phase checks and print the exact artifact/check "
-            "packet and fingerprint that may be presented for user approval."
+            "Build the exact artifact/check packet for user approval and save "
+            "its ready fingerprint in STATUS.md."
         ),
     )
     parser.add_argument(
@@ -401,10 +401,15 @@ def _status_renew_parser() -> argparse.ArgumentParser:
         metavar="PROJECT_DIR",
         help="project containing spec.md (default: current directory)",
     )
-    parser.add_argument(
+    selector = parser.add_mutually_exclusive_group(required=True)
+    selector.add_argument(
         "--fingerprint",
-        required=True,
         help="exact SHA-256 printed by the cascade review command",
+    )
+    selector.add_argument(
+        "--last-reviewed",
+        action="store_true",
+        help="use the latest ready cascade review saved in STATUS.md",
     )
     parser.add_argument(
         "--note",
@@ -436,10 +441,15 @@ def _status_approve_parser() -> argparse.ArgumentParser:
         metavar="PROJECT_DIR",
         help="project containing spec.md (default: current directory)",
     )
-    parser.add_argument(
+    selector = parser.add_mutually_exclusive_group(required=True)
+    selector.add_argument(
         "--fingerprint",
-        required=True,
         help="exact SHA-256 printed by the phase review command",
+    )
+    selector.add_argument(
+        "--last-reviewed",
+        action="store_true",
+        help="use the latest ready matching review saved in STATUS.md",
     )
     parser.add_argument(
         "--note",
@@ -492,7 +502,10 @@ def _run_status_cli(argv: list[str]) -> int:
             return 0
         if mode == "review":
             if status_args.cascade:
-                cascade = prepare_cascade_review(Path(status_project_dir))
+                cascade = prepare_cascade_review(
+                    Path(status_project_dir),
+                    record=True,
+                )
                 print(render_cascade_review(cascade))
                 return 0 if cascade.ready else 1
             if status_args.phase is None:
@@ -511,6 +524,7 @@ def _run_status_cli(argv: list[str]) -> int:
                 Path(status_args.project_dir),
                 status_args.fingerprint,
                 status_args.note,
+                last_reviewed=status_args.last_reviewed,
             )
             print(render_terminal(result.report))
             print(
@@ -525,6 +539,7 @@ def _run_status_cli(argv: list[str]) -> int:
                 status_args.fingerprint,
                 status_args.note,
                 stage=status_args.stage,
+                last_reviewed=status_args.last_reviewed,
             )
             print(render_terminal(result.report))
             print(

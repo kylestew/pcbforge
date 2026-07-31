@@ -17,6 +17,7 @@ from pcbforge.status import (
     CheckRecord,
     PHASES,
     PhaseResult,
+    ReviewRecord,
     StatusCheckError,
     StatusDocument,
     StatusEvent,
@@ -30,6 +31,7 @@ from pcbforge.status import (
     _layout_handoff_payload,
     _payload_fingerprint,
     _phase_review_artifact_paths,
+    _review_key,
     approve_phase,
     finish_architect,
     inspect_status,
@@ -1796,6 +1798,280 @@ class V1WorkflowTests(StatusFixture):
                     read_status_document(project)
 
 
+class ReviewErgonomicsTests(StatusFixture):
+    def test_review_keys_cover_final_proposal_and_handoff_packets(self) -> None:
+        self.assertEqual(_review_key("spec", "final"), "spec")
+        self.assertEqual(
+            _review_key("architect", "proposal"),
+            "architect:proposal",
+        )
+        self.assertEqual(
+            _review_key("circuit", "proposal"),
+            "circuit:proposal",
+        )
+        self.assertEqual(_review_key("layout", "handoff"), "layout:handoff")
+
+    def test_review_records_round_trip_and_validate_strictly(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            fingerprint = "a" * 64
+            written = write_status(
+                project,
+                now="2026-07-31T16:00:00+00:00",
+                document=StatusDocument(
+                    "",
+                    (),
+                    {},
+                    reviews={
+                        "spec": ReviewRecord(
+                            "2026-07-31T15:59:00+00:00",
+                            fingerprint,
+                        )
+                    },
+                ),
+            )
+            loaded = read_status_document(project)
+
+            self.assertTrue(written.wrote)
+            self.assertEqual(loaded.reviews["spec"].fingerprint, fingerprint)
+            self.assertIn("reviews:", (project / "STATUS.md").read_text())
+
+            for reviews, expected in (
+                (
+                    "  unknown: {at: now, fingerprint: " + fingerprint + "}\n",
+                    "unknown review key",
+                ),
+                (
+                    "  spec: {at: now, fingerprint: nope}\n",
+                    "expected a lowercase SHA-256",
+                ),
+                (
+                    "  spec: {at: now, fingerprint: "
+                    + fingerprint
+                    + ", extra: nope}\n",
+                    "contains unknown keys",
+                ),
+            ):
+                with self.subTest(expected=expected):
+                    (project / "STATUS.md").write_text(
+                        "---\n"
+                        "pcbforge_status_schema: 1\n"
+                        "updated_at: now\n"
+                        "events: []\n"
+                        "policy_events: []\n"
+                        "transition_events: []\n"
+                        "reviews:\n"
+                        + reviews
+                        + "checks: {}\n"
+                        "---\n",
+                        encoding="utf-8",
+                    )
+                    with self.assertRaisesRegex(StatusInputError, expected):
+                        read_status_document(project)
+
+    def test_phase_review_then_last_reviewed_approval_needs_no_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            review = review_phase(
+                project,
+                "spec",
+                tool_root=TOOL_ROOT,
+                checked_at="2026-07-31T16:10:00+00:00",
+            )
+            saved = read_status_document(project)
+            approved = approve_phase(
+                project,
+                "spec",
+                None,
+                "User approved the saved SPEC review",
+                last_reviewed=True,
+                tool_root=TOOL_ROOT,
+                now="2026-07-31T16:11:00+00:00",
+            )
+
+        self.assertEqual(saved.reviews["spec"].fingerprint, review.fingerprint)
+        self.assertEqual(saved.checks["policy"].outcome, "pass")
+        self.assertEqual(
+            approved.report.document.events[-1].approval_fingerprint,
+            review.fingerprint,
+        )
+        self.assertEqual(
+            approved.report.document.reviews["spec"].fingerprint,
+            review.fingerprint,
+        )
+
+    def test_proposal_review_uses_canonical_key_and_retains_prior_review(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            review_phase(project, "spec", tool_root=TOOL_ROOT)
+            approve_phase(
+                project,
+                "spec",
+                None,
+                "User approved SPEC",
+                last_reviewed=True,
+                tool_root=TOOL_ROOT,
+            )
+            self.add_architecture_proposal(project)
+            proposal = review_phase(
+                project,
+                "architect",
+                stage="proposal",
+                tool_root=TOOL_ROOT,
+            )
+            document = read_status_document(project)
+
+        self.assertEqual(
+            set(document.reviews),
+            {"spec", "architect:proposal"},
+        )
+        self.assertEqual(
+            document.reviews["architect:proposal"].fingerprint,
+            proposal.fingerprint,
+        )
+
+    def test_blocked_review_is_not_saved(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            self.add_architecture_proposal(project)
+            review = review_phase(
+                project,
+                "architect",
+                stage="proposal",
+                tool_root=TOOL_ROOT,
+            )
+            document = read_status_document(project)
+
+        self.assertFalse(review.ready)
+        self.assertNotIn("architect:proposal", document.reviews)
+
+    def test_last_reviewed_fails_closed_for_changes_missing_and_conflicts(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            with self.assertRaisesRegex(StatusInputError, "no saved review for spec"):
+                approve_phase(
+                    project,
+                    "spec",
+                    None,
+                    "User approval",
+                    last_reviewed=True,
+                    tool_root=TOOL_ROOT,
+                )
+
+            review = review_phase(project, "spec", tool_root=TOOL_ROOT)
+            with self.assertRaisesRegex(StatusInputError, "mutually exclusive"):
+                approve_phase(
+                    project,
+                    "spec",
+                    review.fingerprint,
+                    "User approval",
+                    last_reviewed=True,
+                    tool_root=TOOL_ROOT,
+                )
+            with self.assertRaisesRegex(StatusInputError, "one of --fingerprint"):
+                approve_phase(
+                    project,
+                    "spec",
+                    None,
+                    "User approval",
+                    tool_root=TOOL_ROOT,
+                )
+
+            spec = project / "spec.md"
+            spec.write_text(
+                spec.read_text(encoding="utf-8").replace(
+                    "# Garden logger",
+                    "# Changed garden logger",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                StatusInputError,
+                "artifacts changed since review; rerun status review",
+            ):
+                approve_phase(
+                    project,
+                    "spec",
+                    None,
+                    "User approved only the earlier packet",
+                    last_reviewed=True,
+                    tool_root=TOOL_ROOT,
+                )
+
+            document = read_status_document(project)
+
+        self.assertFalse(document.events)
+
+    def test_cascade_review_and_last_reviewed_renewal(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            self.approve_through_architect(project)
+            spec = project / "spec.md"
+            spec.write_text(
+                spec.read_text(encoding="utf-8").replace(
+                    "board_mm: [50, 40]",
+                    "board_mm: [45, 40]",
+                ),
+                encoding="utf-8",
+            )
+            self.refresh_architect_checks(project)
+            review = prepare_cascade_review(
+                project,
+                record=True,
+                reviewed_at="2026-07-31T16:20:00+00:00",
+            )
+            saved = read_status_document(project)
+            renewed = renew_cascade(
+                project,
+                None,
+                "User approved the saved cascade",
+                last_reviewed=True,
+                now="2026-07-31T16:21:00+00:00",
+            )
+
+        self.assertTrue(review.ready)
+        self.assertEqual(
+            saved.reviews["cascade"].fingerprint,
+            review.fingerprint,
+        )
+        self.assertTrue(
+            any(event.renewed_from for event in renewed.report.document.events)
+        )
+
+    def test_changed_cascade_rejects_last_reviewed(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            self.approve_through_architect(project)
+            spec = project / "spec.md"
+            spec.write_text(
+                spec.read_text(encoding="utf-8").replace(
+                    "board_mm: [50, 40]",
+                    "board_mm: [45, 40]",
+                ),
+                encoding="utf-8",
+            )
+            self.refresh_architect_checks(project)
+            prepare_cascade_review(project, record=True)
+            spec.write_text(
+                spec.read_text(encoding="utf-8").replace(
+                    "board_mm: [45, 40]",
+                    "board_mm: [44, 40]",
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                StatusInputError,
+                "artifacts changed since review; rerun status review",
+            ):
+                renew_cascade(
+                    project,
+                    None,
+                    "User approved only the earlier cascade",
+                    last_reviewed=True,
+                )
+
+
 class CheckTests(StatusFixture):
     def test_unchanged_checked_write_reuses_passes_without_commands(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -2110,7 +2386,91 @@ component R_10K_0603:
         self.assertEqual(checked.checks["drc"].outcome, "pass")
         self.assertEqual(len(runner.calls), 2)
 
+
 class StatusCliTests(StatusFixture):
+    def test_last_reviewed_cli_records_approval_without_hash_argument(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            with (
+                mock.patch("pcbforge.cli.validate_project_compatibility"),
+                mock.patch("builtins.print") as output,
+            ):
+                reviewed = main(
+                    ["status", "review", "spec", str(project)]
+                )
+                approved = main(
+                    [
+                        "status",
+                        "approve",
+                        "spec",
+                        "--last-reviewed",
+                        "--note",
+                        "User approved the saved review",
+                        str(project),
+                    ]
+                )
+            rendered = "\n".join(
+                str(call.args[0]) for call in output.call_args_list
+            )
+            document = read_status_document(project)
+
+        self.assertEqual(reviewed, 0)
+        self.assertEqual(approved, 0)
+        self.assertIn("--last-reviewed", rendered)
+        self.assertEqual(
+            document.events[-1].approval_fingerprint,
+            document.reviews["spec"].fingerprint,
+        )
+
+    def test_approval_clis_require_exactly_one_review_selector(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            commands = (
+                [
+                    "status",
+                    "approve",
+                    "spec",
+                    "--note",
+                    "Approved",
+                    str(project),
+                ],
+                [
+                    "status",
+                    "approve",
+                    "spec",
+                    "--fingerprint",
+                    "a" * 64,
+                    "--last-reviewed",
+                    "--note",
+                    "Approved",
+                    str(project),
+                ],
+                [
+                    "status",
+                    "renew",
+                    "--note",
+                    "Approved",
+                    str(project),
+                ],
+                [
+                    "status",
+                    "renew",
+                    "--fingerprint",
+                    "a" * 64,
+                    "--last-reviewed",
+                    "--note",
+                    "Approved",
+                    str(project),
+                ],
+            )
+            for command in commands:
+                with (
+                    self.subTest(command=command),
+                    mock.patch("sys.stderr"),
+                    self.assertRaisesRegex(SystemExit, "2"),
+                ):
+                    main(command)
+
     def test_finish_architect_cli_success_and_exit_codes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary), initialized=True)

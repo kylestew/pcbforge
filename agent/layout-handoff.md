@@ -179,7 +179,7 @@ The schema rules are:
 8. After the user explicitly approves that packet, record:
 
    ```sh
-   pcbforge status approve layout --stage handoff --fingerprint <sha256> \
+   pcbforge status approve layout --stage handoff --last-reviewed \
      --note "Approved docs/placement-brief.md beside the current CIRCUIT overview"
    ```
 

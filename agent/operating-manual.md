@@ -120,13 +120,13 @@ Refresh `STATUS.md` after meaningful transitions. When a phase's evidence is
 ready, run `pcbforge status review <phase>` and present its exact artifacts,
 checks, and fingerprint. Stop. Users grant approval in conversation; only
 after receiving an unambiguous approval of that packet, record it with
-`pcbforge status approve <phase> --fingerprint <sha256> --note "<reason>"`.
+`pcbforge status approve <phase> --last-reviewed --note "<reason>"`.
 The command persists approval but never constitutes it. Never use
 `status mark <phase> complete`, and never infer approval for any phase. Use
 `blocked` for an actionable blocker, `reopened` when earlier work changes, and
 `skipped` only for optional publish. ARCHITECT and CIRCUIT proposals use
 `status review <phase> --stage proposal` and
-`status approve <phase> --stage proposal --fingerprint ...` before affected
+`status approve <phase> --stage proposal --last-reviewed` before affected
 source coding begins.
 
 After a root artifact change, refresh the dashboard checks, then run
@@ -138,13 +138,18 @@ packet and stop. Only after the user explicitly approves the root change and
 listed unchanged gates may you record:
 
 ```text
-pcbforge status renew --fingerprint <sha256> --note "<approval>"
+pcbforge status renew --last-reviewed --note "<approval>"
 ```
 
 Renewal reuses the existing proposal/final/handoff actions and cites each old
 approval fingerprint. Never use it across a `delta`, a failed check, or a gate
 the user explicitly reopened. Events without content fingerprints require the
 normal per-gate review ceremony.
+
+Review commands save the latest ready packet in `STATUS.md`.
+`--last-reviewed` recomputes it before approval and fails closed if artifacts
+changed. The explicit `--fingerprint <sha256>` form remains available for
+debugging and automation.
 
 `policy.yaml` requests exceptions but never approves them. After the user
 explicitly accepts one, record it with

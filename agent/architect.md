@@ -61,11 +61,11 @@ Generate and present the exact proposal packet first:
 <pcbforge-root>/scripts/pcbforge status review architect --stage proposal
 ```
 
-After explicit proposal approval, record that exact fingerprint:
+After explicit proposal approval, record the saved review:
 
 ```bash
 <pcbforge-root>/scripts/pcbforge status approve architect --stage proposal \
-  --fingerprint <sha256> \
+  --last-reviewed \
   --note "<user-approved graph and material choices>; diagram: docs/architecture.md"
 ```
 
