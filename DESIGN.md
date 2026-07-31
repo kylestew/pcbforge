@@ -4,12 +4,16 @@ AI-assisted PCB development tool. **Schematic capture happens in code, AI-driven
 the human owns layout and routing — the art.** Compiler + deterministic scripts
 own everything mechanical around KiCad board design for JLCPCB fab.
 
+[WORKFLOW.md](WORKFLOW.md) is the normative phase and approval contract. This
+document records the reasoning, invariants, architecture, and decision history
+behind it.
+
 ## Constraints (fixed for v1)
 
 - **EDA:** KiCad **9.x, pinned** (layout/routing + fab outputs; capture happens
   upstream in code). KiCad 10 excluded until atopile reads its boards
   (atopile#1822) — see decision record for trigger.
-- **Capture:** circuit-as-code, atopile-class compiler (pilot decides; see Pilot)
+- **Capture:** circuit-as-code with pinned atopile 0.15.7
 - **Fab:** JLCPCB only (assembly via LCSC parts)
 - **Boards:** hobby, 2 / 4 layer, medium density
 - **MCU family:** STM32
@@ -55,13 +59,11 @@ validation.
 Approval events are bound to artifact fingerprints. A changed approved
 artifact becomes stale; a dashboard write durably reopens its phase so tool
 reruns or later content restoration cannot silently revive the approval.
-The eight required user decisions are SPEC, ARCHITECT proposal, CIRCUIT
-proposal and final, the CIRCUIT-to-LAYOUT handoff, LAYOUT done, VERIFY, and
-ORDER. Initialization, the ARCHITECT source baseline, and FAB-OUT are checked
-automatic transitions. Passing checks at a user-owned gate produce `Awaiting
-approval`, not completion. The agent presents the exact `status review` packet
-and may record its fingerprint with `status approve` only after the user
-unambiguously accepts it.
+The current user gates and checked transitions are defined only in
+[WORKFLOW.md](WORKFLOW.md). Passing checks at a user-owned gate produce
+`Awaiting approval`, not completion. The agent presents the exact
+`status review` packet and may record it only after the user unambiguously
+accepts it.
 
 ### Manufacturing-policy invariant
 
@@ -105,6 +107,12 @@ exception approval reopens the profile-mapped completed phase.
   binds the generated packet. Initialize and layout handoff remain visible
   transitions; the latter retains explicit user approval because it transfers
   the exact circuit contract into user-owned physical work.
+- **2026-07-31 — current passing checks are reused incrementally.** Saved pass
+  records remain current while their input fingerprints match, so an unchanged
+  cold start launches no external validators and does not rewrite STATUS.
+  Failed or stale checks rerun, while `--force-checks` deliberately reruns all
+  applicable checks. One status cycle shares a single successful frozen build
+  across build-dependent checks.
 - **2026-07-31 — unchanged approval chains renew as one explicit decision.**
   Approval events now retain a phase-owned content fingerprint in addition to
   the full upstream-bound fingerprint. `status review --cascade` uses current
@@ -129,71 +137,8 @@ exception approval reopens the profile-mapped completed phase.
   one accepted value. Unsupported versions fail with “unsupported version —
   restart the project.” Schema migrations, feature gates, compatibility
   branches, old numbered phases, deprecated CLI aliases, and native generated
-  KiCad schematic review were removed. The sole workflow is the seven-phase
-  model plus the four transitions described below.
-- **2026-07-29 — schema-15 streamlines phase boundaries.** INIT becomes the
-  visible, automatic SPEC-to-ARCHITECT transition; MCU becomes a subordinate
-  ARCHITECT workstream; BRIEF becomes the visible CIRCUIT-to-LAYOUT handoff.
-  The dashboard therefore has nine numbered phases, eight required, while
-  retaining both transition states and their append-only events. ARCHITECT
-  proposal approval now binds `docs/architecture.md` and `docs/mcu.md`; its
-  final approval requires build, IOC round-trip, and one-to-one MCU evidence.
-  The layout handoff uses `prepare-layout`, `check-layout-handoff`, and
-  `status ... layout --stage handoff`. Schema-14 projects opt in through the
-  atomic, conservative `migrate-phase-transitions`; no board is migrated by
-  tool rollout alone.
-- **2026-07-29 — generated placement briefs live under `docs/`.**
-  `placement.yaml` remains the root-level machine and human contract;
-  `pcbforge brief` writes its generated review derivative to
-  `docs/placement-brief.md`. Brief guidance schema 5 and agent guidance schema
-  15 make the path explicit. `migrate-placement-brief` atomically upgrades
-  schema-14 projects, while older workflow migrations perform the same
-  byte-preserving relocation as part of their existing upgrade.
-- **2026-07-28 — schema-14 merges IMPLEMENT and build + test into CIRCUIT.**
-  Physical implementation and its deterministic acceptance evidence are one
-  lifecycle: CIRCUIT starts with an authored proposal and explicit approval,
-  continues through Atopile implementation and exact compiled parity, then
-  requires the tracked `build-test.yaml` / `docs/build-test.md` gate before one
-  final approval. The dashboard has no separate build phase. Active artifacts
-  live under `review/circuit` and `docs/circuit-*`; BRIEF becomes Step 6.
-  Schema-13 migration preserves CIRCUIT completion only when both legacy
-  IMPLEMENT and build + test approvals are current.
-- **2026-07-28 — schema-13 authored circuit review supersedes synthetic KiCad
-  review.** The schema-12 pilot proved that a valid generated `.kicad_sch` and
-  clean ERC do not guarantee human comprehension. IMPLEMENT now approves a
-  deliberately authored browser-readable SVG bound to a strict pre-source
-  electrical model. Final evidence compares that frozen model directly with
-  compiled Atopile BOM identity and PCB endpoint topology. PCBForge does not
-  generate a KiCad schematic for circuit-as-code review.
-- **2026-07-28 — schema-12 native Step 5 schematic review adopted.** IMPLEMENT
-  now has a proposal gate before physical Atopile source edits and a separate
-  final gate. The AI authors a review-only native KiCad schematic, PCBForge
-  runs pinned KiCad ERC and SVG export, and proposal approval fingerprints the
-  electrical view, narrative, upstream contract, and pre-IMPLEMENT source
-  baseline. Final approval requires exact reference/value/footprint/MPN/LCSC
-  and physical-pin/net parity with the compiled BOM/PCB. Electrical or
-  part-identity differences return to proposal approval. Atopile remains the
-  authority and the review project is forbidden from owning a PCB. Step 7
-  consumes this approved evidence rather than introducing the circuit view.
-  **Superseded by schema 13 after the Blinky readability pilot.**
-- **2026-07-28 — schema-11 universal phase approval adopted.** Every phase,
-  including init, MCU, IMPLEMENT, build + test, LAYOUT, ROUTE, verify,
-  fab-out, order, and publish, now needs explicit final user approval.
-  Technical readiness is reported as `Awaiting approval`. `status review`
-  produces a phase-specific artifact/check fingerprint; `status approve`
-  records an approval already expressed by the user and rejects stale
-  fingerprints. ARCHITECT keeps its distinct proposal-before-code gate.
-  Optional PUBLISH may be explicitly skipped. Schema-10 migration preserves
-  only current legacy artifact-bound approvals and reopens completions that
-  cannot be proven.
-- **2026-07-27 — schema-10 manufacturing policy adopted.** Tool-owned policy
-  profiles separate unconditional platform constraints from approval-required
-  defaults and advisory sourcing preferences. New SPEC approval binds the
-  policy baseline. Existing generated schema-7-through-9 projects use an
-  explicit migration and a separate user baseline approval; migration itself
-  is not approval. Routine
-  checks stay offline. Live JLC availability/lifecycle is reviewed during
-  CIRCUIT and again after FAB-OUT before the user may complete ORDER.
+  KiCad schematic review were removed. The sole current process is defined in
+  [WORKFLOW.md](WORKFLOW.md).
 - **2026-07-25 — MCU pinmux is AI-led; CubeMX review is optional.** After
   ARCHITECT approval, the agent chooses the exact STM32/package, resolves the
   pin mapping, and creates the canonical `firmware/<project>.ioc`. Pinned
@@ -233,17 +178,18 @@ exception approval reopens the profile-mapped completed phase.
   - Existing KiCad 10 boards (Roamer rev-a) = reference oracles via
     kicad-cli 10 exports only — never live projects on this track; no
     downgrade (9 can't read 10; conversion risks human artwork).
-  - "Support" caveat stays open until phase 2: serializer known lossy on
+  - "Support" caveat stays open until pilot stage 2: serializer known lossy on
     corner data (teardrops, board setup, embedded fonts) on non-chosen
     fixtures; managed no-op sync untested.
-  - **Migration trigger:** atopile ships KiCad 10 board support → rerun
-    roamer fixture acceptance (pilots/roamer-rev-a/REPORT.md) → migrate.
+  - **Upgrade trigger:** atopile ships KiCad 10 board support → rerun
+    roamer fixture acceptance (`pilots/roamer-rev-a/REPORT.md`) → reconsider
+    the pin.
     Netlist-route probe (compiler emits netlist, never touches board file)
     stays the hedge if the trigger never fires.
 - **2026-07-24 — future boards only.** Legacy-board adoption (Roamer or any
   pre-pcbforge board) is a non-goal; every board is born inside the flow
   with compiler ownership metadata from day one. Consequence: the
-  114-component mixer port is descoped; pilot phase 2 folds into the first
+  114-component mixer port is descoped; pilot stage 2 folds into the first
   fresh board (see Pilot).
 
 ## Capture medium: code
@@ -298,131 +244,16 @@ for whichever compiler wins:
 - Identity stable at component/pad/net level (UUIDs), not merely refdes;
   designator lock file still required on top.
 
-## Workflow
+## Workflow contract
 
-**U** user, **T** tool/compiler, **AI** agent.
+[WORKFLOW.md](WORKFLOW.md) is the single normative process map. It defines the
+current phases, transitions, approval protocol, phase-owned fingerprint scopes,
+and resume behavior. The playbooks under `agent/` provide execution detail
+without redefining that sequence.
 
-```
-1. SPEC       chat interview → spec.md + policy.yaml + tracked STATUS.md;
-              U approves requirements/policy baseline, AI records through status.
-              Not a CLI verb — chat is the medium (see Spec).
-   transition T: atomic init creates and smoke-tests the project scaffold,
-              then opens ARCHITECT without separate approval.
-2. ARCHITECT  AI proposes module graph plus exact STM32/package, resource, and
-              provisional pin plan. U approves proposal; AI writes/builds the
-              skeleton, creates and round-trips the IOC, derives src/mcu.ato,
-              and performs diagram + one-to-one audits.
-   transition T: finish-architect validates the proposal, build, IOC, and
-              spatial preservation, then captures the source baseline.
-3. CIRCUIT    AI creates an explanatory SVG plus exact proposal model; T:
-              semantic binding; U approves before source. AI implements exact
-              parts; T validates identity/pin/topology parity, parts, policy,
-              exact build-test.yaml, assertions, BOM/connectivity, and no-op
-              spatial preservation; U gives one final approval.
-   transition AI: exact placement.yaml from reviewed intent; T validates
-              complete footprint/ref/pad/net coverage, generates
-              docs/placement-brief.md,
-              and seeds PCBForge-owned classes in .kicad_pro without touching
-              .kicad_pcb; U approves the handoff beside current CIRCUIT view.
-4. LAYOUT     U — THE ART: placement + routing. AI spotter on request.
-5. verify     T: DRC vs JLC rules + scripted layout audits; AI render review.
-   transition T: JLC Gerbers + drill + BOM + CPL → fab/board.zip
-6. order      post-FAB sourcing confirmation → U uploads to JLCPCB
-              (tool never touches money/orders)
-7. publish    proven modules: version tag + generated schematic render;
-              U optional prettify (the surviving drawing act).
-```
-
-Every user-owned gate requires current evidence, an exact `pcbforge status
-review` packet, explicit approval of its fingerprint, and a recorded `status
-approve` event. Tool success, file presence, or agent judgment never grants a
-user decision. ARCHITECT has one proposal gate before source; its finalization
-is the checked architecture-baseline transition. CIRCUIT retains proposal and
-final gates. Optional PUBLISH may be explicitly skipped.
-
-### Phase 2 — ARCHITECT, including MCU
-
-The agent follows `agent/architect.md`. It first maps every spec requirement to
-a proposed functional block and compiler-native typed interface in
-`docs/architecture.md`. If multiple material designs satisfy the spec, it
-presents alternatives and stops. The user approves the proposal before the
-agent writes the skeleton. Proposal approval is fingerprint-bound to the
-semantic SPEC contract and diagram.
-
-Only after proposal approval does the agent keep `src/main.ato` as a thin graph
-and place project-local interface skeletons in separate source files. The MCU
-plan and implementation are part of ARCHITECT.
-
-ARCHITECT contains no non-MCU physical parts, footprints, or layout work. The
-skeleton must compile without changing the KiCad board. The review
-package covers the tracked `docs/architecture.md` Mermaid graph, interfaces,
-spec coverage, reuse evidence, risks, source-to-diagram audit, diff, and build
-result. The diagram is the approved architecture contract and source remains
-the executable authority; changes are proposed in the diagram and reapproved
-before corresponding source edits. The diagram contains functional modules and
-typed interfaces, never parts, pins, or spatial detail.
-
-After build and audit, `pcbforge finish-architect` validates the current
-proposal approval, build and IOC evidence, and spatial preservation, then
-captures the pre-CIRCUIT source baseline. Its append-only transition event is
-fingerprint-bound to the implemented contract. Normative artifact changes make
-the transition stale before the workflow may move to CIRCUIT. Design rationale
-may remain in the non-normative `spec.md` Decisions log without reopening the
-gate; all other SPEC prose remains normative.
-
-#### MCU workstream inside ARCHITECT
-
-The agent follows `agent/mcu.md`. It converts the approved interface contract
-into a resource checklist, selects the exact orderable STM32/package, and asks
-the user only when a material tradeoff cannot be resolved from the spec and
-evidence. The agent assigns pins, modes, clocks, DMA/timer resources, SWD, and
-the optional debug UART, then creates `firmware/<project>.ioc`.
-
-The `.ioc` is authoritative for MCU identity, package, pins, peripherals, and
-clocks. `pcbforge check-ioc` validates its project contract and performs a
-non-mutating STM32CubeMX 6.18 load/save round trip. The agent presents the
-part rationale and readable mapping. CubeMX GUI review is optional; saved
-changes are deliberate overrides that require a semantic review and another
-check.
-
-`ioc2code` remains debt. Until it exists, the agent derives `src/mcu.ato`
-manually from the checked `.ioc`, independently audits every mapping, and
-builds before the checked ARCHITECT baseline transition into CIRCUIT.
-
-### Phase 1 — SPEC
-
-Spec is a conversation, not a script. U opens empty project dir, starts AI
-session, and gives the trigger ("pcbforge: new board"). Agent reads
-`agent/spec-interview.md`; its first question invites the user's initial idea,
-then it runs Q&A across the dimensions (purpose, power in, rails, MCU class,
-peripherals, connectors, I/O count, size, **layers — decided here**, special,
-cost, debug) and writes `spec.md`.
-
-`spec.md` = two zones: **YAML frontmatter** (machine contract — `init` reads
-only this, `yaml.safe_load` + versioned schema, fails loud on missing keys) + **markdown body**
-(human intent, for the user and future AI sessions). AI keeps frontmatter in
-sync with prose. No exact chip in spec — family + constraints only, unless user
-names a part. Schema lives in `agent/spec-interview.md`.
-
-Approval hashing canonicalizes the frontmatter as sorted JSON and binds the
-body byte-for-byte except for the exact `## Decisions log` section. That log
-may accumulate downstream rationale without reopening SPEC or ARCHITECT; edits
-to any other heading or prose are normative contract changes.
-
-`STATUS.md` is created after the first valid spec draft and survives `init`.
-Its YAML frontmatter contains append-only workflow events and fingerprints for
-saved build, IOC, and DRC results. Its generated body is the single user-facing
-dashboard: latest valid milestone, any performed-but-inactive transition,
-current phase or transition and reason, next owner, one primary action and
-command, required-phase count, blockers, the complete workflow, and recent
-history.
-
-A transition is `Complete` only while it currently authorizes its target.
-Reopening its upstream phase makes prior work `Performed, inactive`; current
-upstream work plus changed transition inputs makes it `Stale`. Static refreshes
-inspect files; explicit `--check` refreshes deterministic evidence. `status
---next` renders the same handoff without the full dashboard. Human-owned gates
-are never inferred from board contents.
+This design requires the workflow to preserve the actor split, decision
+authority, append-only approval history, fail-closed staleness, scoped contract
+ownership, reproducible evidence, and human ownership of every spatial edit.
 
 ## Layout copilot — serving the art
 
@@ -456,8 +287,8 @@ Hard rule: **spotter, not painter.** Output always words + measurements.
 ## Modules
 
 - **Parameterized:** `Ldo3V3(input_max_v=6)` — one module, many variants.
-- **Versioned + imported**, not copied. Version pin keeps fab-reproducibility
-  (vendoring mechanism per compiler — pilot decides).
+- **Versioned + imported**, not copied. Compiler locks and the `.pcbforge`
+  tool revision keep builds reproducible.
 - **Publish is cheap, not free:** the artifact is already library-shaped —
   no extract/sanitize/redraw labor — but curation still gates: provenance
   (which board proved it), interface freeze, docs, version. Flywheel
@@ -642,15 +473,16 @@ pcbforge/                    ← THE TOOL
   modules/                   versioned circuit modules + renders + index.md
   asserts/                   shared rule/assertion library
   toolchain/                 pinned compiler env (uv.lock — atopile 0.15.7)
-  scripts/                   init, check-ioc, ioc2code, brief, verify,
-                             verify_stock, fab_out, publish; pinned wrappers:
-                             ato, kicad-cli (9), cubemx (6.18)
+  scripts/                   public pcbforge CLI; pinned ato, kicad-cli (9),
+                             and cubemx (6.18) wrappers
   agent/
-    operating-manual.md      what pcbforge is, phases, actor split, verbs
+    operating-manual.md      actor split, resume, approval protocol
     spec-interview.md        step-one playbook + spec.md schema
     architect.md             module-graph procedure + approval gate
     mcu.md                   exact-device, pinmux, .ioc + audit procedure
-    layout-copilot.md        spotter playbook: audits, render review, limits
+    circuit.md               authored review + implementation procedure
+    build-test.md            deterministic CIRCUIT acceptance procedure
+    layout-handoff.md        placement contract + handoff procedure
   README.md                  quickstart (how to start a session)
 
 my-stm32-thing/              ← A PROJECT
@@ -688,14 +520,18 @@ requirement from the other.
 Verbs must be plain CLI, exit-code + stdout/stderr clean — any agent with
 shell + file read/write drives them. No plugin binding. Vendor-neutral.
 
-## Command set
+## CLI surface
 
-`status`, `init`, `check-ioc`, `check-parts`, `check-policy`,
-`check-circuit-review`, `check-build-test`, `prepare-layout`,
-`check-layout-handoff`, `verify`, `verify-stock`, `fab-out`, `publish`, and
-`ioc2code`. Spec is not a verb — chat. **`init` is create-only** and refuses
-to touch an initialized project. PCBForge v1 does not change layers or upgrade
-an initialized project; restart it from the revised SPEC.
+The implemented v1 commands are `status`, `init`, `finish-architect`,
+`check-ioc`, `check-parts`, `check-policy`, `policy`,
+`check-circuit-review`, `check-build-test`, `prepare-layout`, and
+`check-layout-handoff`. Spec is not a verb — chat. **`init` is create-only**
+and refuses to touch an initialized project. PCBForge v1 does not change
+layers or upgrade an initialized project; restart it from the revised SPEC.
+
+`ioc2code`, VERIFY audits, live `verify-stock`, the FAB-OUT generator, and
+`publish` automation remain roadmap debt. Until implemented, agents follow the
+manual procedures and state that they are doing so.
 
 ## Docs & bootstrap (kept from B, verbs updated)
 
@@ -730,7 +566,7 @@ adopting an existing project as if it had pre-source approval.
 
 ## Pilot (gate before full build)
 
-**Status 2026-07-24 — phase 1 run, independently verified.** atopile 0.15.7 +
+**Status 2026-07-24 — pilot stage 1 run, independently verified.** atopile 0.15.7 +
 KiCad 10.0.3: **blocked** (can't read KiCad-10 boards, atopile#1822;
 atomic-failure slice passed — input byte-identical after failed sync).
 atopile 0.15.7 + KiCad 9.0.9: reader/writer round-trip **clean** on official
@@ -739,7 +575,7 @@ zones; canonicalization only — token-multiset identical, re-serialization
 byte-stable, KiCad renders result) → **KiCad pinned 9.x** (decision record).
 Evidence: `pilots/*/REPORT.md` + `results/`.
 
-Phase 2 — **the first fresh board is the pilot vehicle** (mixer port
+Pilot stage 2 — **the first fresh board is the pilot vehicle** (mixer port
 descoped; existing-project adoption is a non-goal). Remaining pass/fail, tested in board
 order:
 
@@ -764,26 +600,19 @@ Gates while building board 1:
   session, scripted on the live board with the pilots' fingerprint tooling:
   no-op rebuild fingerprint check, controlled add / rename / footprint-swap /
   remove, induced build failure — placement and routing must survive all.
-- Board 1 carries scaffolding debt by design: `init`, `check-ioc`, and the
-  schema-backed `brief` gate are implemented; `fab-out` may be manual or
-  rough; the MCU module is
+- Board 1 carries scaffolding debt by design: `init`, `check-ioc`,
+  `prepare-layout`, and `check-layout-handoff` are implemented; FAB-OUT may be
+  manual or rough; the MCU module is
   AI-transcribed from the checked `.ioc` with the one-to-one audit in
   `agent/mcu.md` while ioc2code matures.
 
-## Build order
+## Remaining build order
 
-1. **Pilot phase 2 = first fresh board** (above) — starts on the minimal
-   slice below; its gates decide compiler continuation.
-2. `agent/spec-interview.md` (reuse B's design — unchanged).
-3. `README.md` + `agent/operating-manual.md`.
-4. `init` + AI-led MCU playbook + `check-ioc` (implemented); then `ioc2code`.
-5. Per-board assertion IDs + exact `build-test.yaml`,
-   `check-build-test`, tracked evidence report, and STATUS gate (implemented);
-   shared assertion library grows from board postmortems.
-6. Layout copilot: `brief` gate implemented; add `verify` scripts +
-   `agent/layout-copilot.md`.
-7. `fab-out`, `verify-stock`.
-8. Module library grows per board; `publish` when first board proves modules.
+1. Exercise pilot stage 2 on the first fresh board; its gates decide compiler
+   continuation.
+2. Implement `ioc2code` after the checked manual one-to-one process is proven.
+3. Implement VERIFY audits, FAB-OUT generation, and live sourcing refresh.
+4. Grow the module library from proven boards and add `publish` automation.
 
 ## Open questions
 

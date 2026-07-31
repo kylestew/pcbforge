@@ -1,11 +1,11 @@
 <!-- pcbforge-architect-schema: 1 -->
 # pcbforge — ARCHITECT playbook
 
-This playbook operationalizes the ARCHITECT phase in
-[`DESIGN.md`](../DESIGN.md). The AI leads, the user approves, and the pinned
-compiler validates. ARCHITECT defines the circuit's functional boundaries and
-locks the exact MCU configuration through its MCU workstream. Other physical
-parts remain CIRCUIT work.
+This playbook operationalizes the ARCHITECT phase defined in
+[`WORKFLOW.md`](../WORKFLOW.md). The AI leads, the user approves, and the
+pinned compiler validates. ARCHITECT defines the circuit's functional
+boundaries and locks the exact MCU configuration through its MCU workstream.
+Other physical parts remain CIRCUIT work.
 
 ## Preconditions
 
@@ -55,19 +55,11 @@ risks. Follow `agent/mcu.md` for that companion artifact. Do not write or
 revise architecture source or `firmware/<project>.ioc` until the user
 explicitly approves both proposal artifacts.
 
-Generate and present the exact proposal packet first:
-
-```bash
-<pcbforge-root>/scripts/pcbforge status review architect --stage proposal
-```
-
-After explicit proposal approval, record the saved review:
-
-```bash
-<pcbforge-root>/scripts/pcbforge status approve architect --stage proposal \
-  --last-reviewed \
-  --note "<user-approved graph and material choices>; diagram: docs/architecture.md"
-```
+Follow the
+[standard review and approval protocol](operating-manual.md#review-and-approval-protocol)
+using its proposal variant for ARCHITECT. Present the exact packet and stop;
+record it only after explicit approval of the graph, MCU plan, and material
+choices.
 
 This approval is bound to the semantic SPEC contract plus the current
 `docs/architecture.md` and `docs/mcu.md` fingerprints. A normative SPEC change

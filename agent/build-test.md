@@ -1,11 +1,11 @@
 <!-- pcbforge-build-test-schema: 1 -->
 # Build + test playbook
 
-Use this playbook as the deterministic acceptance gate inside CIRCUIT. It
-proves that the pinned
-compiler resolves the intended exact BOM and PCB connectivity, executes the
-declared electrical assertions, emits the required artifacts, and preserves
-all user-owned spatial board data.
+Use this playbook as the deterministic acceptance gate inside the CIRCUIT phase
+defined in [`WORKFLOW.md`](../WORKFLOW.md). It proves that the pinned compiler
+resolves the intended exact BOM and PCB connectivity, executes the declared
+electrical assertions, emits the required artifacts, and preserves all
+user-owned spatial board data.
 
 Live stock and pricing, placement, routing, KiCad PCB DRC, and fabrication
 output are separate gates. Explanatory circuit review and exact compiled parity
@@ -117,6 +117,6 @@ Review `docs/build-test.md` and present:
 - spatial-preservation result;
 - any limitation that remains for visual review, DRC, stock, or fabrication.
 
-Current saved evidence is part of the final CIRCUIT packet. Run
-`pcbforge status review circuit`, present its fingerprint, and stop.
-Only after explicit approval record `pcbforge status approve circuit ...`.
+Current saved evidence is part of the final CIRCUIT packet. Follow the
+[standard review and approval protocol](operating-manual.md#review-and-approval-protocol)
+for that gate, present the packet, and stop.

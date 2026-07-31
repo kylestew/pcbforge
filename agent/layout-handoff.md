@@ -1,10 +1,11 @@
 <!-- pcbforge-layout-handoff-schema: 1 -->
 # CIRCUIT-to-LAYOUT handoff playbook
 
-Use this playbook only after CIRCUIT is complete. This unnumbered transition turns the
-known circuit topology into a complete, reviewable placement contract. It does
-not place footprints, create keepout geometry, route copper, or modify the
-KiCad PCB.
+Use this playbook for the CIRCUIT-to-LAYOUT transition defined in
+[`WORKFLOW.md`](../WORKFLOW.md), only after CIRCUIT is complete. The transition
+turns the known circuit topology into a complete, reviewable placement
+contract. It does not place footprints, create keepout geometry, route copper,
+or modify the KiCad PCB.
 
 The transition opens the single LAYOUT phase. Placement and routing remain
 different physical tasks, but they share one lightweight done-declaration;
@@ -174,14 +175,10 @@ The schema rules are:
      --note "Circuit presentation is inadequate: <reason>"
    ```
 
-7. Run `pcbforge status review layout --stage handoff`, present its exact packet and
-   fingerprint alongside both visual artifacts, and stop.
-8. After the user explicitly approves that packet, record:
-
-   ```sh
-   pcbforge status approve layout --stage handoff --last-reviewed \
-     --note "Approved docs/placement-brief.md beside the current CIRCUIT overview"
-   ```
+7. Follow the
+   [standard review and approval protocol](operating-manual.md#review-and-approval-protocol)
+   using its layout-handoff variant. Present the exact packet and fingerprint
+   alongside both visual artifacts, then stop for explicit user approval.
 
 Passing generation alone never records human approval. The approval event is
 bound to the current CIRCUIT review and deterministic acceptance evidence,

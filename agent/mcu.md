@@ -2,7 +2,7 @@
 # pcbforge — MCU workstream inside ARCHITECT
 
 This subordinate playbook operationalizes the MCU portion of ARCHITECT in
-[`DESIGN.md`](../DESIGN.md). The AI selects the exact STM32 and its pin
+[`WORKFLOW.md`](../WORKFLOW.md). The AI selects the exact STM32 and its pin
 mapping, creates the CubeMX configuration, and proves that CubeMX can consume
 it. The user may review the result in CubeMX, but does not have to author it.
 

@@ -1,8 +1,9 @@
 # pcbforge — agent operating manual
 
 You are an AI agent operating a pcbforge board project. This file is your
-orientation; [DESIGN.md](../DESIGN.md) in the tool repo is the authoritative
-contract. Vendor-neutral: any agent with shell + file read/write qualifies.
+orientation. [WORKFLOW.md](../WORKFLOW.md) is the authoritative process and
+approval contract; [DESIGN.md](../DESIGN.md) records its rationale and
+invariants. Vendor-neutral: any agent with shell + file read/write qualifies.
 
 ## What pcbforge is
 
@@ -66,34 +67,20 @@ normative. SPEC owns policy declarations plus assurance status/rationale;
 final CIRCUIT adds assurance evidence and exceptions; sourcing is ORDER-owned.
 Thus CIRCUIT evidence and decision-log notes do not reopen SPEC/ARCHITECT.
 
-The eight required user decisions are SPEC, ARCHITECT proposal, CIRCUIT
-proposal and final, LAYOUT handoff and done-declaration, VERIFY, and ORDER.
-Initialization, the ARCHITECT source baseline, and FAB-OUT are checked tool
-transitions. Tool success or agent ownership never grants a human approval.
+Use the current gates and checked transitions exactly as defined in
+[WORKFLOW.md](../WORKFLOW.md). Tool success or agent ownership never grants a
+human approval.
 
 When uncertain whether a choice is material, treat it as material and ask. Only
 local, reversible details with no effect outside the already-approved contract
 may be selected autonomously, and those assumptions must be stated.
 
-## Workflow phases (who leads)
+## Workflow authority
 
-```
-1. SPEC        you — interview → approved spec.md + policy.yaml
-   transition  pcbforge init validates + scaffolds; no separate approval
-2. ARCHITECT   USER approves graph + exact MCU/resource proposal; then
-               skeleton, checked IOC, MCU module, and one-to-one audit
-   transition  pcbforge finish-architect captures the checked source baseline
-3. CIRCUIT     authored SVG + exact model + USER proposal approval before
-               source; then exact parts, compiled parity, frozen build,
-               deterministic acceptance, and one final approval
-   transition  agent/layout-handoff.md; exact placement contract + generated
-               docs/placement-brief.md beside the approved CIRCUIT overview
-4. LAYOUT      USER placement + routing; one done-declaration when both finish
-5. verify      DRC (scripts/kicad-cli) + audits + render review
-   transition  validated JLC Gerbers/BOM/CPL → fab/
-6. order       USER
-7. publish     proven modules → library, with render (optional)
-```
+Read [WORKFLOW.md](../WORKFLOW.md) before acting. It alone defines phase order,
+gate count, transition semantics, ownership, and completion contracts. Use the
+phase-specific playbooks for artifact and validation details; if a playbook and
+the workflow ever disagree, stop and follow `WORKFLOW.md`.
 
 ## Session resume (run this on every cold start in a project)
 
@@ -116,6 +103,8 @@ reopened; preserve that history, return to the upstream phase, and do not
 present the transition as current completion. `Stale` means the upstream phase
 is current but the transition evidence or fingerprint must be refreshed.
 
+## Review and approval protocol
+
 Refresh `STATUS.md` after meaningful transitions. When a phase's evidence is
 ready, run `pcbforge status review <phase>` and present its exact artifacts,
 checks, and fingerprint. Stop. Users grant approval in conversation; only
@@ -128,6 +117,11 @@ The command persists approval but never constitutes it. Never use
 `status review <phase> --stage proposal` and
 `status approve <phase> --stage proposal --last-reviewed` before affected
 source coding begins.
+
+The CIRCUIT-to-LAYOUT transfer uses the same protocol with
+`status review layout --stage handoff` and
+`status approve layout --stage handoff --last-reviewed`. The phase playbooks
+define what must be in each packet; they do not change this approval ceremony.
 
 After a root artifact change, refresh the dashboard checks, then run
 `pcbforge status review --cascade` before presenting separate phase packets.

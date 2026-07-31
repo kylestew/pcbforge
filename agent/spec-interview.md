@@ -6,6 +6,8 @@ produce `spec.md` — the project's spine — and the initial `policy.yaml`
 technology contract, plus the generated `STATUS.md` workflow dashboard. No
 code, scaffold, or parts are created in this phase.
 
+This is the SPEC phase defined in [`WORKFLOW.md`](../WORKFLOW.md).
+
 Vendor-neutral: any agent with file read/write follows this document.
 
 ## Ground rules
@@ -44,12 +46,10 @@ Vendor-neutral: any agent with file read/write follows this document.
    empty.
 5. Once the draft validates, you run `pcbforge status --write`; refresh the
    dashboard after material revisions. Do not ask the user to run this command.
-6. Once technically ready, run `pcbforge status review spec` and present the
-   exact artifacts, checks, and fingerprint. Iterate until the user explicitly
-   approves that packet in conversation. Only then record the gate with
-   `pcbforge status approve spec --last-reviewed --note "<approval summary>"`.
-   The command persists the approval; it does not constitute approval by
-   itself.
+6. Once technically ready, follow the
+   [standard review and approval protocol](operating-manual.md#review-and-approval-protocol)
+   for the final SPEC gate. Present the exact packet and stop; record it only
+   after the user explicitly approves it in conversation.
 7. Remind: `spec.md` and `policy.yaml` are **living contracts**. Later
    requirement changes go to the spec first; technology declarations,
    sourcing evidence, and requested exceptions go to policy. Keep each file

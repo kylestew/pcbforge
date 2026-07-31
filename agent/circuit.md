@@ -1,8 +1,9 @@
 <!-- pcbforge-circuit-schema: 1 -->
 # CIRCUIT playbook
 
-Use this playbook after the checked ARCHITECT baseline transition, including
-its MCU workstream, and before requesting CIRCUIT approval.
+Use this playbook for the CIRCUIT phase defined in
+[`WORKFLOW.md`](../WORKFLOW.md), after the checked ARCHITECT baseline
+transition and its MCU workstream.
 The goal is an understandable, explicitly approved circuit proposal followed
 by a physical circuit definition whose compiled connectivity and exact parts
 are proven to match that proposal.
@@ -111,19 +112,15 @@ Run:
 
 ```sh
 pcbforge check-circuit-review --stage proposal --write
-pcbforge status review circuit --stage proposal
 ```
 
 PCBForge parses the exact model, validates the SVG's semantic coverage and
 model binding, checks that no review PCB exists, proves the product topology
-is unchanged, and binds the packet to the ARCHITECT handoff baseline. Present the
-SVG, narrative, exact model summary, and fingerprint. Stop. Only after explicit
-user approval may you run:
-
-```sh
-pcbforge status approve circuit --stage proposal \
-  --last-reviewed --note "<approved topology and material choices>"
-```
+is unchanged, and binds the packet to the ARCHITECT handoff baseline. Then
+follow the
+[standard review and approval protocol](operating-manual.md#review-and-approval-protocol)
+using its proposal variant for CIRCUIT. Present the SVG, narrative, exact model
+summary, and fingerprint, then stop.
 
 Any proposal model, SVG, narrative, upstream contract, or baseline change
 stales this approval. Physical source changes made before approval are a
@@ -257,10 +254,10 @@ Before requesting final CIRCUIT completion:
     `docs/build-test.md` report.
 11. Present the selected parts, values, footprints, LCSC identifiers,
    constraints, generated-asset justifications, and check results.
-12. Run `pcbforge status review circuit`, present the exact artifacts, checks,
-   and fingerprint, and stop.
-13. Only after explicit user approval, run
-    `pcbforge status approve circuit --last-reviewed --note "<approval>"`.
+12. Follow the
+    [standard review and approval protocol](operating-manual.md#review-and-approval-protocol)
+    for the final CIRCUIT gate. Present the exact artifacts and checks, then
+    stop and wait for explicit user approval.
 
 ## Deterministic acceptance contract
 

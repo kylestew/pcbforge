@@ -721,9 +721,8 @@ class GuidanceTests(unittest.TestCase):
             "USB2_0_IF",
             "spec-to-module coverage",
             "board hash",
-            "status review architect --stage proposal",
-            "status approve architect --stage proposal",
-            "--last-reviewed",
+            "WORKFLOW.md",
+            "standard review and approval protocol",
             "finish-architect",
             "MCU workstream",
             "docs/architecture.md",
@@ -758,7 +757,7 @@ class GuidanceTests(unittest.TestCase):
             "pcbforge check-parts",
             "`circuit-final`",
             "policy approve-exception",
-            "status review circuit --stage proposal",
+            "standard review and approval protocol",
             "build-test.yaml",
             "pcbforge-test",
             "docs/build-test.md",
@@ -768,6 +767,47 @@ class GuidanceTests(unittest.TestCase):
         catalog = (TOOL_ROOT / "modules" / "index.md").read_text(encoding="utf-8")
         self.assertIn("No modules have been published yet", catalog)
         self.assertIn("| Module | Version | Proven on | Interfaces | Render |", catalog)
+
+    def test_approval_commands_live_only_in_the_operating_manual(self) -> None:
+        manual = (TOOL_ROOT / "agent" / "operating-manual.md").read_text(
+            encoding="utf-8"
+        )
+        for required in (
+            "status review <phase>",
+            "status approve <phase> --last-reviewed",
+            "status review <phase> --stage proposal",
+            "status approve <phase> --stage proposal --last-reviewed",
+            "status review layout --stage handoff",
+            "status approve layout --stage handoff --last-reviewed",
+            "status review --cascade",
+            "status renew --last-reviewed",
+        ):
+            self.assertIn(required, manual)
+
+        for name in (
+            "architect.md",
+            "build-test.md",
+            "circuit.md",
+            "layout-handoff.md",
+            "spec-interview.md",
+        ):
+            playbook = (TOOL_ROOT / "agent" / name).read_text(encoding="utf-8")
+            self.assertIn("standard review and approval protocol", playbook)
+            self.assertNotIn("status approve", playbook)
+
+    def test_workflow_document_is_the_single_normative_phase_map(self) -> None:
+        workflow = (TOOL_ROOT / "WORKFLOW.md").read_text(encoding="utf-8")
+        readme = (TOOL_ROOT / "README.md").read_text(encoding="utf-8")
+        design = (TOOL_ROOT / "DESIGN.md").read_text(encoding="utf-8")
+
+        self.assertIn("concise, normative process map", workflow)
+        self.assertIn("seven numbered phases, six required", workflow)
+        self.assertIn("eight required human decisions", workflow)
+        self.assertIn("[WORKFLOW.md](WORKFLOW.md)", readme)
+        self.assertNotIn("## 1. SPEC", readme)
+        self.assertIn("## Workflow contract", design)
+        self.assertNotIn("\n## Workflow\n", design)
+        self.assertNotIn("### Phase ", design)
 
     def test_architecture_fixture_contains_interfaces_but_no_parts(self) -> None:
         source = "\n".join(
