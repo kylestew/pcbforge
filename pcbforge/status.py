@@ -20,6 +20,7 @@ from pcbforge.build_test import (
     BUILD_TEST_REPORT,
     BuildTestError,
     BuildTestInputError,
+    _spatial_errors,
     ato_source_semantic_bytes,
     board_topology_bytes,
     build_test_inputs,
@@ -80,6 +81,12 @@ TRANSITION_ACTIONS = {
     "approved",
     "blocked",
     "reopened",
+}
+TRANSITIONS = {
+    "initialize",
+    "architecture-baseline",
+    "layout-handoff",
+    "fab-out",
 }
 POLICY_EVENT_ACTIONS = {
     "exception-approved",
@@ -150,21 +157,19 @@ PHASES = (
         True,
         "Approve, implement, compile, and deterministically validate the circuit.",
     ),
-    Phase("layout", "LAYOUT", "User", True, "Complete component placement in KiCad."),
-    Phase("route", "ROUTE", "User", True, "Complete routing in KiCad."),
+    Phase(
+        "layout",
+        "LAYOUT",
+        "User",
+        True,
+        "Complete component placement and routing in KiCad.",
+    ),
     Phase(
         "verify",
         "VERIFY",
         "Tool + AI",
         True,
         "Pass DRC, scripted audits, and the final render review.",
-    ),
-    Phase(
-        "fab-out",
-        "FAB-OUT",
-        "Tool",
-        True,
-        "Generate and review the JLCPCB manufacturing package.",
     ),
     Phase("order", "ORDER", "User", True, "Upload the package and place the order."),
     Phase(
@@ -180,7 +185,7 @@ PHASE_BY_KEY = {
     for phase in PHASES
 }
 PHASE_NUMBER = {phase.key: index for index, phase in enumerate(PHASES, start=1)}
-APPROVAL_BOUND_PHASES = set(PHASE_BY_KEY)
+APPROVAL_BOUND_PHASES = set(PHASE_BY_KEY) - {"architect"}
 
 APPROVAL_CHECKS = {
     "spec": ("policy",),
@@ -701,10 +706,7 @@ def read_status_document(project_dir: Path) -> StatusDocument:
             ):
                 if value and re.fullmatch(r"[0-9a-f]{64}", value) is None:
                     errors.append(f"{prefix}.{field}: expected a lowercase SHA-256")
-            if transition and transition not in {
-                "initialize",
-                "layout-handoff",
-            }:
+            if transition and transition not in TRANSITIONS:
                 errors.append(
                     f"{prefix}.transition: unknown transition {transition!r}"
                 )
@@ -824,7 +826,9 @@ def _phase_check_names(
 
 
 def _phase_requires_approval(project_dir: Path, phase: str) -> bool:
-    return phase == "spec" if not (project_dir / ".pcbforge").is_file() else phase in APPROVAL_BOUND_PHASES
+    if not (project_dir / ".pcbforge").is_file():
+        return phase == "spec"
+    return phase in APPROVAL_BOUND_PHASES
 
 
 def _project_pins(project_dir: Path) -> Mapping[str, Any]:
@@ -948,8 +952,6 @@ def _approval_is_current(
     event: StatusEvent | None,
     document: StatusDocument | None = None,
 ) -> bool:
-    if not _phase_requires_approval(project_dir, phase):
-        return True
     if event is not None and event.approval_fingerprint:
         return event.approval_fingerprint == _approval_fingerprint(
             project_dir,
@@ -1323,18 +1325,10 @@ def _phase_artifact_paths(
             *build_test_inputs(project_dir),
             project_dir / "docs" / "build-test.md",
         )
-    elif phase in {"layout", "route"}:
+    elif phase == "layout":
         candidates = (board,)
     elif phase == "verify":
         candidates = (board, project, rules)
-    elif phase == "fab-out":
-        candidates = tuple(
-            sorted(
-                path
-                for path in (project_dir / "fab").rglob("*")
-                if path.is_file() and path.name != ".gitkeep"
-            )
-        )
     elif phase == "order":
         candidates = (
             project_dir / POLICY_FILENAME,
@@ -1439,14 +1433,12 @@ def _board_phase_semantics(path: Path, phase: str) -> Mapping[str, Any]:
             "footprint_placements": board.footprint_placements,
             "mechanical": mechanical,
         }
-        if phase == "layout":
-            return layout
         routing = sorted(
             _canonical_tokens(block)
             for head, block in blocks
             if head in {"segment", "arc", "via", "zone"}
         )
-        if phase == "route":
+        if phase == "layout":
             return {"layout": layout, "routing": routing}
         if phase == "verify":
             return {"canonical_board": _canonical_tokens(text)}
@@ -1524,7 +1516,7 @@ def _phase_approval_payload(
             if item["path"] != board.name
             and not item["path"].endswith(".ato")
         ]
-    if phase in {"layout", "route", "verify"}:
+    if phase in {"layout", "verify"}:
         payload["board"] = _board_phase_semantics(board, phase)
         payload["artifacts"] = [
             item for item in payload["artifacts"] if item["path"] != board.name
@@ -1633,7 +1625,7 @@ def _static_evidence(
             else "missing: " + ", ".join(missing),
             bool(modules) or (project_dir / BUILD_TEST_FILENAME).is_file(),
         )
-    if phase in {"layout", "route"}:
+    if phase == "layout":
         if not board.is_file():
             return False, f"missing {board.name}", False
         text = _read_text(board)
@@ -1644,24 +1636,6 @@ def _static_evidence(
     if phase == "verify":
         drc_ok, drc_detail = _current_check(project_dir, spec, document, "drc")
         return drc_ok, drc_detail, "drc" in document.checks
-    if phase == "fab-out":
-        fab = project_dir / "fab"
-        outputs = (
-            tuple(
-                path
-                for path in fab.rglob("*")
-                if path.is_file() and path.name != ".gitkeep"
-            )
-            if fab.is_dir()
-            else ()
-        )
-        return (
-            bool(outputs),
-            f"{len(outputs)} fabrication output(s) present"
-            if outputs
-            else "fab/ has no manufacturing outputs",
-            bool(outputs),
-        )
     if phase == "order":
         sourcing_ok = _current_sourcing_confirmation(project_dir, document)
         return (
@@ -1801,6 +1775,135 @@ def _current_layout_handoff(
     return event if event.approval_fingerprint == current else None
 
 
+def _architecture_baseline_payload(
+    project_dir: Path,
+    document: StatusDocument,
+) -> Mapping[str, Any]:
+    proposal = next(
+        (
+            event
+            for event in reversed(document.events)
+            if event.phase == "architect" and event.action == "proposal-approved"
+        ),
+        None,
+    )
+    baseline = project_dir / BASELINE_PATH
+    return {
+        "transition_schema": 1,
+        "transition": "architecture-baseline",
+        "source_phase": "architect",
+        "target_phase": "circuit",
+        "proposal_content_fingerprint": (
+            proposal.content_fingerprint if proposal is not None else ""
+        ),
+        "baseline": _file_semantics(
+            project_dir,
+            (baseline,) if baseline.is_file() else (),
+        ),
+        "checks": [
+            {"name": name, "required_outcome": "pass"}
+            for name in ("build", "ioc")
+        ],
+    }
+
+
+def _current_architecture_baseline(
+    project_dir: Path,
+    document: StatusDocument,
+) -> TransitionEvent | None:
+    event = _latest_transition_events(document.transition_events).get(
+        "architecture-baseline"
+    )
+    if event is None or event.action != "complete" or not event.content_fingerprint:
+        return None
+    try:
+        spec = read_spec(project_dir / "spec.md")
+        circuit_proposal = _current_circuit_proposal(project_dir, document)
+        if (
+            _current_architect_proposal(project_dir, document) is None
+            or not _current_check(project_dir, spec, document, "ioc")[0]
+            or not (project_dir / BASELINE_PATH).is_file()
+        ):
+            return None
+        if circuit_proposal is None:
+            if not _current_check(project_dir, spec, document, "build")[0]:
+                return None
+            baseline_ok, _ = baseline_is_current(project_dir)
+            if not baseline_ok:
+                return None
+        current = _payload_fingerprint(
+            _architecture_baseline_payload(project_dir, document)
+        )
+    except (BuildTestError, CircuitReviewError, StatusError, OSError):
+        return None
+    return event if event.content_fingerprint == current else None
+
+
+def _fab_artifact_paths(project_dir: Path) -> tuple[Path, ...]:
+    fab = project_dir / "fab"
+    if not fab.is_dir():
+        return ()
+    return tuple(
+        sorted(
+            path
+            for path in fab.rglob("*")
+            if path.is_file() and path.name != ".gitkeep"
+        )
+    )
+
+
+def _fab_out_payload(
+    project_dir: Path,
+    document: StatusDocument,
+) -> Mapping[str, Any]:
+    verify = next(
+        (
+            event
+            for event in reversed(document.events)
+            if event.phase == "verify" and event.action == "complete"
+        ),
+        None,
+    )
+    return {
+        "transition_schema": 1,
+        "transition": "fab-out",
+        "source_phase": "verify",
+        "target_phase": "order",
+        "verify_content_fingerprint": (
+            verify.content_fingerprint if verify is not None else ""
+        ),
+        "artifacts": _file_semantics(project_dir, _fab_artifact_paths(project_dir)),
+    }
+
+
+def _current_fab_out(
+    project_dir: Path,
+    document: StatusDocument,
+) -> TransitionEvent | None:
+    event = _latest_transition_events(document.transition_events).get("fab-out")
+    if event is None or event.action != "complete" or not event.content_fingerprint:
+        return None
+    latest, _ = _latest_events(document.events)
+    verify_info = latest.get("verify")
+    if (
+        verify_info is None
+        or verify_info[1].action != "complete"
+        or not _approval_is_current(
+            project_dir,
+            "verify",
+            verify_info[1],
+            document,
+        )
+        or not _fab_artifact_paths(project_dir)
+    ):
+        return None
+    try:
+        current = _payload_fingerprint(_fab_out_payload(project_dir, document))
+    except (StatusError, OSError):
+        return None
+    return event if event.content_fingerprint == current else None
+
+
 def _failed_checks_for_phase(
     project_dir: Path,
     spec: ProjectSpec,
@@ -1821,6 +1924,7 @@ def _derive_phases(
     document: StatusDocument,
 ) -> tuple[PhaseResult, ...]:
     latest, reopens = _latest_events(document.events)
+    latest_transitions = _latest_transition_events(document.transition_events)
     results: list[PhaseResult] = []
     predecessor_invalidation = -1
 
@@ -1845,29 +1949,57 @@ def _derive_phases(
             and not _initialization_transition_complete(project_dir)
         ):
             predecessors_complete = False
-            transition_wait = "waiting for the SPEC → ARCHITECT initialization transition"
+            transition_wait = (
+                "waiting for the SPEC → ARCHITECT initialization transition"
+            )
+        if (
+            phase.key == "circuit"
+            and _current_architecture_baseline(project_dir, document) is None
+        ):
+            predecessors_complete = False
+            transition_wait = (
+                "waiting for the ARCHITECT → CIRCUIT architecture baseline"
+            )
         if (
             phase.key == "layout"
             and _current_layout_handoff(project_dir, document) is None
         ):
             predecessors_complete = False
             transition_wait = "waiting for the CIRCUIT → LAYOUT handoff"
+        if phase.key == "order" and _current_fab_out(project_dir, document) is None:
+            predecessors_complete = False
+            transition_wait = "waiting for the VERIFY → ORDER FAB-OUT transition"
 
         if phase.key in reopens:
             predecessor_invalidation = max(predecessor_invalidation, reopens[phase.key])
 
-        manual_complete = (
-            event is not None
-            and event.action == "complete"
-            and event_index > predecessor_invalidation
-            and _approval_is_current(
-                project_dir,
-                phase.key,
-                event,
-                document,
-            )
+        circuit_proposal = (
+            _current_circuit_proposal(project_dir, document)
+            if phase.key == "architect"
+            else None
         )
-        complete = evidence_ok and manual_complete and predecessors_complete
+        if phase.key == "architect":
+            manual_complete = _current_architecture_baseline(
+                project_dir,
+                document,
+            ) is not None
+        else:
+            manual_complete = (
+                event is not None
+                and event.action == "complete"
+                and event_index > predecessor_invalidation
+                and _approval_is_current(
+                    project_dir,
+                    phase.key,
+                    event,
+                    document,
+                )
+            )
+        complete = (
+            manual_complete
+            and predecessors_complete
+            and (evidence_ok or circuit_proposal is not None)
+        )
 
         if event is not None and event.action == "skipped":
             complete = phase.key == "publish" and predecessors_complete
@@ -1886,6 +2018,14 @@ def _derive_phases(
         elif event is not None and event.action == "blocked":
             state = "Blocked"
             detail = event.note
+        elif (
+            phase.key == "architect"
+            and (automatic := latest_transitions.get("architecture-baseline"))
+            is not None
+            and automatic.action == "blocked"
+        ):
+            state = "Blocked"
+            detail = automatic.note
         elif not predecessors_complete:
             state = "Not started"
             detail = transition_wait or "waiting for the previous required phase"
@@ -1921,6 +2061,16 @@ def _derive_phases(
                 document,
             ):
                 if (
+                    phase.key == "architect"
+                    and evidence_ok
+                    and approval_checks_ok
+                ):
+                    state = "Ready"
+                    detail = (
+                        "architecture implementation checks passed; record the "
+                        "checked source baseline transition"
+                    )
+                elif (
                     evidence_ok
                     and approval_checks_ok
                     and _phase_requires_approval(
@@ -1936,7 +2086,13 @@ def _derive_phases(
                 else:
                     state = "In progress"
                     detail = (
-                        f"{phase.label} proposal approved; build and present final audit"
+                        "ARCHITECT proposal approved; complete implementation "
+                        "and checked audits"
+                        if phase.key == "architect"
+                        else (
+                            f"{phase.label} proposal approved; build and present "
+                            "the final audit"
+                        )
                     )
             else:
                 state = "Blocked"
@@ -1996,6 +2152,17 @@ def _derive_phases(
             detail = (
                 "technical evidence is current; present the phase review packet "
                 "and wait for explicit user approval"
+            )
+        elif (
+            phase.key == "architect"
+            and evidence_ok
+            and approval_checks_ok
+            and _current_architect_proposal(project_dir, document) is not None
+        ):
+            state = "Ready"
+            detail = (
+                "architecture implementation checks passed; record the checked "
+                "source baseline transition"
             )
         elif partial:
             state = "In progress"
@@ -2064,26 +2231,17 @@ def _action_for(
         ),
         "layout": NextAction(
             "User",
-            "Complete placement in KiCad 9, then prepare the LAYOUT review packet.",
+            (
+                "Complete placement and routing in KiCad 9, then prepare the "
+                "LAYOUT review packet."
+            ),
             "pcbforge status review layout",
-            True,
-        ),
-        "route": NextAction(
-            "User",
-            "Complete routing in KiCad 9, then prepare the ROUTE review packet.",
-            "pcbforge status review route",
             True,
         ),
         "verify": NextAction(
             "Tool + AI",
             "Run DRC and complete the final audits and render review.",
             "pcbforge status --check --write",
-        ),
-        "fab-out": NextAction(
-            "Tool",
-            "Generate and review the Gerbers, drills, BOM, CPL, and JLCPCB archive.",
-            "pcbforge status review fab-out",
-            True,
         ),
         "order": NextAction(
             "User",
@@ -2101,6 +2259,12 @@ def _action_for(
         phase == "architect"
         and _current_architect_proposal(project_dir, document) is not None
     ):
+        if result.state == "Ready":
+            return NextAction(
+                "AI + tool",
+                "Capture the checked ARCHITECT source baseline and open CIRCUIT.",
+                "pcbforge finish-architect",
+            )
         return NextAction(
             "AI + tool",
             (
@@ -2162,6 +2326,34 @@ def _derive_transitions(
         initialize_state = "Ready"
         initialize_detail = "run `pcbforge init` to create the validated scaffold"
 
+    baseline_event = latest.get("architecture-baseline")
+    baseline_performed = any(
+        event.transition == "architecture-baseline"
+        and event.action in {"complete", "reopened"}
+        for event in document.transition_events
+    )
+    baseline_current = _current_architecture_baseline(project_dir, document)
+    if baseline_current is not None:
+        baseline_state = "Complete"
+        baseline_detail = "checked architecture source baseline is current"
+    elif not by_phase["spec"].complete or not initialized:
+        baseline_state = "Not started"
+        baseline_detail = "waiting for the initialized ARCHITECT phase"
+    elif baseline_event is not None and baseline_event.action == "blocked":
+        baseline_state = "Blocked"
+        baseline_detail = baseline_event.note
+    elif baseline_performed:
+        baseline_state = "Stale"
+        baseline_detail = (
+            "architecture baseline is stale because proposal, source, or checks changed"
+        )
+    elif by_phase["architect"].state == "Ready":
+        baseline_state = "Ready"
+        baseline_detail = "run `pcbforge finish-architect`"
+    else:
+        baseline_state = "Not started"
+        baseline_detail = "waiting for current ARCHITECT proposal and checks"
+
     handoff_event = latest.get("layout-handoff")
     handoff_performed = any(
         event.transition == "layout-handoff"
@@ -2222,6 +2414,32 @@ def _derive_transitions(
                 "author placement.yaml and run `pcbforge prepare-layout`"
             )
 
+    fab_event = latest.get("fab-out")
+    fab_performed = any(
+        event.transition == "fab-out"
+        and event.action in {"complete", "reopened"}
+        for event in document.transition_events
+    )
+    fab_current = _current_fab_out(project_dir, document)
+    if fab_current is not None:
+        fab_state = "Complete"
+        fab_detail = "validated fabrication package is current"
+    elif not by_phase["verify"].complete:
+        fab_state = "Inactive" if fab_performed else "Not started"
+        fab_detail = "waiting for current VERIFY approval"
+    elif fab_event is not None and fab_event.action == "blocked":
+        fab_state = "Blocked"
+        fab_detail = fab_event.note
+    elif fab_performed:
+        fab_state = "Stale"
+        fab_detail = "fabrication outputs changed after the packet was recorded"
+    elif _fab_artifact_paths(project_dir):
+        fab_state = "Ready"
+        fab_detail = "fabrication outputs are present and await generator validation"
+    else:
+        fab_state = "Ready"
+        fab_detail = "generate and validate the fabrication package"
+
     return (
         TransitionResult(
             "initialize",
@@ -2235,6 +2453,17 @@ def _derive_transitions(
             initialize_state == "Complete",
         ),
         TransitionResult(
+            "architecture-baseline",
+            "ARCHITECT → CIRCUIT: architecture baseline",
+            "architect",
+            "circuit",
+            "AI + tool",
+            baseline_state,
+            baseline_detail,
+            baseline_performed,
+            baseline_state == "Complete",
+        ),
+        TransitionResult(
             "layout-handoff",
             "CIRCUIT → LAYOUT: layout handoff",
             "circuit",
@@ -2244,6 +2473,17 @@ def _derive_transitions(
             handoff_detail,
             handoff_performed,
             handoff_state == "Complete",
+        ),
+        TransitionResult(
+            "fab-out",
+            "VERIFY → ORDER: FAB-OUT",
+            "verify",
+            "order",
+            "Tool",
+            fab_state,
+            fab_detail,
+            fab_performed,
+            fab_state == "Complete",
         ),
     )
 
@@ -2269,32 +2509,54 @@ def _transition_action(result: TransitionResult) -> NextAction:
             "Create and validate the project scaffold, then continue to ARCHITECT.",
             "pcbforge init",
         )
-    if result.state == "Blocked":
+    if result.key == "architecture-baseline":
         return NextAction(
             "AI + tool",
-            f"Resolve the LAYOUT handoff blocker: {result.detail}",
-            "pcbforge status --check --write",
+            (
+                f"Resolve the ARCHITECT baseline blocker: {result.detail}"
+                if result.state in {"Blocked", "Stale"}
+                else "Capture the checked ARCHITECT source baseline and open CIRCUIT."
+            ),
+            "pcbforge finish-architect",
+            result.state in {"Blocked", "Stale"},
+        )
+    if result.key == "layout-handoff":
+        if result.state == "Blocked":
+            return NextAction(
+                "AI + tool",
+                f"Resolve the LAYOUT handoff blocker: {result.detail}",
+                "pcbforge status --check --write",
+                True,
+            )
+        if result.state == "Stale":
+            return NextAction(
+                "AI + tool",
+                "Refresh the placement evidence and prepare a new LAYOUT handoff.",
+                "pcbforge status --check --write",
+            )
+        if result.state == "Awaiting approval":
+            return NextAction(
+                "AI → user",
+                (
+                    "Present the exact LAYOUT handoff packet and wait for explicit "
+                    "user approval."
+                ),
+                "pcbforge status review layout --stage handoff",
+            )
+        return NextAction(
+            "AI + tool",
+            "Author the exact placement contract in `placement.yaml`.",
+            "pcbforge prepare-layout",
             True,
         )
-    if result.state == "Stale":
-        return NextAction(
-            "AI + tool",
-            "Refresh the placement evidence and prepare a new LAYOUT handoff.",
-            "pcbforge status --check --write",
-        )
-    if result.state == "Awaiting approval":
-        return NextAction(
-            "AI → user",
-            (
-                "Present the exact LAYOUT handoff packet and wait for explicit "
-                "user approval."
-            ),
-            "pcbforge status review layout --stage handoff",
-        )
     return NextAction(
-        "AI + tool",
-        "Author the exact placement contract in `placement.yaml`.",
-        "pcbforge prepare-layout",
+        "Tool",
+        (
+            f"Regenerate and validate the FAB-OUT packet: {result.detail}"
+            if result.state in {"Blocked", "Stale"}
+            else "Generate and validate Gerbers, drills, BOM, CPL, and archive."
+        ),
+        "",
         True,
     )
 
@@ -2316,6 +2578,12 @@ def _derive_handoff_summary(
     current: PhaseResult | None,
     current_transition: TransitionResult | None,
 ) -> HandoffSummary:
+    compact_transition_labels = {
+        "initialize": "INITIALIZE transition",
+        "architecture-baseline": "ARCHITECTURE BASELINE transition",
+        "layout-handoff": "LAYOUT HANDOFF transition",
+        "fab-out": "FAB-OUT transition",
+    }
     transitions_by_target = {
         transition.target_phase: transition
         for transition in transitions
@@ -2324,11 +2592,7 @@ def _derive_handoff_summary(
     for result in phases:
         transition = transitions_by_target.get(result.phase.key)
         if transition is not None:
-            compact_label = (
-                "INITIALIZE transition"
-                if transition.key == "initialize"
-                else "LAYOUT HANDOFF transition"
-            )
+            compact_label = compact_transition_labels[transition.key]
             workflow.append(
                 (
                     "transition",
@@ -2383,11 +2647,7 @@ def _derive_handoff_summary(
     if current_transition is not None:
         current_kind = "transition"
         current_key = current_transition.key
-        current_label = (
-            "INITIALIZE transition"
-            if current_transition.key == "initialize"
-            else "LAYOUT HANDOFF transition"
-        )
+        current_label = compact_transition_labels[current_transition.key]
         current_state = current_transition.state
         current_detail = current_transition.detail
     elif current is not None:
@@ -2540,10 +2800,14 @@ def _run_command(
     return True, _summary(output, "passed")
 
 
-def _route_is_complete(document: StatusDocument) -> bool:
+def _layout_is_complete(project_dir: Path, document: StatusDocument) -> bool:
     latest, _ = _latest_events(document.events)
-    event = latest.get("route")
-    return event is not None and event[1].action == "complete"
+    event = latest.get("layout")
+    return (
+        event is not None
+        and event[1].action == "complete"
+        and _approval_is_current(project_dir, "layout", event[1], document)
+    )
 
 
 def run_status_checks(
@@ -2849,7 +3113,7 @@ def run_status_checks(
                 summary,
             )
 
-    if _route_is_complete(document):
+    if _layout_is_complete(project_dir, document):
         name = "drc"
         board = project_dir / f"{spec.name}.kicad_pcb"
         reusable = _reusable_check_record(
@@ -2909,6 +3173,10 @@ def _prepare_phase_review(
     if phase not in phase_map:
         raise StatusInputError(
             f"unknown phase {phase!r}; choose from {', '.join(phase_map)}"
+        )
+    if phase == "architect":
+        raise StatusInputError(
+            "ARCHITECT finalization is automatic; run `pcbforge finish-architect`"
         )
     document = (
         document
@@ -2973,6 +3241,8 @@ def _prepare_phase_review(
         )
     if phase == "layout" and _current_layout_handoff(project_dir, checked) is None:
         failures.append("current CIRCUIT → LAYOUT handoff approval is missing")
+    if phase == "order" and _current_fab_out(project_dir, checked) is None:
+        failures.append("current VERIFY → ORDER FAB-OUT transition is missing")
     if (
         phase != "spec"
         and not _current_policy_baseline(project_dir, checked)
@@ -3249,15 +3519,16 @@ def _approval_gate_sequence() -> tuple[_ApprovalGate, ...]:
                     "proposal",
                 )
             )
-        gates.append(
-            _ApprovalGate(
-                phase.key,
-                f"{phase.label} final",
-                phase.key,
-                "complete",
-                "final",
+        if phase.key != "architect":
+            gates.append(
+                _ApprovalGate(
+                    phase.key,
+                    f"{phase.label} final",
+                    phase.key,
+                    "complete",
+                    "final",
+                )
             )
-        )
         if phase.key == "circuit":
             gates.append(
                 _ApprovalGate(
@@ -3547,6 +3818,25 @@ def prepare_cascade_review(
             provisional,
             gate,
         )
+        automatic_failure = ""
+        if (
+            _phase_number(project_dir, gate.phase)
+            >= _phase_number(project_dir, "circuit")
+            and _current_architecture_baseline(project_dir, provisional) is None
+        ):
+            automatic_failure = (
+                "ARCHITECT → CIRCUIT automatic baseline is not current; "
+                "rerun finish-architect before downstream renewal"
+            )
+        if (
+            _phase_number(project_dir, gate.phase)
+            >= _phase_number(project_dir, "order")
+            and _current_fab_out(project_dir, provisional) is None
+        ):
+            automatic_failure = (
+                "VERIFY → ORDER FAB-OUT transition is not current; regenerate "
+                "and validate fabrication outputs before downstream renewal"
+            )
 
         if stopped:
             classification = "deferred"
@@ -3563,6 +3853,9 @@ def prepare_cascade_review(
                 "required saved checks are not current and passing: "
                 + "; ".join(check_failures)
             )
+        elif automatic_failure:
+            classification = "blocked"
+            detail = automatic_failure
         elif not event.content_fingerprint:
             classification = "delta"
             detail = "prior approval has no content fingerprint; full review required"
@@ -3937,8 +4230,6 @@ def approve_phase(
             content_fingerprint=_content_fingerprint(payload),
         )
         checked = replace(checked, events=(*checked.events, event))
-    if stage == "final" and phase == "architect":
-        capture_implementation_baseline(project_dir)
     return write_status(
         project_dir,
         tool_root=tool_root,
@@ -4288,12 +4579,15 @@ def _invalidate_stale_approvals(
     latest, _ = _latest_events(document.events)
     invalidations: list[StatusEvent] = []
     for phase in PHASES:
-        if phase.key not in APPROVAL_BOUND_PHASES:
-            continue
         event_info = latest.get(phase.key)
         if event_info is None:
             continue
         event = event_info[1]
+        if (
+            phase.key not in APPROVAL_BOUND_PHASES
+            and event.action != "proposal-approved"
+        ):
+            continue
         if event.action not in {"complete", "proposal-approved"}:
             continue
         try:
@@ -4359,6 +4653,52 @@ def _invalidate_stale_approvals(
                 )
     transition_invalidations: list[TransitionEvent] = []
     latest_transitions = _latest_transition_events(document.transition_events)
+    architecture = latest_transitions.get("architecture-baseline")
+    if architecture is not None and architecture.action == "complete":
+        architecture_stale = not (project_dir / BASELINE_PATH).is_file()
+        try:
+            proposal = next(
+                (
+                    event
+                    for event in reversed(document.events)
+                    if event.phase == "architect"
+                    and event.action == "proposal-approved"
+                ),
+                None,
+            )
+            proposal_content = _content_fingerprint(
+                _approval_payload(
+                    project_dir,
+                    "architect",
+                    "proposal-approved",
+                    document,
+                )
+            )
+            architecture_stale = architecture_stale or (
+                proposal is None
+                or proposal.content_fingerprint != proposal_content
+                or architecture.content_fingerprint
+                != _payload_fingerprint(
+                    _architecture_baseline_payload(project_dir, document)
+                )
+            )
+            if _current_circuit_proposal(project_dir, document) is None:
+                baseline_ok, _ = baseline_is_current(project_dir)
+                architecture_stale = architecture_stale or not baseline_ok
+        except (BuildTestError, CircuitReviewError, StatusError, OSError):
+            architecture_stale = True
+        if architecture_stale:
+            transition_invalidations.append(
+                TransitionEvent(
+                    at or _now(),
+                    "architecture-baseline",
+                    "reopened",
+                    (
+                        "Automatic transition invalidated because ARCHITECT "
+                        "proposal or baseline content changed"
+                    ),
+                )
+            )
     handoff = latest_transitions.get("layout-handoff")
     if (
         handoff is not None
@@ -4376,6 +4716,28 @@ def _invalidate_stale_approvals(
                 ),
             )
         )
+    fab_out = latest_transitions.get("fab-out")
+    if fab_out is not None and fab_out.action == "complete":
+        try:
+            fab_stale = (
+                not _fab_artifact_paths(project_dir)
+                or fab_out.content_fingerprint
+                != _payload_fingerprint(_fab_out_payload(project_dir, document))
+            )
+        except (StatusError, OSError):
+            fab_stale = True
+        if fab_stale:
+            transition_invalidations.append(
+                TransitionEvent(
+                    at or _now(),
+                    "fab-out",
+                    "reopened",
+                    (
+                        "Automatic transition invalidated because fabrication "
+                        "outputs changed"
+                    ),
+                )
+            )
     if (
         not invalidations
         and not policy_invalidations
@@ -4478,6 +4840,143 @@ def record_initialization_blocker(
         project_dir,
         now=event_time,
         document=document,
+    )
+
+
+def finish_architect(
+    project_dir: Path,
+    *,
+    tool_root: Path | None = None,
+    runner: CommandRunner = subprocess.run,
+    now: str | None = None,
+) -> StatusResult:
+    """Capture the checked ARCHITECT baseline and open CIRCUIT."""
+    project_dir = _project_dir(project_dir)
+    document = read_status_document(project_dir)
+    if _current_architecture_baseline(project_dir, document) is not None:
+        raise StatusInputError("architecture baseline is already current")
+    event_time = now or _now()
+    spec = read_spec(project_dir / "spec.md")
+    board = project_dir / f"{spec.name}.kicad_pcb"
+    failures: list[str] = []
+    before = None
+    try:
+        before = read_board_evidence(board)
+    except BuildTestError as exc:
+        failures.append(str(exc).splitlines()[0])
+    checked = run_status_checks(
+        project_dir,
+        document,
+        tool_root=tool_root,
+        runner=runner,
+        checked_at=event_time,
+    )
+    after = None
+    try:
+        after = read_board_evidence(board)
+    except BuildTestError as exc:
+        failures.append(str(exc).splitlines()[0])
+    report = inspect_status(project_dir, document=checked)
+    spec_phase = next(item for item in report.phases if item.phase.key == "spec")
+    if not spec_phase.complete or not _initialization_transition_complete(project_dir):
+        failures.append("SPEC and initialization must be complete")
+    if _current_architect_proposal(project_dir, checked) is None:
+        failures.append("current architecture proposal approval is missing")
+    evidence_ok, evidence_detail, _ = _static_evidence(
+        project_dir,
+        spec,
+        checked,
+        "architect",
+    )
+    if not evidence_ok:
+        failures.append(evidence_detail)
+    for name in ("build", "ioc"):
+        current, detail = _current_check(project_dir, spec, checked, name)
+        if not current:
+            failures.append(detail)
+    if before is not None and after is not None:
+        failures.extend(_spatial_errors(before, after))
+    if not failures:
+        try:
+            capture_implementation_baseline(project_dir)
+        except (CircuitReviewError, OSError) as exc:
+            failures.append(str(exc).splitlines()[0])
+    if failures:
+        note = "; ".join(dict.fromkeys(failures))
+        blocked = TransitionEvent(
+            event_time,
+            "architecture-baseline",
+            "blocked",
+            note,
+        )
+        write_status(
+            project_dir,
+            tool_root=tool_root,
+            runner=runner,
+            now=event_time,
+            document=replace(
+                checked,
+                transition_events=(*checked.transition_events, blocked),
+            ),
+        )
+        raise StatusCheckError(f"cannot finish ARCHITECT: {note}")
+    payload = _architecture_baseline_payload(project_dir, checked)
+    event = TransitionEvent(
+        event_time,
+        "architecture-baseline",
+        "complete",
+        "Architecture checks passed and source baseline was captured",
+        content_fingerprint=_payload_fingerprint(payload),
+    )
+    return write_status(
+        project_dir,
+        tool_root=tool_root,
+        runner=runner,
+        now=event_time,
+        document=replace(
+            checked,
+            transition_events=(*checked.transition_events, event),
+        ),
+    )
+
+
+def record_fab_out_transition(
+    project_dir: Path,
+    *,
+    note: str = "Fabrication package generated and validated",
+    now: str | None = None,
+) -> StatusResult:
+    """Record the future fab generator's validated output transition."""
+    project_dir = _project_dir(project_dir)
+    note = note.strip()
+    if not note:
+        raise StatusInputError("FAB-OUT transition note must be non-empty")
+    document = read_status_document(project_dir)
+    if _current_fab_out(project_dir, document) is not None:
+        raise StatusInputError("FAB-OUT transition is already current")
+    report = inspect_status(project_dir, document=document)
+    verify = next(item for item in report.phases if item.phase.key == "verify")
+    if not verify.complete:
+        raise StatusInputError("cannot record FAB-OUT before VERIFY is complete")
+    if not _fab_artifact_paths(project_dir):
+        raise StatusInputError("cannot record FAB-OUT without fabrication outputs")
+    event_time = now or _now()
+    event = TransitionEvent(
+        event_time,
+        "fab-out",
+        "complete",
+        note,
+        content_fingerprint=_payload_fingerprint(
+            _fab_out_payload(project_dir, document)
+        ),
+    )
+    return write_status(
+        project_dir,
+        now=event_time,
+        document=replace(
+            document,
+            transition_events=(*document.transition_events, event),
+        ),
     )
 
 
@@ -4625,10 +5124,9 @@ def mark_policy(
                 "project policy is not bound to the approved SPEC"
             )
         subject = "sourcing"
-        fab_result = report.phases[_phase_number(project_dir, "fab-out") - 1]
-        if not fab_result.complete:
+        if _current_fab_out(project_dir, document) is None:
             raise StatusInputError(
-                "cannot confirm sourcing before FAB-OUT is complete"
+                "cannot confirm sourcing before the FAB-OUT transition is current"
             )
         if not (project_dir / BUILD_TEST_FILENAME).is_file():
             raise StatusInputError(

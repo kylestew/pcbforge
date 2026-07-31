@@ -74,8 +74,10 @@ checkout; dirty tool state is never recorded as a reproducible pin.
    The proposal covers both the functional graph and exact STM32/package,
    resource, and provisional pin plan. After proposal approval the AI creates
    the source skeleton, `firmware/<project>.ioc`, and `src/mcu.ato`, then runs
-   the build, CubeMX round-trip, and one-to-one audit before final ARCHITECT
-   approval. You may optionally inspect the IOC in CubeMX 6.18.
+   the build, CubeMX round-trip, and one-to-one audit. `pcbforge
+   finish-architect` checks the result, proves spatial preservation, captures
+   the CIRCUIT baseline, and advances without another user approval. You may
+   optionally inspect the IOC in CubeMX 6.18.
 5. Your time concentrates at the end of the middle: **layout and routing in
    KiCad 9**, with the agent as spotter (briefs, audits, render review).
 6. `fab/` outputs upload to JLCPCB. Ordering stays human.
@@ -84,17 +86,17 @@ Resuming days later: just start a session in the project dir — the agent reads
 `spec.md` and `policy.yaml`, refreshes `STATUS.md`, and proposes its recorded
 next actions. No chat history is needed.
 
-Across every phase, the AI may derive consequences of approved requirements
+Across the workflow, the AI may derive consequences of approved requirements
 but may not silently choose between materially different reasonable designs.
 It must present options and stop before changing the affected artifact. Human
-approval is required before every numbered phase completes. Initialization is
-automatic after SPEC approval, while the CIRCUIT-to-LAYOUT handoff has its own
-explicit transfer approval.
-Passing evidence moves a phase to `Awaiting approval`. The AI presents the
-phase-specific review packet and fingerprint, waits for an unambiguous
-conversational approval, and only then records it. Changed approved artifacts
-are durably reopened by dashboard writes, and rerunning checks cannot revive
-an old approval.
+approval is required at the eight decision gates described in `WORKFLOW.md`.
+Initialization, ARCHITECT finalization, and FAB-OUT are checked transitions,
+while the CIRCUIT-to-LAYOUT handoff has its own explicit transfer approval.
+Passing evidence at a user-owned gate moves it to `Awaiting approval`. The AI
+presents the phase-specific review packet and fingerprint, waits for an
+unambiguous conversational approval, and only then records it. Changed
+approved artifacts are durably reopened by dashboard writes, and rerunning
+checks cannot revive an old approval.
 
 Approval fingerprints follow contract ownership rather than hashing every
 shared file wholesale. The exact `## Decisions log` section in `spec.md` is
@@ -114,9 +116,10 @@ pcbforge status
 pcbforge status --check --write
 pcbforge status --check --force-checks --write
 pcbforge status --next
+pcbforge finish-architect
 pcbforge status review layout
 pcbforge status approve layout --fingerprint <sha256> \
-  --note "Placement reviewed and explicitly approved"
+  --note "Placement and routing declared complete"
 pcbforge status review --cascade
 pcbforge status renew --fingerprint <sha256> \
   --note "Reviewed the root change and unchanged downstream gates"
@@ -140,9 +143,10 @@ gates whose phase-owned content is provably unchanged. It uses saved current
 checks, stops before any real delta, and still requires one explicit
 conversational approval before the agent records the renewal.
 
-The workflow has nine numbered phases, eight required. MCU work is inside
+The workflow has seven numbered phases, six required. MCU work is inside
 ARCHITECT; physical implementation and build + test form one CIRCUIT phase;
-initialization and the layout handoff are visible transitions. CIRCUIT combines
+initialization, the architecture baseline, the layout handoff, and FAB-OUT are
+visible transitions. CIRCUIT combines
 authored circuit review, deterministic acceptance,
 manufacturing policy, and universal phase approvals. The
 tool-owned `policies/pcbforge-standard-v1.yaml` hard-locks JLCPCB, STM32,
@@ -200,8 +204,8 @@ pcbforge status approve layout --stage handoff \
   --fingerprint <sha256> --note "..."
 ```
 
-After FAB-OUT, refresh live JLC availability and lifecycle evidence for the
-exact BOM. Once the user confirms it, record
+After the checked FAB-OUT transition, refresh live JLC availability and
+lifecycle evidence for the exact BOM. Once the user confirms it, record
 `pcbforge policy confirm-sourcing --note "..."`. ORDER cannot complete unless
 that confirmation still matches the policy sourcing records, CIRCUIT BOM, and
 fabrication outputs.

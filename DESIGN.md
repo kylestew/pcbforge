@@ -34,7 +34,7 @@ own everything mechanical around KiCad board design for JLCPCB fab.
 
 | Actor | Role |
 |---|---|
-| **User** | acceptance of every phase, spec intent, optional CubeMX review, **layout + routing (the art)**, order |
+| **User** | material decision gates, spec intent, optional CubeMX review, **layout + routing (the art)**, order |
 | **AI agent** | spec interview, writes/edits all capture code, exact MCU/pin selection, part selection, layout spotter, review |
 | **Compiler/scripts** | netlist + BOM emission, assertions, electrical checks/DRC, briefs, fab-out — deterministic, free (stock queries excepted: live network) |
 
@@ -50,16 +50,18 @@ affected artifact.
 Silence, general permission to continue, and broad implementation requests are
 not approval. The AI may record approval already expressed by the user but may
 not originate, infer, self-approve, or reuse it. Proposal approval precedes
-implementation and final approval follows presentation plus validation.
+implementation and required final approval follows presentation plus
+validation.
 Approval events are bound to artifact fingerprints. A changed approved
 artifact becomes stale; a dashboard write durably reopens its phase so tool
 reruns or later content restoration cannot silently revive the approval.
-Every numbered phase requires final user approval. Passing checks produce
-`Awaiting approval`, not completion. Initialization is a checked automatic
-transition after SPEC; the CIRCUIT-to-LAYOUT handoff is a checked transition
-with explicit transfer approval. The agent presents the exact `status review`
-packet and may record its fingerprint with `status approve` only after the
-user unambiguously accepts it.
+The eight required user decisions are SPEC, ARCHITECT proposal, CIRCUIT
+proposal and final, the CIRCUIT-to-LAYOUT handoff, LAYOUT done, VERIFY, and
+ORDER. Initialization, the ARCHITECT source baseline, and FAB-OUT are checked
+automatic transitions. Passing checks at a user-owned gate produce `Awaiting
+approval`, not completion. The agent presents the exact `status review` packet
+and may record its fingerprint with `status approve` only after the user
+unambiguously accepts it.
 
 ### Manufacturing-policy invariant
 
@@ -84,6 +86,17 @@ exception approval reopens the profile-mapped completed phase.
 
 ## Decision record
 
+- **2026-07-31 — v1 trims the happy path to eight user decisions.** The sole
+  numbered workflow is SPEC, ARCHITECT, CIRCUIT, LAYOUT, VERIFY, ORDER, and
+  optional PUBLISH. Placement and routing remain distinct user tasks inside
+  one LAYOUT phase and share a lightweight done-declaration before VERIFY.
+  ARCHITECT completion is the checked `architecture-baseline` transition:
+  `finish-architect` requires the current proposal approval, passing build and
+  IOC checks, spatial preservation, and successful source-baseline capture.
+  FAB-OUT is likewise a checked VERIFY-to-ORDER transition whose fingerprint
+  binds the generated packet. Initialize and layout handoff remain visible
+  transitions; the latter retains explicit user approval because it transfers
+  the exact circuit contract into user-owned physical work.
 - **2026-07-31 — unchanged approval chains renew as one explicit decision.**
   Approval events now retain a phase-owned content fingerprint in addition to
   the full upstream-bound fingerprint. `status review --cascade` uses current
@@ -108,8 +121,8 @@ exception approval reopens the profile-mapped completed phase.
   one accepted value. Unsupported versions fail with “unsupported version —
   restart the project.” Schema migrations, feature gates, compatibility
   branches, old numbered phases, deprecated CLI aliases, and native generated
-  KiCad schematic review were removed. The sole workflow is the nine-phase
-  model plus initialize and layout-handoff transitions described below.
+  KiCad schematic review were removed. The sole workflow is the seven-phase
+  model plus the four transitions described below.
 - **2026-07-29 — schema-15 streamlines phase boundaries.** INIT becomes the
   visible, automatic SPEC-to-ARCHITECT transition; MCU becomes a subordinate
   ARCHITECT workstream; BRIEF becomes the visible CIRCUIT-to-LAYOUT handoff.
@@ -290,7 +303,9 @@ for whichever compiler wins:
 2. ARCHITECT  AI proposes module graph plus exact STM32/package, resource, and
               provisional pin plan. U approves proposal; AI writes/builds the
               skeleton, creates and round-trips the IOC, derives src/mcu.ato,
-              and performs diagram + one-to-one audits; U gives final approval.
+              and performs diagram + one-to-one audits.
+   transition T: finish-architect validates the proposal, build, IOC, and
+              spatial preservation, then captures the source baseline.
 3. CIRCUIT    AI creates an explanatory SVG plus exact proposal model; T:
               semantic binding; U approves before source. AI implements exact
               parts; T validates identity/pin/topology parity, parts, policy,
@@ -301,23 +316,21 @@ for whichever compiler wins:
               docs/placement-brief.md,
               and seeds PCBForge-owned classes in .kicad_pro without touching
               .kicad_pcb; U approves the handoff beside current CIRCUIT view.
-4. LAYOUT     U — THE ART. AI spotter on request (see Layout copilot).
-5. ROUTE      U — the art continues. AI sanity checks on request.
-6. verify     T: DRC vs JLC rules + scripted layout audits; AI render review.
-7. fab-out    T: JLC Gerbers + drill + BOM + CPL → fab/board.zip
-8. order      post-FAB sourcing confirmation → U uploads to JLCPCB
+4. LAYOUT     U — THE ART: placement + routing. AI spotter on request.
+5. verify     T: DRC vs JLC rules + scripted layout audits; AI render review.
+   transition T: JLC Gerbers + drill + BOM + CPL → fab/board.zip
+6. order      post-FAB sourcing confirmation → U uploads to JLCPCB
               (tool never touches money/orders)
-9. publish    proven modules: version tag + generated schematic render;
+7. publish    proven modules: version tag + generated schematic render;
               U optional prettify (the surviving drawing act).
 ```
 
-Every numbered phase ends with the same final gate: required evidence becomes
-current, the agent presents `pcbforge status review <phase>`, the user
-explicitly approves that fingerprint, and the agent records it with
-`pcbforge status approve`. The phase cannot complete from tool success, file
-presence, or agent judgment alone. ARCHITECT and CIRCUIT each have an
-additional proposal-stage approval before affected source; optional PUBLISH
-may instead be explicitly skipped.
+Every user-owned gate requires current evidence, an exact `pcbforge status
+review` packet, explicit approval of its fingerprint, and a recorded `status
+approve` event. Tool success, file presence, or agent judgment never grants a
+user decision. ARCHITECT has one proposal gate before source; its finalization
+is the checked architecture-baseline transition. CIRCUIT retains proposal and
+final gates. Optional PUBLISH may be explicitly skipped.
 
 ### Phase 2 — ARCHITECT, including MCU
 
@@ -341,13 +354,13 @@ the executable authority; changes are proposed in the diagram and reapproved
 before corresponding source edits. The diagram contains functional modules and
 typed interfaces, never parts, pins, or spatial detail.
 
-After build and audit, the user gives separate final approval. Its append-only
-STATUS event is fingerprint-bound to the semantic SPEC contract, diagram, and
-thin top-level source graph. Normative artifact changes make approval stale and
-the next dashboard write records a durable reopen before the workflow may move
-to CIRCUIT. Design rationale may remain in the non-normative `spec.md`
-Decisions log without reopening the gate; all other SPEC prose remains
-normative.
+After build and audit, `pcbforge finish-architect` validates the current
+proposal approval, build and IOC evidence, and spatial preservation, then
+captures the pre-CIRCUIT source baseline. Its append-only transition event is
+fingerprint-bound to the implemented contract. Normative artifact changes make
+the transition stale before the workflow may move to CIRCUIT. Design rationale
+may remain in the non-normative `spec.md` Decisions log without reopening the
+gate; all other SPEC prose remains normative.
 
 #### MCU workstream inside ARCHITECT
 
@@ -366,7 +379,7 @@ check.
 
 `ioc2code` remains debt. Until it exists, the agent derives `src/mcu.ato`
 manually from the checked `.ioc`, independently audits every mapping, and
-builds before final ARCHITECT approval and the move to CIRCUIT.
+builds before the checked ARCHITECT baseline transition into CIRCUIT.
 
 ### Phase 1 — SPEC
 

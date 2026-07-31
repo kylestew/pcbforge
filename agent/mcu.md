@@ -137,13 +137,11 @@ Perform a one-to-one audit after transcription:
 - no pin or signal exists only in `src/mcu.ato`;
 - no required `.ioc` assignment is absent from `src/mcu.ato`.
 
-Run the pinned compiler and present the source diff and audit result as part of
-the final ARCHITECT packet. ARCHITECT is technically ready only when the IOC
-passes, the derived module matches it, and the approved functional graph is
-still satisfied. Run `pcbforge status review architect`, present the combined
-packet and fingerprint, and stop. After explicit approval, record
-`pcbforge status approve architect --fingerprint <sha256> --note "<architecture,
-part, and audit summary>"`. That approval captures
-`review/circuit/source-baseline.json`; CIRCUIT blocks if physical source or
-board topology changes before its proposal approval, and CIRCUIT becomes the
-next phase.
+Run the pinned compiler and report the source diff and audit result before
+finishing ARCHITECT. ARCHITECT is technically ready only when the IOC passes,
+the derived module matches it, and the approved functional graph is still
+satisfied. Then run `pcbforge finish-architect`. This checked transition
+requires the current proposal approval, captures
+`review/circuit/source-baseline.json`, and opens CIRCUIT without another user
+approval. CIRCUIT blocks if physical source or board topology changes before
+its proposal approval.

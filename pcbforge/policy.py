@@ -36,11 +36,9 @@ PHASE_ORDER = {
     "architect": 2,
     "circuit": 3,
     "layout": 4,
-    "route": 5,
-    "verify": 6,
-    "fab-out": 7,
-    "order": 8,
-    "publish": 9,
+    "verify": 5,
+    "order": 6,
+    "publish": 7,
 }
 ID_RE = re.compile(r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$")
 LCSC_RE = re.compile(r"^C[1-9][0-9]*$")

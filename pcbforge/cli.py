@@ -46,6 +46,7 @@ from pcbforge.status import (
     StatusError,
     StatusInputError,
     approve_phase,
+    finish_architect,
     inspect_status,
     mark_policy,
     mark_status,
@@ -85,6 +86,23 @@ def _parser() -> argparse.ArgumentParser:
         default=".",
         metavar="PROJECT_DIR",
         help="existing directory containing spec.md (default: current directory)",
+    )
+
+    finish_architect_parser = subcommands.add_parser(
+        "finish-architect",
+        help="record the checked ARCHITECT to CIRCUIT source baseline",
+        description=(
+            "Require the approved ARCHITECT proposal, current build and IOC "
+            "checks, and an unchanged spatial board, then capture the CIRCUIT "
+            "source baseline."
+        ),
+    )
+    finish_architect_parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+        help="initialized pcbforge project (default: current directory)",
     )
 
     check_ioc_parser = subcommands.add_parser(
@@ -603,6 +621,22 @@ def main(argv: list[str] | None = None) -> int:
             "pcbforge: compiler smoke test passed; "
             "STATUS.md refreshed; run `pcbforge status` for the next action"
         )
+        return 0
+
+    if args.command == "finish-architect":
+        try:
+            result = finish_architect(Path(args.project_dir))
+        except StatusInputError as exc:
+            print(f"pcbforge finish-architect: {exc}", file=sys.stderr)
+            return 2
+        except StatusCheckError as exc:
+            print(f"pcbforge finish-architect: {exc}", file=sys.stderr)
+            return 1
+        except StatusError as exc:
+            print(f"pcbforge finish-architect: {exc}", file=sys.stderr)
+            return 1
+        print(render_terminal(result.report))
+        print("pcbforge: recorded ARCHITECT → CIRCUIT architecture baseline")
         return 0
 
     if args.command == "check-ioc":

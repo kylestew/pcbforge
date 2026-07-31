@@ -1,8 +1,8 @@
 <!-- pcbforge-circuit-schema: 1 -->
 # CIRCUIT playbook
 
-Use this playbook after combined ARCHITECT approval, including its MCU
-workstream, and before requesting CIRCUIT approval.
+Use this playbook after the checked ARCHITECT baseline transition, including
+its MCU workstream, and before requesting CIRCUIT approval.
 The goal is an understandable, explicitly approved circuit proposal followed
 by a physical circuit definition whose compiled connectivity and exact parts
 are proven to match that proposal.
@@ -16,9 +16,10 @@ exception gates.
 
 ## Gate A — explanatory circuit proposal before source edits
 
-Final ARCHITECT approval captures `review/circuit/source-baseline.json`. Do not change
-physical Atopile module bodies, part definitions, values, footprints,
-connectivity, or the product PCB until the topology proposal below is approved.
+`pcbforge finish-architect` captures
+`review/circuit/source-baseline.json`. Do not change physical Atopile module
+bodies, part definitions, values, footprints, connectivity, or the product PCB
+until the topology proposal below is approved.
 
 Create `circuit-review.yaml`:
 

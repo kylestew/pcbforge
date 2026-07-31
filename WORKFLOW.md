@@ -9,40 +9,41 @@ history; the playbooks under `agent/` define the detailed work.
 flowchart LR
     SPEC["1 SPEC"] --> INIT{{"initialize"}}
     INIT --> ARCH["2 ARCHITECT<br/>includes MCU"]
-    ARCH --> CIRCUIT["3 CIRCUIT"]
+    ARCH --> BASELINE{{"architecture baseline"}}
+    BASELINE --> CIRCUIT["3 CIRCUIT"]
     CIRCUIT --> HANDOFF{{"layout handoff"}}
-    HANDOFF --> LAYOUT["4 LAYOUT"]
-    LAYOUT --> ROUTE["5 ROUTE"]
-    ROUTE --> VERIFY["6 VERIFY"]
-    VERIFY --> FAB["7 FAB-OUT"]
-    FAB --> ORDER["8 ORDER"]
-    ORDER --> PUBLISH["9 PUBLISH<br/>optional"]
+    HANDOFF --> LAYOUT["4 LAYOUT<br/>placement + routing"]
+    LAYOUT --> VERIFY["5 VERIFY"]
+    VERIFY --> FAB{{"fab-out"}}
+    FAB --> ORDER["6 ORDER"]
+    ORDER --> PUBLISH["7 PUBLISH<br/>optional"]
 ```
 
-There are nine numbered phases, eight required. Initialization and the layout
-handoff remain visible in `STATUS.md`, but they are transitions rather than
-numbered phases.
+There are seven numbered phases, six required. Initialization, architecture
+baseline, layout handoff, and FAB-OUT remain visible in `STATUS.md` as
+transitions rather than numbered phases.
 
 | # | Phase | Primary lead | Completion contract |
 |---:|---|---|---|
 | 1 | SPEC | AI + user | Approved `spec.md` and policy baseline |
 | — | SPEC → ARCHITECT: initialize | Tool | Atomic scaffold and compiler smoke test |
 | 2 | ARCHITECT | AI + user | Approved graph and exact MCU plan; built skeleton, checked IOC, matching MCU source, audits |
+| — | ARCHITECT → CIRCUIT: architecture baseline | AI + tool | Proposal current; build and IOC pass; spatial board unchanged; source baseline captured |
 | 3 | CIRCUIT | AI + tool | Approved authored circuit model; exact parts and source; parity, policy, parts, build, and acceptance checks |
 | — | CIRCUIT → LAYOUT: layout handoff | AI + tool + user | Current placement contract, generated brief, checks, and explicit handoff approval |
-| 4 | LAYOUT | User | Placement reviewed and approved |
-| 5 | ROUTE | User | Routing reviewed and approved |
-| 6 | VERIFY | Tool + AI | DRC, audits, and render review approved |
-| 7 | FAB-OUT | Tool | Gerber, drill, BOM, CPL, and archive packet approved |
-| 8 | ORDER | User | Current sourcing confirmed and order approved |
-| 9 | PUBLISH | AI + user | Proven reusable modules published, or explicitly skipped |
+| 4 | LAYOUT | User | Placement and routing declared complete in one spatially bound approval |
+| 5 | VERIFY | Tool + AI | DRC, audits, and render review approved |
+| — | VERIFY → ORDER: FAB-OUT | Tool | Validated Gerber, drill, BOM, CPL, and archive packet fingerprint |
+| 6 | ORDER | User | Current sourcing confirmed and order approved |
+| 7 | PUBLISH | AI + user | Proven reusable modules published, or explicitly skipped |
 
 ## Authority and approvals
 
-Every numbered phase needs explicit, fingerprint-bound user approval.
-Initialization is automatic after SPEC approval. The layout handoff has an
-explicit user approval because it transfers an exact circuit into user-owned
-physical placement, but it does not inflate the phase count.
+The eight required human decisions are SPEC, ARCHITECT proposal, CIRCUIT
+proposal and final, layout handoff, LAYOUT done, VERIFY, and ORDER.
+Initialization, ARCHITECT finalization, and FAB-OUT are checked tool
+transitions. The layout handoff stays explicit because it transfers an exact
+circuit into user-owned physical work.
 
 The agent may derive consequences of approved requirements. It may not silently
 choose between materially different reasonable designs. A choice is material
@@ -58,12 +59,19 @@ pcbforge status review <phase>
 pcbforge status approve <phase> --fingerprint <sha256> --note "<approval>"
 ```
 
-ARCHITECT and CIRCUIT also have proposal gates before affected source work:
+ARCHITECT and CIRCUIT have proposal gates before affected source work:
 
 ```text
 pcbforge status review <phase> --stage proposal
 pcbforge status approve <phase> --stage proposal \
   --fingerprint <sha256> --note "<approval>"
+```
+
+After implementing and auditing the approved ARCHITECT proposal, record its
+checked transition without another user approval:
+
+```text
+pcbforge finish-architect
 ```
 
 Changed approved artifacts reopen the affected gate. Restoring old bytes or
@@ -146,10 +154,10 @@ Final ARCHITECT evidence requires:
 - the diagram matches every top-level instance, interface, and boundary;
 - spatial board data remains unchanged.
 
-Final ARCHITECT approval captures
-`review/circuit/source-baseline.json` and opens CIRCUIT. A material graph, MCU,
-package, resource, pin, IOC, or public-interface change returns to the
-ARCHITECT proposal gate.
+`pcbforge finish-architect` captures
+`review/circuit/source-baseline.json` and opens CIRCUIT after those checks pass.
+A material graph, MCU, package, resource, pin, IOC, or public-interface change
+returns to the ARCHITECT proposal gate.
 
 ## 3. CIRCUIT
 
@@ -200,16 +208,17 @@ policy evidence, `placement.yaml`, generated brief, exact board topology, and
 PCBForge-owned net classes. A topology or contract change reopens the handoff;
 ordinary spatial placement does not.
 
-## 4–9. Physical and release phases
+## 4–7. Physical and release phases
 
-LAYOUT and ROUTE are user-owned. The agent may prime constraints, spot issues,
-and audit on request, but never moves footprints or copper.
+Placement and routing remain distinct user-owned activities inside LAYOUT.
+The agent may prime constraints, spot issues, and audit on request, but never
+moves footprints or copper. One final LAYOUT approval binds both activities.
 
-VERIFY runs DRC plus visual and process audits. FAB-OUT creates the JLCPCB
-manufacturing packet without ordering. ORDER requires refreshed live sourcing,
-explicit sourcing confirmation, and human purchase authority. PUBLISH is
-optional and may be skipped; only proven reusable modules belong in the shared
-catalog.
+VERIFY runs DRC plus visual and process audits. The future FAB-OUT generator
+creates, validates, fingerprints, and records the manufacturing-packet
+transition without ordering. ORDER requires that current transition, refreshed
+live sourcing, explicit sourcing confirmation, and human purchase authority.
+PUBLISH is optional and may be skipped.
 
 ## Dashboard and resume
 

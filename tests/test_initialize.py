@@ -380,8 +380,8 @@ class InitializeTests(unittest.TestCase):
             self.assertIn("## Decision authority", agents)
             self.assertIn("never originate", agents)
             self.assertIn("status review architect --stage proposal", agents)
-            self.assertIn("Final approval captures the pre-CIRCUIT source baseline", agents)
-            self.assertIn("status approve architect", agents)
+            self.assertIn("finish-architect", agents)
+            self.assertIn("opens CIRCUIT without another", agents)
             self.assertIn("pcbforge status --next", agents)
             self.assertIn("`Performed, inactive`", agents)
             self.assertIn("## Manufacturing and technology policy", agents)
@@ -405,6 +405,8 @@ class InitializeTests(unittest.TestCase):
             self.assertIn("build-test.yaml", agents)
             self.assertIn("docs/build-test.md", agents)
             self.assertIn("docs/placement-brief.md", agents)
+            self.assertIn("## LAYOUT gate", agents)
+            self.assertIn("Placement and routing remain distinct", agents)
             self.assertNotIn("generates `brief.md`", agents)
 
         build_calls = [call for call in runner.calls if "build" in call[0]]
@@ -596,7 +598,7 @@ class InitializeTests(unittest.TestCase):
             self.assertEqual(len(report.events), 1)
             self.assertEqual(report.events[0].phase, "spec")
             dashboard = (project / "STATUS.md").read_text(encoding="utf-8")
-            self.assertIn("1 of 8 required phases complete", dashboard)
+            self.assertIn("1 of 6 required phases complete", dashboard)
             self.assertIn("**Current:** 2. ARCHITECT — Ready", dashboard)
             self.assertIn(
                 "**Just completed:** SPEC → ARCHITECT: initialize",
@@ -719,12 +721,13 @@ class GuidanceTests(unittest.TestCase):
             "spec-to-module coverage",
             "board hash",
             "status review architect --stage proposal",
-            "status approve architect",
+            "status approve architect --stage proposal",
+            "finish-architect",
             "MCU workstream",
             "docs/architecture.md",
             "pcbforge-architecture-diagram-schema: 1",
             "source-to-diagram audit",
-            "artifact fingerprint",
+            "proposal fingerprint",
         ):
             self.assertIn(required, playbook)
 
@@ -736,8 +739,8 @@ class GuidanceTests(unittest.TestCase):
             "check-ioc",
             "optional and is not an approval gate",
             "one-to-one audit",
-            "CIRCUIT becomes the",
-            "next phase",
+            "finish-architect",
+            "opens CIRCUIT without another user",
             "source-baseline.json",
         ):
             self.assertIn(required, mcu_playbook)
@@ -1018,39 +1021,10 @@ class RealToolchainIntegrationTests(unittest.TestCase):
                 self.assertEqual(board_hash_after, board_hash_before)
                 self.assertNotIn("(footprint ", board.read_text(encoding="utf-8"))
 
-                architecture_review = subprocess.run(
-                    [
-                        str(TOOL_ROOT / "scripts" / "pcbforge"),
-                        "status",
-                        "review",
-                        "architect",
-                        str(project),
-                    ],
-                    cwd=TOOL_ROOT,
-                    text=True,
-                    capture_output=True,
-                    check=False,
-                )
-                self.assertEqual(
-                    architecture_review.returncode,
-                    0,
-                    architecture_review.stdout + architecture_review.stderr,
-                )
-                architecture_fingerprint = re.search(
-                    r"approval fingerprint: ([0-9a-f]{64})",
-                    architecture_review.stdout,
-                )
-                self.assertIsNotNone(architecture_fingerprint)
                 architecture_gate = subprocess.run(
                     [
                         str(TOOL_ROOT / "scripts" / "pcbforge"),
-                        "status",
-                        "approve",
-                        "architect",
-                        "--fingerprint",
-                        architecture_fingerprint.group(1),
-                        "--note",
-                        "Integration graph approved; diagram: docs/architecture.md",
+                        "finish-architect",
                         str(project),
                     ],
                     cwd=TOOL_ROOT,
@@ -1064,7 +1038,7 @@ class RealToolchainIntegrationTests(unittest.TestCase):
                     architecture_gate.stdout + architecture_gate.stderr,
                 )
                 dashboard = (project / "STATUS.md").read_text(encoding="utf-8")
-                self.assertIn("3 of 12 required phases complete", dashboard)
+                self.assertIn("2 of 6 required phases complete", dashboard)
 
                 report = project / "drc-report.json"
                 completed = subprocess.run(

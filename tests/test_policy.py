@@ -502,6 +502,9 @@ class PolicyApprovalTests(PolicyFixture):
             with mock.patch(
                 "pcbforge.status._static_evidence",
                 return_value=(True, "fixture evidence", True),
+            ), mock.patch(
+                "pcbforge.status._current_architecture_baseline",
+                return_value=mock.sentinel.current_baseline,
             ):
                 write_status(project, document=StatusDocument("", events, {}))
                 marked = mark_policy(
@@ -570,9 +573,7 @@ class PolicyApprovalTests(PolicyFixture):
                 "architect",
                 "circuit",
                 "layout",
-                "route",
                 "verify",
-                "fab-out",
             )
             events = tuple(
                 StatusEvent(
@@ -602,8 +603,14 @@ class PolicyApprovalTests(PolicyFixture):
                 "pcbforge.status._static_evidence",
                 side_effect=evidence,
             ), mock.patch(
+                "pcbforge.status._current_architecture_baseline",
+                return_value=mock.sentinel.current_baseline,
+            ), mock.patch(
                 "pcbforge.status._current_layout_handoff",
                 return_value=mock.sentinel.current_handoff,
+            ), mock.patch(
+                "pcbforge.status._current_fab_out",
+                return_value=mock.sentinel.current_fab,
             ):
                 written = write_status(
                     project,
@@ -644,8 +651,8 @@ class PolicyApprovalTests(PolicyFixture):
             restored = inspect_status(project)
 
         self.assertIn("post-FAB sourcing confirmation", blocked.current.detail)
-        self.assertTrue(written.report.phases[6].complete)
-        self.assertTrue(ordered.report.phases[7].complete)
+        self.assertTrue(written.report.transitions[3].complete)
+        self.assertTrue(ordered.report.phases[5].complete)
         self.assertEqual(
             invalidated.report.document.policy_events[-1].action,
             "reopened",
@@ -658,7 +665,7 @@ class PolicyApprovalTests(PolicyFixture):
             invalidated.report.document.events[-1].action,
             "reopened",
         )
-        self.assertFalse(restored.phases[7].complete)
+        self.assertFalse(restored.phases[5].complete)
 
 
 class PolicyCliTests(PolicyFixture):

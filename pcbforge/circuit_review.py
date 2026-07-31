@@ -277,7 +277,7 @@ def _source_baseline_payload(project_dir: Path) -> dict[str, Any]:
 
 
 def capture_implementation_baseline(project_dir: Path) -> Path:
-    """Capture the source/board handoff after combined ARCHITECT approval."""
+    """Capture the source/board handoff at checked ARCHITECT finalization."""
     project_dir = project_dir.expanduser().resolve()
     _read_pins(project_dir)
     path = project_dir / BASELINE_PATH
@@ -296,7 +296,10 @@ def baseline_is_current(project_dir: Path) -> tuple[bool, str]:
     try:
         saved = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        return False, f"missing {BASELINE_PATH.as_posix()}; reapprove final ARCHITECT work"
+        return (
+            False,
+            f"missing {BASELINE_PATH.as_posix()}; rerun finish-architect",
+        )
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         return False, f"invalid {BASELINE_PATH.as_posix()}: {exc}"
     current = _source_baseline_payload(project_dir)

@@ -180,7 +180,7 @@ Perform an explicit source-to-diagram audit:
 - every diagram node and edge is backed by the source or spec;
 - no forbidden implementation detail appears.
 
-Present one review package:
+Assemble one final technical package for the checked transition:
 
 1. the tracked `docs/architecture.md` Mermaid graph, rendered inline;
 2. `docs/mcu.md`, exact device/package, and final pin/resource table;
@@ -190,36 +190,23 @@ Present one review package:
 6. unresolved risks and explicit tradeoffs;
 7. source-to-diagram audit, meaningful diff, and compiler result.
 
-Ask for explicit final architecture approval and stop. This is separate from
-proposal approval: it confirms that the compiled skeleton, diagram, coverage,
-and source-to-diagram audit implement the approved proposal. Rejection means
-revise the proposal first, obtain renewed proposal approval, then revise and
-reaudit the skeleton.
-
-Before requesting final approval, create the exact review packet:
+Do not request a second ARCHITECT approval. The proposal approval already owns
+the material graph and MCU choices; successful implementation of that proposal
+is a checked transition. After completing and reporting the audits, run:
 
 ```bash
-<pcbforge-root>/scripts/pcbforge status review architect
+<pcbforge-root>/scripts/pcbforge finish-architect
 ```
 
-Present the packet and stop. After the user explicitly approves its
-fingerprint, record the durable workflow gate:
-
-```bash
-<pcbforge-root>/scripts/pcbforge status approve architect \
-  --fingerprint <sha256> \
-  --note "<one-line module graph summary and key choice>; diagram: docs/architecture.md"
-```
-
-The completion event is bound to the current approved artifact fingerprint.
-Rerunning a build cannot make an old approval current again. A checked
-dashboard write automatically records a reopen event when approved artifacts
-change, so restoring old contents later does not silently restore workflow
-approval.
+`finish-architect` requires the current proposal approval, passing build and
+IOC checks, an unchanged spatial board, and successful capture of
+`review/circuit/source-baseline.json`. It records the
+`architecture-baseline` transition and opens CIRCUIT. On failure it records a
+precise blocked transition; resolve that failure and rerun the command.
 
 Keep design rationale in the `spec.md` Decisions log when useful, but do not
 use prose as workflow state. A later change to the module graph, exact MCU,
 resource plan, pin mapping, or public interface requires an updated proposal,
-renewed proposal approval, updated implementation and audit, and renewed final
-approval. Final ARCHITECT approval captures the pre-CIRCUIT baseline and opens
-CIRCUIT directly.
+renewed proposal approval, and an updated implementation and audit before
+rerunning `finish-architect`. The checked transition captures the pre-CIRCUIT
+baseline and opens CIRCUIT directly.

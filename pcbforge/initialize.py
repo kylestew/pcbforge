@@ -686,8 +686,9 @@ saved workflow gates, compiler output, and the KiCad board.
 
 ## Ownership
 
-- The user owns acceptance of every numbered phase and the LAYOUT handoff, plus intent,
-  optional CubeMX review, layout, routing, and ordering.
+- The user owns the eight decision gates: SPEC, ARCHITECT proposal, CIRCUIT
+  proposal and final, LAYOUT handoff and done-declaration, VERIFY, and ORDER;
+  they also own intent, optional CubeMX review, layout, routing, and ordering.
 - The agent owns circuit code, exact MCU and pin selection, part selection,
   checks, written layout audits, and preparation of review packets. Tool or
   agent ownership of work never grants completion authority.
@@ -707,11 +708,11 @@ saved workflow gates, compiler output, and the KiCad board.
   are not approval.
 - You may record approval already expressed by the user; never originate,
   infer, self-approve, or reuse it.
-- Proposal approval precedes implementation. Final approval follows artifact
-  presentation and validation.
-- Every phase requires an explicit final user approval after technical
-  evidence passes. Initialization is the sole non-approval transition; the
-  LAYOUT handoff has its own explicit approval.
+- Proposal approval precedes implementation. Required final approvals follow
+  artifact presentation and validation.
+- Initialization, the ARCHITECT source baseline, and FAB-OUT are checked tool
+  transitions rather than user approvals. The LAYOUT handoff has its own
+  explicit approval.
 - Before requesting approval, run `pcbforge status review <phase>` and present
   its exact artifacts, check results, and fingerprint. After an unambiguous
   approval of that packet, record the same fingerprint with
@@ -818,14 +819,13 @@ audit:
 9. Do not choose non-MCU parts, footprints, LCSC numbers, passive values, or
    layout geometry. Build with the pinned compiler and preserve spatial data.
 10. Audit every functional `App` instance, typed top-level connection, and
-   external boundary against the diagram. Present the tracked Mermaid diagram
-   with the interface table, spec coverage, reuse status, risks, source diff,
-   and build result. Stop for separate explicit final user approval.
-11. Run `pcbforge status review architect`, present its exact packet, and stop.
-   After final approval of that fingerprint, run
-   `{tool_root}/scripts/pcbforge status approve architect --fingerprint <sha256> --note "<summary>; diagram: docs/architecture.md"`,
-   optionally retain design rationale in `spec.md`, then continue directly to
-   CIRCUIT. Final approval captures the pre-CIRCUIT source baseline.
+   external boundary against the approved diagram, including the one-to-one
+   IOC-to-`src/mcu.ato` audit. Run `pcbforge status --check --write` and resolve
+   every build or IOC failure without changing spatial board data.
+11. Run `{tool_root}/scripts/pcbforge finish-architect`. It verifies the
+   current proposal and checks, proves the board stayed spatially unchanged,
+   captures the pre-CIRCUIT source baseline, and opens CIRCUIT without another
+   user approval.
 
 ## CIRCUIT gate
 
@@ -892,16 +892,28 @@ After CIRCUIT completes, follow `{tool_root}/agent/layout-handoff.md`:
    inadequate for placement decisions, block the handoff and do not begin
    LAYOUT.
 
+## LAYOUT gate
+
+- Placement and routing remain distinct user tasks, both performed in KiCad 9.
+  The agent may spot and audit but never edits spatial board data.
+- After the user declares both tasks done, run `pcbforge status review layout`
+  and present the lightweight packet. Record `status approve layout` only
+  after explicit confirmation of that exact board fingerprint.
+- The single LAYOUT fingerprint binds placements, board geometry, tracks,
+  vias, and zones. Later spatial edits reopen LAYOUT; VERIFY carries the
+  detailed DRC, audit, and render scrutiny.
+
 ## FAB-OUT and order policy
 
-- After FAB-OUT is complete, refresh live JLC availability and lifecycle
+- After the checked FAB-OUT transition is complete, refresh live JLC
+  availability and lifecycle
   evidence for the exact BOM.
 - Present the result to the user and, only after explicit confirmation, record
   `{tool_root}/scripts/pcbforge policy confirm-sourcing --note "<review>"`.
 - ORDER cannot complete unless that confirmation fingerprints the current
   policy sourcing records, exact build-test BOM, and fabrication outputs.
-- FAB-OUT and ORDER each still require their own `status review` packet and
-  explicit `status approve` after their technical/manual evidence is current.
+- The future FAB-OUT generator records its deterministic transition after
+  validating the packet. ORDER retains the explicit user review and approval.
 """
 
 

@@ -14,7 +14,7 @@ LCSC parts, one-offs, 2/4 layer.
 
 | Actor | Owns |
 |---|---|
-| **User** | acceptance of every phase, spec intent, optional CubeMX review, **layout + routing**, ordering |
+| **User** | material decision gates, spec intent, optional CubeMX review, **layout + routing**, ordering |
 | **You (agent)** | spec interview, all capture code, exact MCU/pin selection, part selection, layout spotting/audits, review |
 | **Compiler/scripts** | netlist/BOM emission, assertions, checks, fab outputs |
 
@@ -53,7 +53,7 @@ User approval is explicit, artifact-specific, and one-time:
 - the agent may record approval already expressed by the user, but may never
   originate or self-approve it;
 - proposal approval happens before affected implementation work;
-- final approval happens after the resulting artifact and checks are
+- required final approval happens after the resulting artifact and checks are
   presented;
 - approval is bound to the approved artifact fingerprint; a material change
   invalidates it, and rerunning checks cannot revive it;
@@ -66,12 +66,10 @@ normative. SPEC owns policy declarations plus assurance status/rationale;
 final CIRCUIT adds assurance evidence and exceptions; sourcing is ORDER-owned.
 Thus CIRCUIT evidence and decision-log notes do not reopen SPEC/ARCHITECT.
 
-Every numbered phase requires final user approval, including SPEC, ARCHITECT,
-CIRCUIT, LAYOUT, ROUTE, VERIFY, FAB-OUT, and ORDER. Initialization and the
-layout handoff are visible, machine-checked transitions rather than separate
-approval phases. Tool
-success or agent ownership never grants completion. A phase with current
-technical evidence is `Awaiting approval`, not `Complete`.
+The eight required user decisions are SPEC, ARCHITECT proposal, CIRCUIT
+proposal and final, LAYOUT handoff and done-declaration, VERIFY, and ORDER.
+Initialization, the ARCHITECT source baseline, and FAB-OUT are checked tool
+transitions. Tool success or agent ownership never grants a human approval.
 
 When uncertain whether a choice is material, treat it as material and ask. Only
 local, reversible details with no effect outside the already-approved contract
@@ -82,19 +80,19 @@ may be selected autonomously, and those assumptions must be stated.
 ```
 1. SPEC        you — interview → approved spec.md + policy.yaml
    transition  pcbforge init validates + scaffolds; no separate approval
-2. ARCHITECT   USER approves graph + exact MCU/resource plan; then skeleton,
-               checked IOC, MCU module, audit, and separate final approval
+2. ARCHITECT   USER approves graph + exact MCU/resource proposal; then
+               skeleton, checked IOC, MCU module, and one-to-one audit
+   transition  pcbforge finish-architect captures the checked source baseline
 3. CIRCUIT     authored SVG + exact model + USER proposal approval before
                source; then exact parts, compiled parity, frozen build,
                deterministic acceptance, and one final approval
    transition  agent/layout-handoff.md; exact placement contract + generated
                docs/placement-brief.md beside the approved CIRCUIT overview
-4. LAYOUT      USER. You spot on request only.
-5. ROUTE       USER. Sanity checks on request.
-6. verify      DRC (scripts/kicad-cli) + audits + render review
-7. fab-out     JLC Gerbers/BOM/CPL → fab/
-8. order       USER
-9. publish     proven modules → library, with render (optional)
+4. LAYOUT      USER placement + routing; one done-declaration when both finish
+5. verify      DRC (scripts/kicad-cli) + audits + render review
+   transition  validated JLC Gerbers/BOM/CPL → fab/
+6. order       USER
+7. publish     proven modules → library, with render (optional)
 ```
 
 ## Session resume (run this on every cold start in a project)
@@ -152,9 +150,9 @@ normal per-gate review ceremony.
 explicitly accepts one, record it with
 `pcbforge policy approve-exception <id> --note "<decision>"`. A changed
 exception fingerprint becomes stale and reopens its profile-mapped phase.
-After FAB-OUT, refresh live sourcing evidence and record the user's final
-review with `pcbforge policy confirm-sourcing`; ORDER remains blocked without
-it.
+After the checked FAB-OUT transition, refresh live sourcing evidence and
+record the user's final review with `pcbforge policy confirm-sourcing`; ORDER
+remains blocked without it.
 
 ## Current build state (honest — board 1 carries scaffolding debt)
 
@@ -165,7 +163,7 @@ playbooks, `pcbforge check-ioc`, `pcbforge check-parts`,
 empty module catalog, `pcbforge prepare-layout` /
 `pcbforge check-layout-handoff`, the placement schema and handoff gate,
 authored circuit SVG/model,
-compiled-parity, deterministic acceptance, and universal phase approvals,
+compiled-parity, deterministic acceptance, and the v1 decision gates,
 `policy.yaml`, `pcbforge check-policy`, and explicit policy approval commands.
 
 Not built yet (do manually, per DESIGN.md, and say you're doing it manually):

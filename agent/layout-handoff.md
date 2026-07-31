@@ -6,6 +6,10 @@ known circuit topology into a complete, reviewable placement contract. It does
 not place footprints, create keepout geometry, route copper, or modify the
 KiCad PCB.
 
+The transition opens the single LAYOUT phase. Placement and routing remain
+different physical tasks, but they share one lightweight done-declaration;
+VERIFY performs the detailed scrutiny after both are finished.
+
 ## Outputs and ownership
 
 - `placement.yaml` is the authoritative, human-reviewable placement contract.
