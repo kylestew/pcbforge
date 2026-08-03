@@ -2,8 +2,10 @@
 
 AI-assisted PCB development for hobby boards. Schematic capture happens in
 **code** (atopile), written primarily by an AI agent under your review; **you
-own layout and routing**. The tool primes, spots, and audits but never touches
-copper. PCBForge targets KiCad 9, JLCPCB assembly, and STM32.
+own layout and routing**. The tool primes, spots, and audits; it touches copper
+only when you explicitly ask it to attempt a specific placement or routing
+task, and you still approve the result. PCBForge targets KiCad 9, JLCPCB
+assembly, and STM32.
 
 The normative phase sequence, ownership boundaries, and approval gates are in
 [WORKFLOW.md](WORKFLOW.md). [DESIGN.md](DESIGN.md) records rationale,
@@ -64,7 +66,8 @@ projects must run from a clean checkout.
    scaffold, and installs it atomically.
 5. Continue through [WORKFLOW.md](WORKFLOW.md). The detailed work instructions
    live in `agent/`; your hands-on time concentrates on placement and routing
-   in KiCad 9, and ordering remains human-owned.
+   in KiCad 9 — ask the agent for a placement or routing pass when you want one
+   — and ordering remains human-owned.
 
 To resume later, start an agent session in the project directory. The generated
 project instructions, `spec.md`, `policy.yaml`, and `STATUS.md` provide the

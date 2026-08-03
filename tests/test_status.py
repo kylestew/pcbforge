@@ -17,6 +17,7 @@ from pcbforge.status import (
     CheckRecord,
     PHASES,
     PhaseResult,
+    PhaseReview,
     ReviewRecord,
     StatusCheckError,
     StatusDocument,
@@ -28,6 +29,7 @@ from pcbforge.status import (
     _approval_payload,
     _content_fingerprint,
     _derive_transitions,
+    _latest_events,
     _layout_handoff_payload,
     _payload_fingerprint,
     _phase_review_artifact_paths,
@@ -40,6 +42,7 @@ from pcbforge.status import (
     record_initialization_blocker,
     render_cascade_review,
     render_dashboard,
+    render_phase_review,
     review_phase,
     run_status_checks,
     prepare_cascade_review,
@@ -1796,6 +1799,119 @@ class V1WorkflowTests(StatusFixture):
                 )
                 with self.assertRaisesRegex(StatusInputError, "unknown phase"):
                     read_status_document(project)
+
+
+class LayoutAssistTests(StatusFixture):
+    def test_ai_assist_requires_layout_and_a_current_handoff(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            with self.assertRaisesRegex(StatusInputError, "only layout records"):
+                mark_status(
+                    project,
+                    "circuit",
+                    "ai-assisted",
+                    "User asked for a placement pass",
+                )
+            with self.assertRaisesRegex(StatusInputError, "handoff is not currently"):
+                mark_status(
+                    project,
+                    "layout",
+                    "ai-assisted",
+                    "User asked for a placement pass",
+                )
+
+    def test_ai_assist_is_history_that_never_changes_phase_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            events = tuple(
+                StatusEvent(
+                    f"2026-08-03T10:0{index}:00+00:00",
+                    phase,
+                    "complete",
+                    f"{phase} complete",
+                    "a" * 64,
+                    "c" * 64,
+                )
+                for index, phase in enumerate(("spec", "architect", "circuit"))
+            ) + (
+                StatusEvent(
+                    "2026-08-03T11:00:00+00:00",
+                    "layout",
+                    "ai-assisted",
+                    "User asked for power-rail routing; 6 segments added",
+                ),
+            )
+            document = StatusDocument("", events, {})
+            with (
+                mock.patch(
+                    "pcbforge.status._static_evidence",
+                    return_value=(True, "fixture evidence", True),
+                ),
+                mock.patch(
+                    "pcbforge.status._approval_is_current",
+                    return_value=True,
+                ),
+                mock.patch(
+                    "pcbforge.status._current_architecture_baseline",
+                    return_value=mock.sentinel.current_baseline,
+                ),
+                mock.patch(
+                    "pcbforge.status._current_layout_handoff",
+                    return_value=mock.sentinel.current_handoff,
+                ),
+            ):
+                report = inspect_status(project, document=document)
+                recorded = mark_status(
+                    project,
+                    "layout",
+                    "ai-assisted",
+                    "User asked for a first placement pass",
+                    runner=FakeRunner(),
+                )
+
+        layout = report.phases[3]
+        self.assertFalse(layout.complete)
+        self.assertNotEqual(layout.state, "Blocked")
+        self.assertEqual(
+            [event.action for event in recorded.report.document.events],
+            ["ai-assisted"],
+        )
+        self.assertFalse(recorded.report.phases[3].complete)
+
+    def test_ai_assist_never_masks_an_approval_for_invalidation(self) -> None:
+        approval = StatusEvent(
+            "2026-08-03T10:00:00+00:00",
+            "layout",
+            "complete",
+            "Layout approved",
+            "a" * 64,
+            "c" * 64,
+        )
+        annotation = StatusEvent(
+            "2026-08-03T12:00:00+00:00",
+            "layout",
+            "ai-assisted",
+            "User asked for a routing touch-up",
+        )
+        latest, _ = _latest_events((approval, annotation))
+
+        self.assertEqual(latest["layout"][1], approval)
+
+    def test_layout_review_packet_lists_requested_ai_work(self) -> None:
+        review = PhaseReview(
+            Path("/tmp/project"),
+            next(phase for phase in PHASES if phase.key == "layout"),
+            True,
+            "technical evidence passed; explicit user approval is required",
+            "f" * 64,
+            ("garden-logger.kicad_pcb",),
+            (),
+            notes=("2026-08-03T11:00:00+00:00: routed the power rails on request",),
+        )
+        rendered = render_phase_review(review)
+
+        self.assertIn("user-requested AI spatial work in this phase:", rendered)
+        self.assertIn("routed the power rails on request", rendered)
 
 
 class ReviewErgonomicsTests(StatusFixture):

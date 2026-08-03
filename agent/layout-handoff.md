@@ -9,7 +9,11 @@ or modify the KiCad PCB.
 
 The transition opens the single LAYOUT phase. Placement and routing remain
 different physical tasks, but they share one lightweight done-declaration;
-VERIFY performs the detailed scrutiny after both are finished.
+VERIFY performs the detailed scrutiny after both are finished. Inside that open
+phase the user may explicitly ask the agent to attempt placement or routing;
+see the LAYOUT-assist rules in
+[`operating-manual.md`](operating-manual.md#layout-assist-only-when-the-user-asks).
+This transition itself never edits the board, whoever later does.
 
 ## Outputs and ownership
 
@@ -19,8 +23,10 @@ VERIFY performs the detailed scrutiny after both are finished.
 - `<project>.kicad_pro` receives only classes named `pcbforge:<name>` and exact
   net-to-class patterns. The Default class, user classes, assignments, and
   unknown project settings are preserved.
-- `<project>.kicad_pcb` remains byte-for-byte unchanged. The user owns every
-  position, side, track, via, zone, outline, graphic, and other spatial object.
+- `<project>.kicad_pcb` remains byte-for-byte unchanged across this transition.
+  The user owns every position, side, track, via, zone, outline, graphic, and
+  other spatial object; the agent edits them only after the handoff is
+  approved, and only for spatial work the user explicitly requested.
 
 ## `placement.yaml` schema 1
 
@@ -193,6 +199,7 @@ user review and approval; rerunning the checker cannot revive the old event.
 - Changes to `placement.yaml`, generated `docs/placement-brief.md`, or
   PCBForge-owned net classes stale the LAYOUT handoff.
 - Footprint positions/sides, tracks, vias, zones, outline, graphics, and other
-  user spatial edits do not stale CIRCUIT or the LAYOUT handoff.
+  spatial edits do not stale CIRCUIT or the LAYOUT handoff, whether the user or
+  a requested agent pass made them.
 - User-created KiCad net classes and unrelated project settings do not stale
   the LAYOUT handoff.

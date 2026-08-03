@@ -16,17 +16,21 @@ LCSC parts, one-offs, 2/4 layer.
 | Actor | Owns |
 |---|---|
 | **User** | material decision gates, spec intent, optional CubeMX review, **layout + routing**, ordering |
-| **You (agent)** | spec interview, all capture code, exact MCU/pin selection, part selection, layout spotting/audits, review |
+| **You (agent)** | spec interview, all capture code, exact MCU/pin selection, part selection, layout spotting/audits, requested layout/routing attempts, review |
 | **Compiler/scripts** | netlist/BOM emission, assertions, checks, fab outputs |
 
 Non-negotiable rules:
 
-1. **Never place, route, or "fix" copper.** Layout/routing is the user's
-   art. Your layout role is words + measurements: briefs, audits, render
-   review. Spotter, not painter.
+1. **Never place, route, or "fix" copper unasked.** Layout/routing is the
+   user's art. Unrequested, your layout role is words + measurements: briefs,
+   audits, render review. Spotter, not painter. When the user *explicitly asks*
+   you to attempt placement or routing, do it under the LAYOUT-assist rules
+   below — that ask covers the named task only and expires with it.
 2. **Ownership invariant:** circuit source owns identity, footprints,
-   fields, connectivity; `.kicad_pcb` owns everything spatial. Never modify
-   spatial data. Never let a build clobber user artwork.
+   fields, connectivity; `.kicad_pcb` owns everything spatial. Modify spatial
+   data only inside LAYOUT on explicit request; never in SPEC, ARCHITECT,
+   CIRCUIT, or the handoff, whose evidence requires an unchanged board. Never
+   let a build clobber artwork, whoever authored it.
 3. **KiCad 9 only.** Use the tool repo's `scripts/kicad-cli` (pinned 9.0.9)
    and `scripts/ato` (pinned atopile 0.15.7). Never a global `ato`, never
    PATH `kicad-cli` (KiCad 10 is installed but banned — it produces boards
@@ -112,8 +116,9 @@ after receiving an unambiguous approval of that packet, record it with
 `pcbforge status approve <phase> --last-reviewed --note "<reason>"`.
 The command persists approval but never constitutes it. Never use
 `status mark <phase> complete`, and never infer approval for any phase. Use
-`blocked` for an actionable blocker, `reopened` when earlier work changes, and
-`skipped` only for optional publish. ARCHITECT and CIRCUIT proposals use
+`blocked` for an actionable blocker, `reopened` when earlier work changes,
+`skipped` only for optional publish, and `ai-assisted` only to log spatial
+layout work the user explicitly requested. ARCHITECT and CIRCUIT proposals use
 `status review <phase> --stage proposal` and
 `status approve <phase> --stage proposal --last-reviewed` before affected
 source coding begins.
@@ -152,6 +157,42 @@ exception fingerprint becomes stale and reopens its profile-mapped phase.
 After the checked FAB-OUT transition, refresh live sourcing evidence and
 record the user's final review with `pcbforge policy confirm-sourcing`; ORDER
 remains blocked without it.
+
+## LAYOUT assist (only when the user asks)
+
+Default is spotter. A request like "place the decoupling caps", "route the
+power rails", or "try a first placement pass" authorizes spatial edits for that
+task. A general "continue", plan approval, or silence does not, and no request
+grants standing permission — after the task you are a spotter again.
+
+Preconditions: LAYOUT is open and its handoff approval is current; the user has
+KiCad closed for that board; the material-choice rule still applies, so present
+options and stop when the ask hides a material decision.
+
+Procedure:
+
+1. Copy `<project>.kicad_pcb` into `layout-backups/` (git-ignored) with a
+   UTC-stamped name, and say where it is.
+2. State the exact intended edits — which references move where, which nets get
+   routed, layer and width choices from `placement.yaml` net classes.
+3. Edit spatial objects only: positions, sides, rotations, tracks, vias, zones,
+   graphics. Never touch component identity, footprint assignment, fields,
+   pad-to-net binding, or net names; those stay circuit-source-owned and a
+   rebuild would overwrite them anyway.
+4. Report the concrete delta: references moved, tracks and vias added, DRC
+   state, and anything you could not resolve. Be honest about heuristics; you
+   have no autorouter.
+5. Record the work as append-only history:
+
+   ```text
+   pcbforge status mark layout ai-assisted \
+     --note "<what the user requested; what changed>"
+   ```
+
+   The event never advances, blocks, or approves a phase; it makes AI-produced
+   geometry visible in the LAYOUT review packet.
+6. The LAYOUT done-declaration remains the user's. Never treat your own
+   geometry as reviewed, and expect it to be discarded or reworked.
 
 ## Current build state (honest — board 1 carries scaffolding debt)
 

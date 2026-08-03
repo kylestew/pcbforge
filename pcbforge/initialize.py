@@ -692,7 +692,9 @@ saved workflow gates, compiler output, and the KiCad board.
 - The agent owns circuit code, exact MCU and pin selection, part selection,
   checks, written layout audits, and preparation of review packets. Tool or
   agent ownership of work never grants completion authority.
-- Never place, route, move, or “fix” copper. Never rewrite spatial board data.
+- Never place, route, move, or “fix” copper unasked. Rewrite spatial board data
+  only inside an open LAYOUT, only for work the user explicitly requested, and
+  never in SPEC, ARCHITECT, CIRCUIT, or the handoff.
 - Circuit source owns identity, footprints, fields, and connectivity.
 - `{spec.name}.kicad_pcb` owns all spatial work.
 
@@ -780,8 +782,9 @@ saved workflow gates, compiler output, and the KiCad board.
   `{tool_root}/scripts/pcbforge status approve <phase> --last-reviewed --note "<approval>"`.
   The command persists approval already expressed; it never constitutes it.
 - Use `blocked` with a concrete reason, `reopened` when an approved phase
-  changes, and `skipped` only for optional publish. Never infer user approval,
-  layout completion, routing completion, or ordering.
+  changes, `skipped` only for optional publish, and `ai-assisted` only to log
+  requested spatial layout work. Never infer user approval, layout completion,
+  routing completion, or ordering.
 - Record a declared exception with `pcbforge policy approve-exception <id>` and
   the final post-FAB review with `pcbforge policy confirm-sourcing`, always
   after the user explicitly approves or confirms it.
@@ -895,7 +898,16 @@ After CIRCUIT completes, follow `{tool_root}/agent/layout-handoff.md`:
 ## LAYOUT gate
 
 - Placement and routing remain distinct user tasks, both performed in KiCad 9.
-  The agent may spot and audit but never edits spatial board data.
+  The agent spots and audits by default and never edits spatial board data on
+  its own initiative.
+- When the user explicitly asks the agent to attempt placement or routing, that
+  request authorizes spatial edits for that task only and expires with it.
+  Before editing, copy `{spec.name}.kicad_pcb` into `layout-backups/`, state
+  the exact intended edits, and stop for the user on any material choice.
+  Afterwards report the delta and run
+  `{tool_root}/scripts/pcbforge status mark layout ai-assisted --note "<request; changes>"`.
+  That event is history, never approval. See
+  `{tool_root}/agent/operating-manual.md` for the full assist rules.
 - After the user declares both tasks done, run `pcbforge status review layout`
   and present the lightweight packet. Record `status approve layout` only
   after explicit confirmation of that exact board fingerprint.

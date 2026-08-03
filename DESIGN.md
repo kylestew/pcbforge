@@ -24,7 +24,10 @@ behind it.
 > **Layout is the art. Everything else is toil or verification.**
 
 - **Layout + routing:** user's time concentrates here. Complex, artistic, black
-  magic. AI guides and verifies — never places, never routes. Spotter, not painter.
+  magic. AI guides and verifies by default — spotter, not painter. It picks up
+  the brush only when the user explicitly asks for that specific piece of
+  placement or routing, and puts it down again after. The art stays the user's:
+  they judge, keep, or discard every AI-produced millimetre.
 - **Schematic capture:** toil. Expressed as code; AI writes it primarily, user
   influences via review at chosen depth (architecture always, resistor values
   rarely).
@@ -39,7 +42,7 @@ behind it.
 | Actor | Role |
 |---|---|
 | **User** | material decision gates, spec intent, optional CubeMX review, **layout + routing (the art)**, order |
-| **AI agent** | spec interview, writes/edits all capture code, exact MCU/pin selection, part selection, layout spotter, review |
+| **AI agent** | spec interview, writes/edits all capture code, exact MCU/pin selection, part selection, layout spotter, requested layout/routing attempts, review |
 | **Compiler/scripts** | netlist + BOM emission, assertions, electrical checks/DRC, briefs, fab-out — deterministic, free (stock queries excepted: live network) |
 
 ### Decision-authority invariant
@@ -88,6 +91,18 @@ exception approval reopens the profile-mapped completed phase.
 
 ## Decision record
 
+- **2026-08-03 — AI may attempt layout and routing when explicitly asked.**
+  The prohibition was doctrine, not enforcement, and it blocked a legitimate
+  user request. Now: default stays spotter-not-painter, and an explicit
+  per-request ask authorizes spatial edits for that task only, inside an open
+  LAYOUT with a current handoff. The grant never persists across tasks and is
+  never inferred. Guardrails are a pre-edit `layout-backups/` copy, a stated
+  edit plan, a reported delta, and a `layout ai-assisted` annotation event that
+  carries no state so the LAYOUT packet shows AI-produced geometry. Rejected:
+  standing permission (would erode the art boundary silently) and allowing
+  spatial edits before the handoff (would break CIRCUIT spatial-preservation
+  evidence). Not built: a dedicated `layout-assist` CLI gate — the annotation
+  plus existing fingerprints covers v1.
 - **2026-07-31 — ready reviews are saved for hash-free approval commands.**
   Phase, proposal, layout-handoff, and cascade review commands persist their
   latest ready fingerprint in the schema-1 STATUS `reviews` map. Approval and
@@ -216,9 +231,11 @@ replaces eeschema as producer of that payload; pcbnew never knows.**
 - Circuit source exclusively owns: component identity, footprint assignment,
   fields, electrical connectivity.
 - `.kicad_pcb` exclusively owns: placement, routing, vias, zones, board
-  geometry — all spatial work, all human.
+  geometry — all spatial work, all user-authorized. The AI writes here only
+  inside LAYOUT, only for work the user explicitly requested.
 - Sync modifies compiler-owned data only and must preserve user-owned
-  artwork. No exceptions, no silent repair.
+  artwork. No exceptions, no silent repair. This holds regardless of who
+  authored the artwork.
 
 Mechanics:
 
@@ -253,11 +270,11 @@ without redefining that sequence.
 
 This design requires the workflow to preserve the actor split, decision
 authority, append-only approval history, fail-closed staleness, scoped contract
-ownership, reproducible evidence, and human ownership of every spatial edit.
+ownership, reproducible evidence, and human authority over every spatial edit.
 
 ## Layout copilot — serving the art
 
-Tool's job in the art phase: prime, spot, audit. Never move copper.
+Tool's job in the art phase: prime, spot, audit. Move copper only when asked.
 
 **Pre-layout — prime the canvas:**
 - The agent records exact board-specific constraints in `placement.yaml`
@@ -282,7 +299,23 @@ Tool's job in the art phase: prime, spot, audit. Never move copper.
 - USB FS: keep pair short + together; no length-match theater.
 - Final AI render review vs brief.
 
-Hard rule: **spotter, not painter.** Output always words + measurements.
+Hard rule: **spotter by default, painter only on request.** Unasked, output is
+always words + measurements.
+
+**On request — bounded painting:**
+- Trigger is an explicit user ask for that placement or routing work. Silence,
+  a general "continue", or "implement the plan" is not a trigger.
+- Only inside an open LAYOUT with a current handoff. ARCHITECT and CIRCUIT keep
+  the hard board-unchanged rule; their evidence depends on it.
+- Board copied to `layout-backups/` (git-ignored) before the first edit, so the
+  user can discard the attempt wholesale.
+- Agent states intended edits first, edits only spatial objects, then reports
+  the concrete delta (refs moved, tracks/vias added, DRC state).
+- Recorded with `pcbforge status mark layout ai-assisted --note "..."` — an
+  append-only annotation that never changes phase state, so the LAYOUT review
+  packet shows which geometry the AI produced.
+- Authority unchanged: the LAYOUT done-declaration is still the user's, and AI
+  geometry gets the same review as their own.
 
 ## Modules
 
@@ -548,7 +581,8 @@ code-capture toolchain (compiler wrapper, ioc2code, refdes lock), module
 library + publish + renders, assertion/check suite, layout copilot (brief +
 audits + render review), sourcing verify, fab output gen.
 
-**IS NOT (v1):** placement/routing by tool or AI, simulation,
+**IS NOT (v1):** automatic or unrequested placement/routing, autorouting,
+AI-owned layout approval, simulation,
 ordering/payments, making explanatory review evidence authoritative, or
 adopting an existing project as if it had pre-source approval.
 

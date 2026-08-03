@@ -335,7 +335,7 @@ def _status_mark_parser() -> argparse.ArgumentParser:
     parser.add_argument("phase", help="workflow phase key, such as layout or order")
     parser.add_argument(
         "action",
-        help="blocked, reopened, or skipped",
+        help="blocked, reopened, skipped, or ai-assisted",
     )
     parser.add_argument(
         "project_dir",

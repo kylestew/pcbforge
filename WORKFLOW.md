@@ -31,7 +31,7 @@ transitions rather than numbered phases.
 | — | ARCHITECT → CIRCUIT: architecture baseline | AI + tool | Proposal current; build and IOC pass; spatial board unchanged; source baseline captured |
 | 3 | CIRCUIT | AI + tool | Approved authored circuit model; exact parts and source; parity, policy, parts, build, and acceptance checks |
 | — | CIRCUIT → LAYOUT: layout handoff | AI + tool + user | Current placement contract, generated brief, checks, and explicit handoff approval |
-| 4 | LAYOUT | User | Placement and routing declared complete in one spatially bound approval |
+| 4 | LAYOUT | User (AI on request) | Placement and routing declared complete in one spatially bound approval |
 | 5 | VERIFY | Tool + AI | DRC, audits, and render review approved |
 | — | VERIFY → ORDER: FAB-OUT | Tool | Validated Gerber, drill, BOM, CPL, and archive packet fingerprint |
 | 6 | ORDER | User | Current sourcing confirmed and order approved |
@@ -212,9 +212,31 @@ ordinary spatial placement does not.
 
 ## 4–7. Physical and release phases
 
-Placement and routing remain distinct user-owned activities inside LAYOUT.
-The agent may prime constraints, spot issues, and audit on request, but never
-moves footprints or copper. One final LAYOUT approval binds both activities.
+Placement and routing remain distinct user-owned activities inside LAYOUT. By
+default the agent primes constraints, spots issues, and audits; it never moves
+footprints or copper on its own initiative, and no general instruction to
+proceed authorizes spatial work.
+
+The user may explicitly ask the agent to attempt placement or routing ("place
+the decoupling group", "route the power rails", "try a first pass"). That
+request authorizes spatial edits for that task only, inside an open LAYOUT
+whose handoff approval is current. It expires with the task; the agent returns
+to spotting afterwards and never assumes a standing grant.
+
+Before touching the board the agent copies it into `layout-backups/`, states
+the exact intended edits, and stops for the user on any material choice. It
+edits only spatial objects; circuit-owned identity, footprints, fields, and
+connectivity stay compiler-owned. Afterwards it reports the concrete delta and
+records the work:
+
+```text
+pcbforge status mark layout ai-assisted \
+  --note "<what the user requested; what changed>"
+```
+
+That event is append-only history, not approval, and never advances or blocks
+a phase. One final LAYOUT approval still binds both activities and remains the
+user's decision, whoever moved the copper.
 
 VERIFY runs DRC plus visual and process audits. The future FAB-OUT generator
 creates, validates, fingerprints, and records the manufacturing-packet

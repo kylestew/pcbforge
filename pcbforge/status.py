@@ -75,7 +75,9 @@ EVENT_ACTIONS = {
     "reopened",
     "skipped",
     "proposal-approved",
+    "ai-assisted",
 }
+ANNOTATION_ACTIONS = {"ai-assisted"}
 TRANSITION_ACTIONS = {
     "complete",
     "approved",
@@ -359,6 +361,7 @@ class PhaseReview:
     artifacts: tuple[str, ...]
     checks: tuple[PhaseReviewCheck, ...]
     stage: str = "final"
+    notes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1726,6 +1729,8 @@ def _latest_events(
     latest: dict[str, tuple[int, StatusEvent]] = {}
     latest_reopen: dict[str, int] = {}
     for index, event in enumerate(events):
+        if event.action in ANNOTATION_ACTIONS:
+            continue
         latest[event.phase] = (index, event)
         if event.action == "reopened":
             latest_reopen[event.phase] = index
@@ -3323,6 +3328,11 @@ def _prepare_phase_review(
         path.relative_to(project_dir).as_posix()
         for path in _phase_review_artifact_paths(project_dir, spec, phase)
     )
+    notes = tuple(
+        f"{event.at}: {event.note}"
+        for event in checked.events
+        if event.phase == phase and event.action == "ai-assisted"
+    )
     fingerprint = _approval_fingerprint(
         project_dir,
         phase,
@@ -3344,6 +3354,7 @@ def _prepare_phase_review(
             fingerprint,
             artifacts,
             tuple(check_reviews),
+            notes=notes,
         ),
         checked,
     )
@@ -4335,6 +4346,9 @@ def render_phase_review(review: PhaseReview) -> str:
         )
     else:
         lines.append("  - (no automated checks required)")
+    if review.notes:
+        lines.append("user-requested AI spatial work in this phase:")
+        lines.extend(f"  - {note}" for note in review.notes)
     lines.append(f"approval fingerprint: {review.fingerprint}")
     if review.ready:
         stage = (
@@ -5229,6 +5243,17 @@ def _validate_transition(
         )
     if action == "skipped" and phase_key != "publish":
         raise StatusInputError("only the optional publish phase may be skipped")
+    if action == "ai-assisted":
+        if phase_key != "layout":
+            raise StatusInputError(
+                "only layout records user-requested AI spatial assistance"
+            )
+        if _current_layout_handoff(report.project_dir, report.document) is None:
+            raise StatusInputError(
+                "cannot record layout ai-assisted work: the CIRCUIT → LAYOUT "
+                "handoff is not currently approved"
+            )
+        return
     if action == "proposal-approved":
         raise StatusInputError(
             "proposal approval requires `pcbforge status approve "
