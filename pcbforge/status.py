@@ -2870,6 +2870,48 @@ def _run_command(
     return True, _summary(output, "passed")
 
 
+def _drc_report_status(report: Path) -> tuple[bool, str]:
+    try:
+        payload = json.loads(report.read_text(encoding="utf-8"))
+    except OSError as exc:
+        return False, f"could not read DRC report: {exc}"
+    except json.JSONDecodeError as exc:
+        return False, f"invalid DRC report JSON: {exc.msg}"
+
+    if not isinstance(payload, dict):
+        return False, "invalid DRC report JSON: expected an object"
+
+    categories = ("violations", "unconnected_items", "schematic_parity")
+    active: dict[str, int] = {}
+    exclusions = 0
+
+    for category in categories:
+        findings = payload.get(category)
+        if not isinstance(findings, list):
+            return False, f"invalid DRC report JSON: {category} must be a list"
+
+        active[category] = 0
+        for finding in findings:
+            if not isinstance(finding, dict):
+                return False, (
+                    f"invalid DRC report JSON: {category} entries must be objects"
+                )
+            if finding.get("excluded") is True:
+                exclusions += 1
+            else:
+                active[category] += 1
+
+    active_total = sum(active.values())
+    summary = (
+        f"{active_total} active DRC findings "
+        f"({active['violations']} violations, "
+        f"{active['unconnected_items']} unconnected, "
+        f"{active['schematic_parity']} parity), "
+        f"{exclusions} exclusions"
+    )
+    return active_total == 0, summary
+
+
 def _layout_is_complete(project_dir: Path, document: StatusDocument) -> bool:
     latest, _ = _latest_events(document.events)
     event = latest.get("layout")
@@ -3210,12 +3252,13 @@ def run_status_checks(
                             "--output",
                             str(report),
                             "--severity-all",
-                            "--exit-code-violations",
                             str(board),
                         ],
                         cwd=project_dir,
                         runner=runner,
                     )
+                    if ok:
+                        ok, summary = _drc_report_status(report)
             else:
                 ok, summary = False, f"missing {board.name}"
             checks[name] = CheckRecord(

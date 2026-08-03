@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import subprocess
 import tempfile
 import unittest
@@ -73,9 +74,16 @@ board_mm: [50, 40]
 
 
 class FakeRunner:
-    def __init__(self, *, build_ok: bool = True, drc_ok: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        build_ok: bool = True,
+        drc_ok: bool = True,
+        drc_report: dict[str, object] | None = None,
+    ) -> None:
         self.build_ok = build_ok
         self.drc_ok = drc_ok
+        self.drc_report = drc_report
         self.calls: list[list[str]] = []
 
     def __call__(self, command, *, cwd, **kwargs):
@@ -89,11 +97,20 @@ class FakeRunner:
                 "" if self.build_ok else "build failed\n",
             )
         if "drc" in command:
+            report = Path(command[command.index("--output") + 1])
+            payload = self.drc_report
+            if payload is None:
+                payload = {
+                    "violations": [] if self.drc_ok else [{}],
+                    "unconnected_items": [],
+                    "schematic_parity": [],
+                }
+            report.write_text(json.dumps(payload), encoding="utf-8")
             return subprocess.CompletedProcess(
                 command,
-                0 if self.drc_ok else 5,
-                "DRC passed\n" if self.drc_ok else "",
-                "" if self.drc_ok else "violations found\n",
+                0,
+                "DRC report saved\n",
+                "",
             )
         raise AssertionError(f"unexpected command: {command}")
 
@@ -2501,6 +2518,86 @@ component R_10K_0603:
         self.assertIn("drc", checked.checks)
         self.assertEqual(checked.checks["drc"].outcome, "pass")
         self.assertEqual(len(runner.calls), 2)
+
+    def test_drc_check_allows_only_excluded_findings(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            document = StatusDocument(
+                updated_at="",
+                events=(
+                    StatusEvent(
+                        "2026-07-26T10:00:00+00:00",
+                        "layout",
+                        "complete",
+                        "Placement and routing done",
+                    ),
+                ),
+                checks={},
+            )
+            runner = FakeRunner(
+                drc_report={
+                    "violations": [
+                        {"severity": "warning", "excluded": True},
+                        {"severity": "warning", "excluded": True},
+                        {"severity": "warning", "excluded": True},
+                    ],
+                    "unconnected_items": [],
+                    "schematic_parity": [],
+                }
+            )
+            with mock.patch(
+                "pcbforge.status._approval_is_current",
+                return_value=True,
+            ):
+                checked = run_status_checks(
+                    project,
+                    document,
+                    tool_root=TOOL_ROOT,
+                    runner=runner,
+                )
+
+        self.assertEqual(checked.checks["drc"].outcome, "pass")
+        self.assertEqual(
+            checked.checks["drc"].summary,
+            "0 active DRC findings (0 violations, 0 unconnected, 0 parity), "
+            "3 exclusions",
+        )
+        drc_command = next(call for call in runner.calls if "drc" in call)
+        self.assertNotIn("--exit-code-violations", drc_command)
+
+    def test_drc_check_rejects_active_findings(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            document = StatusDocument(
+                updated_at="",
+                events=(
+                    StatusEvent(
+                        "2026-07-26T10:00:00+00:00",
+                        "layout",
+                        "complete",
+                        "Placement and routing done",
+                    ),
+                ),
+                checks={},
+            )
+            runner = FakeRunner(drc_ok=False)
+            with mock.patch(
+                "pcbforge.status._approval_is_current",
+                return_value=True,
+            ):
+                checked = run_status_checks(
+                    project,
+                    document,
+                    tool_root=TOOL_ROOT,
+                    runner=runner,
+                )
+
+        self.assertEqual(checked.checks["drc"].outcome, "fail")
+        self.assertEqual(
+            checked.checks["drc"].summary,
+            "1 active DRC findings (1 violations, 0 unconnected, 0 parity), "
+            "0 exclusions",
+        )
 
 
 class StatusCliTests(StatusFixture):
