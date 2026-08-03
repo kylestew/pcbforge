@@ -103,6 +103,11 @@ contract without being reopened by later decisions-log notes. The human review
 packet still lists the full files even where the approval hash uses a scoped
 digest.
 
+`.pcbforge` contributes everything except its `pcbforge` block. Upgrading the
+pinned tool revision therefore leaves approvals intact, while a changed
+toolchain, rules profile, policy profile, or guidance schema still reopens the
+gates that depend on it.
+
 ## 1. SPEC
 
 Follow `agent/spec-interview.md`. Resolve purpose, power, rails, MCU family,

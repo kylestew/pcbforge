@@ -16,7 +16,11 @@ from typing import Any, Callable, Mapping, Sequence
 
 import yaml
 
-from pcbforge.artifact_hash import ArtifactHashError, semantic_bom_sha256
+from pcbforge.artifact_hash import (
+    ArtifactHashError,
+    evidence_bytes,
+    semantic_bom_sha256,
+)
 from pcbforge.initialize import InitInputError, read_spec
 
 BUILD_TEST_SCHEMA = 1
@@ -348,7 +352,7 @@ def fingerprint_inputs(project_dir: Path) -> str:
         digest.update(path.relative_to(project_dir).as_posix().encode())
         digest.update(b"\0")
         try:
-            contents = path.read_bytes()
+            contents = evidence_bytes(path)
         except OSError as exc:
             raise BuildTestError(f"cannot fingerprint {path}: {exc}") from exc
         digest.update(hashlib.sha256(contents).digest())

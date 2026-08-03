@@ -15,6 +15,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 import yaml
 
+from pcbforge.artifact_hash import evidence_bytes
 from pcbforge.build_test import (
     BUILD_TEST_FILENAME,
     BUILD_TEST_REPORT,
@@ -871,7 +872,7 @@ def _fingerprint(project_dir: Path, paths: Sequence[Path]) -> str:
     for path in sorted(set(paths)):
         try:
             relative = path.relative_to(project_dir)
-            contents = path.read_bytes()
+            contents = evidence_bytes(path)
         except (OSError, ValueError) as exc:
             raise StatusError(f"cannot fingerprint {path}: {exc}") from exc
         digest.update(str(relative).encode())
@@ -1473,7 +1474,7 @@ def _file_semantics(project_dir: Path, paths: Sequence[Path]) -> list[dict[str, 
         semantics.append(
             {
                 "path": path.relative_to(project_dir).as_posix(),
-                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                "sha256": hashlib.sha256(evidence_bytes(path)).hexdigest(),
             }
         )
     return semantics

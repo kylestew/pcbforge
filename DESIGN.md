@@ -91,6 +91,16 @@ exception approval reopens the profile-mapped completed phase.
 
 ## Decision record
 
+- **2026-08-03 — the pinned tool revision no longer binds human approvals.**
+  `.pcbforge` is an input to the circuit-review, build-test, and policy
+  evidence sets, so hashing its raw bytes meant that bumping
+  `pcbforge.revision` — which only selects the checkout allowed to execute —
+  reopened SPEC, ARCHITECT, and CIRCUIT. Observed on the first board: two tool
+  upgrades cost two full cascade renewals. Tracked evidence now binds
+  `semantic_pin_bytes`: the `pcbforge` block (revision, dirty) is dropped and
+  every other pin — schema, toolchain, rules, policy, guidance — still
+  invalidates, because those genuinely change what was built. A malformed pin
+  falls back to raw bytes so corruption still fails closed.
 - **2026-08-03 — FAB-OUT generates a JLC-shaped packet and records itself.**
   `pcbforge fab-out` plots the pinned stackup, exports placements and DRC
   evidence, derives `jlc-bom.csv` from the approved compiler BOM and

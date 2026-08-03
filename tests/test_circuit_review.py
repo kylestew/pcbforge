@@ -10,12 +10,14 @@ from unittest import mock
 import yaml
 
 from pcbforge.cli import main
+from pcbforge.artifact_hash import semantic_pin_bytes
 from pcbforge.circuit_review import (
     CircuitReviewError,
     CircuitReviewInputError,
     capture_implementation_baseline,
     check_circuit_review,
     circuit_model_fingerprint,
+    circuit_review_status_fingerprint,
     read_circuit_model,
 )
 from pcbforge.status import (
@@ -473,6 +475,48 @@ groups:
 
         self.assertEqual(checked.checks["circuit-proposal"].outcome, "pass")
         self.assertEqual(checked.checks["circuit-final"].outcome, "pass")
+
+    def test_pinned_tool_revision_does_not_invalidate_gate_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary)).resolve()
+            pin = project / ".pcbforge"
+            original = pin.read_text(encoding="utf-8")
+            before = circuit_review_status_fingerprint(project, "proposal")
+
+            pin.write_text(
+                original.replace("revision: old", "revision: new"),
+                encoding="utf-8",
+            )
+            after_revision = circuit_review_status_fingerprint(project, "proposal")
+
+            pin.write_text(
+                original.replace("  dirty: false", "  dirty: true"),
+                encoding="utf-8",
+            )
+            after_dirty = circuit_review_status_fingerprint(project, "proposal")
+
+            pin.write_text(
+                original.replace("  circuit_schema: 1", "  circuit_schema: 2"),
+                encoding="utf-8",
+            )
+            after_guidance = circuit_review_status_fingerprint(project, "proposal")
+
+        self.assertEqual(before, after_revision)
+        self.assertEqual(before, after_dirty)
+        self.assertNotEqual(before, after_guidance)
+
+    def test_malformed_pin_still_binds_its_raw_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            pin = project / ".pcbforge"
+            pin.write_text("schema: [1\n", encoding="utf-8")
+            first = semantic_pin_bytes(pin)
+            pin.write_text("schema: [2\n", encoding="utf-8")
+            second = semantic_pin_bytes(pin)
+
+        self.assertEqual(first, b"schema: [1\n")
+        self.assertNotEqual(first, second)
+
 
 if __name__ == "__main__":
     unittest.main()

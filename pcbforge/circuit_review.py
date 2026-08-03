@@ -14,7 +14,11 @@ from typing import Any, Mapping, Sequence
 
 import yaml
 
-from pcbforge.artifact_hash import ArtifactHashError, semantic_bom_bytes
+from pcbforge.artifact_hash import (
+    ArtifactHashError,
+    evidence_bytes,
+    semantic_bom_bytes,
+)
 from pcbforge.build_test import (
     BuildTestError,
     ato_source_semantic_bytes,
@@ -970,7 +974,7 @@ def circuit_review_status_fingerprint(project_dir: Path, stage: str) -> str:
         elif path.suffix == ".ato":
             digest.update(hashlib.sha256(ato_source_semantic_bytes(path)).digest())
         else:
-            digest.update(hashlib.sha256(path.read_bytes()).digest())
+            digest.update(hashlib.sha256(evidence_bytes(path)).digest())
     return digest.hexdigest()
 
 
