@@ -91,6 +91,23 @@ exception approval reopens the profile-mapped completed phase.
 
 ## Decision record
 
+- **2026-08-03 — FAB-OUT generates a JLC-shaped packet and records itself.**
+  `pcbforge fab-out` plots the pinned stackup, exports placements and DRC
+  evidence, derives `jlc-bom.csv` from the approved compiler BOM and
+  `jlc-cpl.csv` from the exported placements, writes a manifest, packs a
+  deterministic archive including the final board, and calls the existing
+  transition recorder. `check-fab-out` re-proves a packet read-only and runs
+  as the ORDER-stage `fab` check. Decisions: DRC is not re-gated (VERIFY
+  already binds a passing check) but is re-exported and must still be clean,
+  since disagreement means the board moved under an approval; JLC column
+  shapes are generated rather than hand-mapped at upload; `fab/` keeps loose
+  files beside the zip and stays git-ignored. **KiCad 9.0.9 ignores
+  `SOURCE_DATE_EPOCH`** and stamps wall-clock time into every plot, drill
+  header, and job file, so packets cannot be byte-reproducible; the manifest
+  therefore carries both raw and timestamp-normalized hashes, and each
+  regeneration legitimately records a new transition. No `.pcbforge` guidance
+  key was added — `EXPECTED_GUIDANCE` demands exact presence, so a new key
+  would force every existing project to restart.
 - **2026-08-03 — AI may attempt layout and routing when explicitly asked.**
   The prohibition was doctrine, not enforcement, and it blocked a legitimate
   user request. Now: default stays spotter-not-painter, and an explicit
@@ -487,8 +504,8 @@ and staleness boundary.
   Compiler BOM JSON uses a canonical semantic hash that excludes only its
   volatile top-level `build_id`; malformed JSON fails and every other field
   remains bound to approval.
-- `fab-out` archives the set: final `.kicad_pcb`, BOM, CPL, Gerbers, DRC
-  report.
+- `fab-out` archives the set: final `.kicad_pcb`, BOM, CPL, Gerbers, drills,
+  DRC report, and the manifest that hashes them.
 
 ## Architecture — Tool vs Projects
 
@@ -557,13 +574,14 @@ shell + file read/write drives them. No plugin binding. Vendor-neutral.
 
 The implemented v1 commands are `status`, `init`, `finish-architect`,
 `check-ioc`, `check-parts`, `check-policy`, `policy`,
-`check-circuit-review`, `check-build-test`, `prepare-layout`, and
-`check-layout-handoff`. Spec is not a verb — chat. **`init` is create-only**
+`check-circuit-review`, `check-build-test`, `prepare-layout`,
+`check-layout-handoff`, `fab-out`, and `check-fab-out`. Spec is not a verb —
+chat. **`init` is create-only**
 and refuses to touch an initialized project. PCBForge v1 does not change
 layers or upgrade an initialized project; restart it from the revised SPEC.
 
-`ioc2code`, VERIFY audits, live `verify-stock`, the FAB-OUT generator, and
-`publish` automation remain roadmap debt. Until implemented, agents follow the
+`ioc2code`, VERIFY audits beyond DRC, live `verify-stock`, and `publish`
+automation remain roadmap debt. Until implemented, agents follow the
 manual procedures and state that they are doing so.
 
 ## Docs & bootstrap (kept from B, verbs updated)
@@ -635,8 +653,8 @@ Gates while building board 1:
   no-op rebuild fingerprint check, controlled add / rename / footprint-swap /
   remove, induced build failure — placement and routing must survive all.
 - Board 1 carries scaffolding debt by design: `init`, `check-ioc`,
-  `prepare-layout`, and `check-layout-handoff` are implemented; FAB-OUT may be
-  manual or rough; the MCU module is
+  `prepare-layout`, `check-layout-handoff`, and `fab-out` are implemented;
+  the MCU module is
   AI-transcribed from the checked `.ioc` with the one-to-one audit in
   `agent/mcu.md` while ioc2code matures.
 
@@ -645,7 +663,7 @@ Gates while building board 1:
 1. Exercise pilot stage 2 on the first fresh board; its gates decide compiler
    continuation.
 2. Implement `ioc2code` after the checked manual one-to-one process is proven.
-3. Implement VERIFY audits, FAB-OUT generation, and live sourcing refresh.
+3. Implement VERIFY audits beyond DRC and live sourcing refresh.
 4. Grow the module library from proven boards and add `publish` automation.
 
 ## Open questions

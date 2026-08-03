@@ -17,6 +17,13 @@ from pcbforge.circuit_review import (
     CircuitReviewInputError,
     check_circuit_review,
 )
+from pcbforge.fab import (
+    FabError,
+    FabInputError,
+    check_fab,
+    generate_fab,
+    render_fab_result,
+)
 from pcbforge.initialize import InitError, InitInputError, initialize_project
 from pcbforge.ioc import (
     IocProjectError,
@@ -209,6 +216,34 @@ def _parser() -> argparse.ArgumentParser:
         help="validate the CIRCUIT-to-LAYOUT handoff without writing",
     )
     check_handoff_parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+        help="initialized pcbforge project (default: current directory)",
+    )
+
+    fab_out_parser = subcommands.add_parser(
+        "fab-out",
+        help="generate and validate the VERIFY-to-ORDER fabrication packet",
+        description=(
+            "Plot Gerbers, drills, placement, and DRC evidence from the "
+            "approved board, derive the JLC BOM and CPL, archive the packet, "
+            "and record the checked FAB-OUT transition. Never changes the PCB."
+        ),
+    )
+    fab_out_parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+        help="initialized pcbforge project (default: current directory)",
+    )
+    check_fab_parser = subcommands.add_parser(
+        "check-fab-out",
+        help="validate the recorded fabrication packet without writing",
+    )
+    check_fab_parser.add_argument(
         "project_dir",
         nargs="?",
         default=".",
@@ -807,6 +842,30 @@ def main(argv: list[str] | None = None) -> int:
                 f"pcbforge: {brief_state} {result.brief_path.as_posix()}; "
                 f"{project_state} {result.project_path.as_posix()}; PCB unchanged"
             )
+        return 0
+
+    if args.command in {"fab-out", "check-fab-out"}:
+        try:
+            result = (
+                generate_fab(Path(args.project_dir))
+                if args.command == "fab-out"
+                else check_fab(Path(args.project_dir))
+            )
+        except FabInputError as exc:
+            print(f"pcbforge {args.command}: {exc}", file=sys.stderr)
+            return 2
+        except FabError as exc:
+            print(f"pcbforge {args.command}: {exc}", file=sys.stderr)
+            return 1
+
+        print(render_fab_result(result))
+        if args.command == "fab-out":
+            print(
+                "pcbforge: recorded the VERIFY → ORDER FAB-OUT transition"
+                if result.recorded
+                else "pcbforge: packet regenerated; FAB-OUT transition already current"
+            )
+            print("pcbforge: PCB unchanged; ordering remains a human decision")
         return 0
 
     raise AssertionError(f"unhandled command: {args.command}")

@@ -917,6 +917,16 @@ After CIRCUIT completes, follow `{tool_root}/agent/layout-handoff.md`:
 
 ## FAB-OUT and order policy
 
+- After VERIFY is approved, run
+  `{tool_root}/scripts/pcbforge fab-out`. It plots Gerbers and drills for the
+  pinned stackup, exports placements and DRC evidence, derives the JLC BOM and
+  CPL, writes `fab/manifest.json` and `fab/{spec.name}-fab.zip`, and records
+  the checked transition. It never edits the PCB and never orders.
+- A refusal is a real defect: missing layer, absent drill file, an assembly
+  part with no placement, a BOM that disagrees with `build-test.yaml`, or a
+  board that no longer passes DRC. Fix the cause; never hand-edit `fab/`.
+- Use `{tool_root}/scripts/pcbforge check-fab-out` to re-prove an existing
+  packet. It also runs as the ORDER-stage `fab` check.
 - After the checked FAB-OUT transition is complete, refresh live JLC
   availability and lifecycle
   evidence for the exact BOM.
@@ -924,8 +934,8 @@ After CIRCUIT completes, follow `{tool_root}/agent/layout-handoff.md`:
   `{tool_root}/scripts/pcbforge policy confirm-sourcing --note "<review>"`.
 - ORDER cannot complete unless that confirmation fingerprints the current
   policy sourcing records, exact build-test BOM, and fabrication outputs.
-- The future FAB-OUT generator records its deterministic transition after
-  validating the packet. ORDER retains the explicit user review and approval.
+- The generator records its own transition after validating the packet. ORDER
+  retains the explicit user review and approval.
 """
 
 

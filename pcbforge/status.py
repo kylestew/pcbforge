@@ -118,11 +118,13 @@ CHECK_PHASES = {
         "build-test",
     ),
     "verify": ("build", "policy", "ioc", "drc"),
+    "order": ("fab",),
 }
 PHASE_EVIDENCE_CHECKS = {
     "architect": ("build", "ioc"),
     "circuit": ("build", "parts", "policy", "circuit-final", "build-test"),
     "verify": ("policy", "drc"),
+    "order": ("fab",),
 }
 
 CommandRunner = Callable[..., subprocess.CompletedProcess[str]]
@@ -213,6 +215,7 @@ APPROVAL_CHECKS = {
         "build-test",
     ),
     "verify": ("build", "policy", "ioc", "drc"),
+    "order": ("fab",),
 }
 
 
@@ -1213,6 +1216,15 @@ def _check_inputs(project_dir: Path, spec: ProjectSpec, name: str) -> tuple[Path
                 f"{spec.name}.kicad_pcb",
                 f"{spec.name}.kicad_pro",
                 f"{spec.name}.kicad_dru",
+            ),
+        )
+    if name == "fab":
+        return _files(
+            project_dir,
+            (
+                f"{spec.name}.kicad_pcb",
+                "build/builds/*/*.bom.json",
+                "fab/*",
             ),
         )
     raise AssertionError(f"unknown check: {name}")
@@ -2626,7 +2638,7 @@ def _transition_action(result: TransitionResult) -> NextAction:
             if result.state in {"Blocked", "Stale"}
             else "Generate and validate Gerbers, drills, BOM, CPL, and archive."
         ),
-        "",
+        "pcbforge fab-out",
         True,
     )
 
@@ -3261,6 +3273,32 @@ def run_status_checks(
                         ok, summary = _drc_report_status(report)
             else:
                 ok, summary = False, f"missing {board.name}"
+            checks[name] = CheckRecord(
+                checked_at,
+                _fingerprint(project_dir, _check_inputs(project_dir, spec, name)),
+                "pass" if ok else "fail",
+                summary,
+            )
+
+    if _fab_artifact_paths(project_dir):
+        name = "fab"
+        reusable = _reusable_check_record(
+            project_dir,
+            spec,
+            document,
+            name,
+            tool_root=tool_root,
+            force_checks=force_checks,
+        )
+        if reusable is None:
+            from pcbforge.fab import FabError, check_fab
+
+            try:
+                result = check_fab(project_dir, tool_root=tool_root)
+            except FabError as exc:
+                ok, summary = False, str(exc).splitlines()[0]
+            else:
+                ok, summary = True, result.summary
             checks[name] = CheckRecord(
                 checked_at,
                 _fingerprint(project_dir, _check_inputs(project_dir, spec, name)),

@@ -7,9 +7,7 @@ import fnmatch
 import hashlib
 import json
 import math
-import os
 import re
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -22,8 +20,9 @@ from pcbforge.build_test import (
     BoardEvidence,
     fingerprint_inputs,
     read_board_evidence,
-    saved_report_status,
+    require_current_acceptance,
 )
+from pcbforge.fsutil import AtomicWriteError, commit_outputs
 from pcbforge.initialize import InitInputError, read_spec
 
 PLACEMENT_SCHEMA = 1
@@ -262,11 +261,12 @@ def _duplicates(values: Sequence[str]) -> list[str]:
     return sorted(item for item in set(values) if values.count(item) > 1)
 
 
-def _read_rules(
+def read_rules_profile(
     tool_root: Path,
     layers: int,
     pins: Mapping[str, Any],
 ) -> Mapping[str, float]:
+    """Load the pinned JLC rules profile for this layer count."""
     path = tool_root / "rules" / f"jlc-{layers}layer.json"
     try:
         contents = path.read_bytes()
@@ -788,7 +788,7 @@ def read_placement_contract(
             board = read_board_evidence(project_dir / f"{spec.name}.kicad_pcb")
         except (BuildTestInputError, BuildTestError) as exc:
             raise PlacementInputError(str(exc)) from exc
-    rules = _read_rules(tool_root, spec.layers, pins)
+    rules = read_rules_profile(tool_root, spec.layers, pins)
     _validate_against_board(contract, board, rules, errors)
     if errors:
         raise PlacementInputError(
@@ -1263,66 +1263,11 @@ def _json_text(data: Mapping[str, Any]) -> str:
     return json.dumps(data, indent=2, sort_keys=True) + "\n"
 
 
-def _stage_file(path: Path, contents: bytes) -> Path:
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{path.name}.",
-        suffix=".tmp",
-        dir=path.parent,
-    )
-    try:
-        with os.fdopen(descriptor, "wb") as output:
-            output.write(contents)
-    except BaseException:
-        Path(temporary_name).unlink(missing_ok=True)
-        raise
-    return Path(temporary_name)
-
-
-def _atomic_restore(path: Path, original: bytes | None) -> None:
-    if original is None:
-        path.unlink(missing_ok=True)
-        return
-    temporary = _stage_file(path, original)
-    os.replace(temporary, path)
-
-
 def _commit_outputs(outputs: Sequence[tuple[Path, bytes]]) -> tuple[bool, ...]:
     try:
-        originals = {
-            path: path.read_bytes() if path.exists() else None for path, _ in outputs
-        }
-    except OSError as exc:
-        raise PlacementError(f"cannot stage layout-handoff outputs: {exc}") from exc
-    changed = tuple(originals[path] != contents for path, contents in outputs)
-    staged: dict[Path, Path] = {}
-    replaced: list[Path] = []
-    try:
-        for (path, contents), is_changed in zip(outputs, changed, strict=True):
-            if is_changed:
-                staged[path] = _stage_file(path, contents)
-        for path, _ in outputs:
-            if path in staged:
-                os.replace(staged.pop(path), path)
-                replaced.append(path)
-    except OSError as exc:
-        rollback_errors = []
-        for path in reversed(replaced):
-            try:
-                _atomic_restore(path, originals[path])
-            except OSError as rollback:
-                rollback_errors.append(f"{path.name}: {rollback}")
-        detail = (
-            "; rollback failed: " + "; ".join(rollback_errors)
-            if rollback_errors
-            else ""
-        )
-        raise PlacementError(
-            f"could not atomically write layout-handoff outputs: {exc}{detail}"
-        ) from exc
-    finally:
-        for temporary in staged.values():
-            temporary.unlink(missing_ok=True)
-    return changed
+        return commit_outputs(outputs, label="layout-handoff outputs")
+    except AtomicWriteError as exc:
+        raise PlacementError(str(exc)) from exc
 
 
 def _project_context(
@@ -1353,14 +1298,9 @@ def _project_context(
 
 def _require_circuit_acceptance(project_dir: Path) -> None:
     try:
-        fingerprint = fingerprint_inputs(project_dir)
-        ok, detail = saved_report_status(project_dir, fingerprint)
-    except (BuildTestInputError, BuildTestError, OSError) as exc:
-        raise PlacementInputError(
-            f"CIRCUIT acceptance is not current: {exc}"
-        ) from exc
-    if not ok:
-        raise PlacementInputError(f"CIRCUIT acceptance is not current: {detail}")
+        require_current_acceptance(project_dir)
+    except BuildTestInputError as exc:
+        raise PlacementInputError(str(exc)) from exc
 
 
 def generate_brief(

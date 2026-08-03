@@ -581,7 +581,7 @@ fingerprint: {step6}
                 return real_replace(source, destination)
 
             with (
-                mock.patch("pcbforge.placement.os.replace", side_effect=fail_second),
+                mock.patch("pcbforge.fsutil.os.replace", side_effect=fail_second),
                 self.assertRaisesRegex(PlacementError, "atomically write"),
             ):
                 generate_brief(project, tool_root=TOOL_ROOT)

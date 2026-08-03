@@ -653,6 +653,11 @@ def _read_bom(path: Path) -> tuple[BomComponent, ...]:
     return tuple(sorted(components, key=lambda component: component.lcsc))
 
 
+def read_bom_components(path: Path) -> tuple[BomComponent, ...]:
+    """Read the compiler BOM as validated components with exact designators."""
+    return _read_bom(path)
+
+
 def _validate_bom(
     expected: Sequence[ExpectedComponent],
     actual: Sequence[BomComponent],
@@ -855,6 +860,17 @@ def saved_report_status(project_dir: Path, fingerprint: str) -> tuple[bool, str]
     if data.get("fingerprint") != fingerprint:
         return False, "build-test report is stale"
     return True, f"{BUILD_TEST_REPORT.as_posix()} is current"
+
+
+def require_current_acceptance(project_dir: Path) -> None:
+    """Raise unless the saved CIRCUIT acceptance report matches the project."""
+    try:
+        fingerprint = fingerprint_inputs(project_dir)
+        ok, detail = saved_report_status(project_dir, fingerprint)
+    except (BuildTestInputError, BuildTestError, OSError) as exc:
+        raise BuildTestInputError(f"CIRCUIT acceptance is not current: {exc}") from exc
+    if not ok:
+        raise BuildTestInputError(f"CIRCUIT acceptance is not current: {detail}")
 
 
 def _escape_table(value: str) -> str:

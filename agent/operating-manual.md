@@ -204,11 +204,12 @@ empty module catalog, `pcbforge prepare-layout` /
 `pcbforge check-layout-handoff`, the placement schema and handoff gate,
 authored circuit SVG/model,
 compiled-parity, deterministic acceptance, and the v1 decision gates,
-`policy.yaml`, `pcbforge check-policy`, and explicit policy approval commands.
+`policy.yaml`, `pcbforge check-policy`, explicit policy approval commands, and
+`pcbforge fab-out` / `pcbforge check-fab-out`.
 
 Not built yet (do manually, per DESIGN.md, and say you're doing it manually):
 `ioc2code` (derive `src/mcu.ato` from the checked `.ioc` yourself and perform
-the one-to-one audit in `agent/mcu.md`), `verify` audits, `fab-out`,
+the one-to-one audit in `agent/mcu.md`), `verify` audits beyond DRC,
 automated live `verify-stock` lookup. Live sourcing research is performed
 during CIRCUIT and again after FAB-OUT, then recorded through the policy
 gate. The module catalog is empty — propose architecture from

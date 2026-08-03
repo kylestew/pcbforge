@@ -33,7 +33,7 @@ transitions rather than numbered phases.
 | — | CIRCUIT → LAYOUT: layout handoff | AI + tool + user | Current placement contract, generated brief, checks, and explicit handoff approval |
 | 4 | LAYOUT | User (AI on request) | Placement and routing declared complete in one spatially bound approval |
 | 5 | VERIFY | Tool + AI | DRC, audits, and render review approved |
-| — | VERIFY → ORDER: FAB-OUT | Tool | Validated Gerber, drill, BOM, CPL, and archive packet fingerprint |
+| — | VERIFY → ORDER: FAB-OUT | Tool | `pcbforge fab-out` validated Gerber, drill, BOM, CPL, and archive packet fingerprint |
 | 6 | ORDER | User | Current sourcing confirmed and order approved |
 | 7 | PUBLISH | AI + user | Proven reusable modules published, or explicitly skipped |
 
@@ -238,11 +238,37 @@ That event is append-only history, not approval, and never advances or blocks
 a phase. One final LAYOUT approval still binds both activities and remains the
 user's decision, whoever moved the copper.
 
-VERIFY runs DRC plus visual and process audits. The future FAB-OUT generator
-creates, validates, fingerprints, and records the manufacturing-packet
-transition without ordering. ORDER requires that current transition, refreshed
-live sourcing, explicit sourcing confirmation, and human purchase authority.
-PUBLISH is optional and may be skipped.
+VERIFY runs DRC plus visual and process audits. ORDER requires a current
+FAB-OUT transition, refreshed live sourcing, explicit sourcing confirmation,
+and human purchase authority. PUBLISH is optional and may be skipped.
+
+## VERIFY → ORDER: FAB-OUT
+
+A checked tool transition with no separate user approval. After VERIFY is
+approved:
+
+```text
+pcbforge fab-out
+```
+
+The generator plots Gerbers and Excellon drills for the pinned stackup,
+exports placements and a DRC report, derives `fab/jlc-bom.csv` from the
+approved compiler BOM and `fab/jlc-cpl.csv` from the exported placements,
+writes `fab/manifest.json`, and packs `fab/<project>-fab.zip` deterministically
+with the final board included. It never edits the PCB and never orders.
+
+It refuses to write anything when VERIFY is not currently approved, CIRCUIT
+acceptance is stale, a required layer is missing or empty, no drill file was
+produced, a BOM designator has no placement, the compiler BOM disagrees with
+`build-test.yaml`, or the board no longer passes DRC. On success it records the
+transition itself.
+
+`pcbforge check-fab-out` re-proves an existing packet without regenerating,
+and runs automatically as the ORDER-stage `fab` check during
+`pcbforge status --check`. KiCad stamps wall-clock time into every plot, so
+regenerating an unchanged board produces new bytes and a new transition
+record; the manifest additionally stores timestamp-normalized hashes, which
+prove the fabrication data itself is unchanged.
 
 ## Dashboard and resume
 
