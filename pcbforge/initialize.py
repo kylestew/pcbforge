@@ -1155,6 +1155,7 @@ def initialize_project(
         TransitionEvent,
         _now,
         inspect_status,
+        policy_approval_context,
         read_status_document,
         write_status,
     )
@@ -1186,10 +1187,15 @@ def initialize_project(
         )
 
     try:
+        baseline_approval, exception_approvals, _ = policy_approval_context(
+            status_document
+        )
         policy_result = check_policy(
             project_dir,
             tool_root=tool_root,
             through_phase="spec",
+            baseline_approval=baseline_approval,
+            exception_approvals=exception_approvals,
         )
         _, _, policy_profile_hash = load_policy_profile(tool_root)
     except (PolicyInputError, PolicyError) as exc:

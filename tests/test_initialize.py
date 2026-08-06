@@ -25,6 +25,7 @@ from pcbforge.status import (
     StatusError,
     StatusInputError,
     approve_phase,
+    mark_policy,
     read_status_document,
     review_phase,
     write_status,
@@ -608,6 +609,58 @@ class InitializeTests(unittest.TestCase):
             self.assertIn(
                 "SPEC → ARCHITECT: initialize | Tool | ✅ Complete",
                 dashboard,
+            )
+
+    def test_init_honors_approved_preproject_spec_exception(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self._project(
+                Path(temporary),
+                "garden-logger",
+                approved=False,
+            )
+            policy_path = project / "policy.yaml"
+            policy = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
+            policy["manufacturing"]["thickness_mm"] = 0.8
+            policy["exceptions"] = [
+                {
+                    "id": "allow-0-8-mm-fr4",
+                    "rule": "manufacturing.thickness",
+                    "scope": "project",
+                    "rationale": "Improve through-board light transmission.",
+                }
+            ]
+            policy_path.write_text(
+                yaml.safe_dump(policy, sort_keys=False),
+                encoding="utf-8",
+            )
+            write_status(project)
+            mark_policy(
+                project,
+                "exception-approved",
+                "User approved 0.8 mm FR4 for the optical experiment.",
+                subject="allow-0-8-mm-fr4",
+                tool_root=TOOL_ROOT,
+            )
+            review = review_phase(project, "spec", tool_root=TOOL_ROOT)
+            approve_phase(
+                project,
+                "spec",
+                review.fingerprint,
+                "Requirements approved",
+                tool_root=TOOL_ROOT,
+            )
+
+            initialize_project(
+                project,
+                tool_root=TOOL_ROOT,
+                runner=FakeRunner(),
+            )
+
+            self.assertTrue((project / ".pcbforge").is_file())
+            document = read_status_document(project)
+            self.assertEqual(
+                document.policy_events[-1].subject,
+                "allow-0-8-mm-fr4",
             )
 
     def test_failed_init_does_not_mutate_pre_init_dashboard(self) -> None:
