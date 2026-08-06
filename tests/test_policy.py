@@ -427,6 +427,46 @@ class PolicyCheckerTests(PolicyFixture):
 
 
 class PolicyApprovalTests(PolicyFixture):
+    def test_preproject_spec_exception_can_be_approved_before_spec(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary) / "garden-logger"
+            project.mkdir()
+            (project / "spec.md").write_text(SPEC, encoding="utf-8")
+            policy = yaml.safe_load(render_default_policy())
+            policy["manufacturing"]["thickness_mm"] = 0.8
+            policy["exceptions"] = [
+                {
+                    "id": "allow-0-8-mm-fr4",
+                    "rule": "manufacturing.thickness",
+                    "scope": "project",
+                    "rationale": "Improve through-board light transmission.",
+                }
+            ]
+            (project / "policy.yaml").write_text(
+                yaml.safe_dump(policy, sort_keys=False),
+                encoding="utf-8",
+            )
+            write_status(project)
+
+            approved = mark_policy(
+                project,
+                "exception-approved",
+                "User approved 0.8 mm FR4 for the optical experiment.",
+                subject="allow-0-8-mm-fr4",
+                tool_root=TOOL_ROOT,
+            )
+            review = review_phase(project, "spec", tool_root=TOOL_ROOT)
+
+        self.assertEqual(
+            approved.report.document.policy_events[-1].action,
+            "exception-approved",
+        )
+        self.assertEqual(
+            approved.report.document.policy_events[-1].subject,
+            "allow-0-8-mm-fr4",
+        )
+        self.assertTrue(review.ready)
+
     def test_new_project_spec_approval_is_bound_to_policy_baseline(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = Path(temporary) / "garden-logger"

@@ -5406,10 +5406,6 @@ def mark_policy(
     phase_reopen: StatusEvent | None = None
 
     if action == "exception-approved":
-        if not _current_policy_baseline(project_dir, document):
-            raise StatusInputError(
-                "project policy is not bound to the approved SPEC"
-            )
         if not subject:
             raise StatusInputError("exception approval requires an exception ID")
         fingerprints = policy_exception_fingerprints(
@@ -5428,6 +5424,14 @@ def mark_policy(
         phase = str(
             profile["exception_rules"][exception.rule]["earliest_phase"]
         )
+        policy_baseline_current = _current_policy_baseline(project_dir, document)
+        preproject_spec_exception = (
+            phase == "spec" and not (project_dir / ".pcbforge").exists()
+        )
+        if not policy_baseline_current and not preproject_spec_exception:
+            raise StatusInputError(
+                "project policy is not bound to the approved SPEC"
+            )
         fingerprint = fingerprints[subject]
         provisional = dict(exception_approvals)
         provisional[subject] = fingerprint
