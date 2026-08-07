@@ -53,6 +53,10 @@ UNFITTED_PCB_FEATURES = (
         re.compile(r"^TP[1-9][0-9]*$"),
         ("TestPoint:", "TestPoint.pretty:"),
     ),
+    (
+        re.compile(r"^SJ[1-9][0-9]*$"),
+        ("Jumper:", "Jumper.pretty:"),
+    ),
 )
 
 CommandRunner = Callable[..., subprocess.CompletedProcess[str]]

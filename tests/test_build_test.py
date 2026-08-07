@@ -348,7 +348,7 @@ class CheckerTests(BuildTestFixture):
             contract.write_text(
                 contract.read_text(encoding="utf-8").replace(
                     "board_footprints: 1",
-                    "board_footprints: 3",
+                    "board_footprints: 4",
                 ),
                 encoding="utf-8",
             )
@@ -370,6 +370,19 @@ class CheckerTests(BuildTestFixture):
       (net 1 "GND")
     )
   )
+  (footprint "Jumper:SolderJumper-2_P1.3mm_Open_RoundedPad1.0x1.5mm"
+    (layer "F.Cu")
+    (at 107 107)
+    (property "Reference" "SJ1")
+    (pad "1" smd rect
+      (at -0.65 0)
+      (net 1 "GND")
+    )
+    (pad "2" smd rect
+      (at 0.65 0)
+      (net 2 "+3V3")
+    )
+  )
   (gr_line""",
                 ),
                 encoding="utf-8",
@@ -383,8 +396,8 @@ class CheckerTests(BuildTestFixture):
             )
             report = (project / BUILD_TEST_REPORT).read_text(encoding="utf-8")
 
-        self.assertEqual(result.footprint_count, 3)
-        self.assertIn("H1, TP1", report)
+        self.assertEqual(result.footprint_count, 4)
+        self.assertIn("H1, SJ1, TP1", report)
 
     def test_rejects_non_bom_reference_with_unrelated_footprint(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
