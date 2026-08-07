@@ -445,6 +445,11 @@ fingerprint: {fingerprint}
         self.assertTrue(project_stable)
         self.assertTrue(rules_unchanged)
         self.assertIn("pcbforge_brief_schema: 1", brief_text)
+        self.assertTrue(brief_text.startswith("# garden-logger placement brief\n"))
+        self.assertGreater(
+            brief_text.index("<!-- pcbforge-metadata -->"),
+            brief_text.index("## Human approval gate"),
+        )
         self.assertIn("## Typed constraints", brief_text)
         self.assertIn("pcbforge:usb", brief_text)
         classes = project_after["net_settings"]["classes"]

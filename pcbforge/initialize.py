@@ -765,8 +765,8 @@ saved workflow gates, compiler output, and the KiCad board.
 
 ## Status dashboard
 
-- `STATUS.md` is the tracked, user-facing workflow dashboard. Its YAML
-  frontmatter contains append-only workflow events and check fingerprints; its
+- `STATUS.md` is the tracked, user-facing workflow dashboard. Its trailing YAML
+  metadata contains append-only workflow events and check fingerprints; its
   Markdown body is generated. Never edit the body manually.
 - Use `{tool_root}/scripts/pcbforge status --write` after meaningful project
   changes. Use `--check` when compiler, build-test, parts-policy,

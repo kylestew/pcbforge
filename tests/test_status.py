@@ -786,6 +786,12 @@ class DashboardTests(StatusFixture):
         self.assertIn("## Blockers", rendered)
         self.assertIn("## Workflow", rendered)
         self.assertIn("## Recent history", rendered)
+        self.assertTrue(rendered.startswith("# garden-logger project dashboard\n"))
+        self.assertGreater(
+            rendered.index("<!-- pcbforge-metadata -->"),
+            rendered.index("## Recent history"),
+        )
+        self.assertTrue(rendered.endswith("```\n"))
         self.assertEqual(rendered.count("\n| "), 12)
         self.assertIn("0 of 6 required phases complete", rendered)
         self.assertIn("SPEC → ARCHITECT: initialize", rendered)

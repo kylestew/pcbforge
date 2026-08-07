@@ -277,8 +277,9 @@ prove the fabrication data itself is unchanged.
 
 ## Dashboard and resume
 
-`STATUS.md` is the single tracked dashboard. Its frontmatter stores append-only
-phase, transition, policy, and check records; its Markdown body is generated.
+`STATUS.md` is the single tracked dashboard. Its trailing YAML metadata stores
+append-only phase, transition, policy, and check records; its Markdown body is
+generated. Existing dashboards with leading YAML front matter remain readable.
 On every cold start:
 
 ```text

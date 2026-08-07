@@ -7,6 +7,8 @@ from typing import Any, Mapping
 
 import yaml
 
+from pcbforge.markdown_metadata import metadata_yaml
+
 PIN_SCHEMA = 1
 STATUS_SCHEMA = 1
 EXPECTED_GUIDANCE = {
@@ -76,23 +78,19 @@ def _load_yaml(path: Path, label: str) -> Mapping[str, Any]:
 
 def _status_metadata(path: Path) -> Mapping[str, Any]:
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
         raise CompatibilityError(f"cannot read STATUS.md: {exc}") from exc
-    if not lines or lines[0] != "---":
-        raise CompatibilityError("invalid STATUS.md: missing YAML frontmatter")
     try:
-        end = lines.index("---", 1)
+        yaml_text = metadata_yaml(text)
     except ValueError as exc:
-        raise CompatibilityError(
-            "invalid STATUS.md: unterminated YAML frontmatter"
-        ) from exc
+        raise CompatibilityError(f"invalid STATUS.md metadata: {exc}") from exc
     try:
-        loaded = yaml.load("\n".join(lines[1:end]), Loader=_UniqueLoader)
+        loaded = yaml.load(yaml_text, Loader=_UniqueLoader)
     except yaml.YAMLError as exc:
-        raise CompatibilityError(f"invalid STATUS.md frontmatter: {exc}") from exc
+        raise CompatibilityError(f"invalid STATUS.md metadata: {exc}") from exc
     if not isinstance(loaded, dict):
-        raise CompatibilityError("invalid STATUS.md frontmatter: expected a mapping")
+        raise CompatibilityError("invalid STATUS.md metadata: expected a mapping")
     return loaded
 
 

@@ -497,6 +497,11 @@ class CheckerTests(BuildTestFixture):
         self.assertFalse(second.wrote_report)
         self.assertEqual(first.footprint_count, 1)
         self.assertEqual(first.net_count, 2)
+        self.assertTrue(report.startswith("# garden-logger build + test report\n"))
+        self.assertGreater(
+            report.index("<!-- pcbforge-metadata -->"),
+            report.index("## Inputs"),
+        )
         self.assertIn("Exact BOM", report)
         self.assertIn("| Fitted components | 1 |", report)
         self.assertIn("| Unfitted PCB features | 0 |", report)

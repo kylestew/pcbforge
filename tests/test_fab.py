@@ -29,6 +29,7 @@ from pcbforge.fab import (
     generate_fab,
     read_manifest,
 )
+from pcbforge.markdown_metadata import metadata_yaml
 from pcbforge.policy import load_policy_profile, render_default_policy
 
 TOOL_ROOT = Path(__file__).resolve().parents[1]
@@ -375,7 +376,9 @@ class GenerationTests(FabFixture):
             names = sorted(path.name for path in fab.iterdir())
             manifest = read_manifest(project)
             document = yaml.safe_load(
-                (project / "STATUS.md").read_text(encoding="utf-8").split("---")[1]
+                metadata_yaml(
+                    (project / "STATUS.md").read_text(encoding="utf-8")
+                )
             )
             board_after = (project / "garden-logger.kicad_pcb").read_bytes()
 
