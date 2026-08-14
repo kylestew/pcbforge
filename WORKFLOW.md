@@ -169,7 +169,9 @@ returns to the ARCHITECT proposal gate.
 ## 3. CIRCUIT
 
 Follow `agent/circuit.md`. Before physical source edits, author the exact
-review-only circuit model and explanatory SVG under `review/circuit/`, plus
+review-only circuit model and the explanatory schematic under
+`review/circuit/` — the SVG is generated from a schemdraw script via
+`pcbforge render-circuit` per `agent/circuit-svg.md` — plus
 `docs/circuit-proposal.md`. Obtain CIRCUIT proposal approval.
 
 Then implement the complete circuit: physical connections, exact parts,

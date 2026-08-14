@@ -12,6 +12,7 @@ from pcbforge.build_test import (
     check_build_test,
 )
 from pcbforge.compatibility import CompatibilityError, validate_project_compatibility
+from pcbforge.diagram import DiagramError
 from pcbforge.circuit_review import (
     CircuitReviewError,
     CircuitReviewInputError,
@@ -171,6 +172,25 @@ def _parser() -> argparse.ArgumentParser:
         "--write",
         action="store_true",
         help="atomically write canonical circuit review evidence",
+    )
+
+    render_circuit_parser = subcommands.add_parser(
+        "render-circuit",
+        help="run the authored schemdraw circuit diagram script",
+        description=(
+            "Execute review/circuit/circuit_diagram.py inside the pinned "
+            "toolchain. The script draws the review schematic through "
+            "pcbforge.diagram.ReviewDiagram, whose save step stamps the model "
+            "fingerprint, generates register furniture, and validates the SVG "
+            "with the same gate as check-circuit-review."
+        ),
+    )
+    render_circuit_parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+        help="initialized pcbforge project (default: current directory)",
     )
 
     check_build_test_parser = subcommands.add_parser(
@@ -747,6 +767,30 @@ def main(argv: list[str] | None = None) -> int:
         print(f"pcbforge: {state} {result.stage} circuit review evidence")
         print(f"pcbforge: {result.summary}")
         print(f"pcbforge: evidence fingerprint {result.fingerprint}")
+        return 0
+
+    if args.command == "render-circuit":
+        import runpy
+
+        script = (
+            Path(args.project_dir).expanduser().resolve()
+            / "review"
+            / "circuit"
+            / "circuit_diagram.py"
+        )
+        if not script.is_file():
+            print(
+                "pcbforge render-circuit: missing review/circuit/"
+                "circuit_diagram.py — author it per agent/circuit-svg.md",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            runpy.run_path(str(script), run_name="__main__")
+        except (DiagramError, CircuitReviewInputError) as exc:
+            print(f"pcbforge render-circuit: {exc}", file=sys.stderr)
+            return 1
+        print("pcbforge: rendered and validated the circuit review diagram")
         return 0
 
     if args.command == "check-policy":

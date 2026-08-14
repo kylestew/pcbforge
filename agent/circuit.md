@@ -82,16 +82,19 @@ The model is the frozen pre-source approval contract. It is not maintained as
 a second design source after CIRCUIT; compiled Atopile output remains the
 electrical authority.
 
-Deliberately author `review/circuit/circuit.svg` for human comprehension. It
-must open directly in a browser and:
+Deliberately author `review/circuit/circuit.svg` for human comprehension as a
+real schematic: generate it from a `review/circuit/circuit_diagram.py`
+schemdraw script following [`circuit-svg.md`](circuit-svg.md). Never
+hand-write the SVG. The finished diagram must open directly in a browser and:
 
 1. show external power through protection to the named rail as continuous
    wires, and show complete user-control, LED/load, MCU-support, programming,
-   and test paths;
+   and test paths at pin level;
 2. use logical names rather than compiler-generated labels in the drawing;
 3. group related parts and label ambiguous functions such as MOSFETs, switches,
    connectors, and protection devices directly;
-4. place every passive beside a visible purpose note;
+4. give every passive a visible purpose note (the generated component
+   register satisfies this);
 5. include an accessible `<title>` and `<desc>` plus a prominent
    `PCBForge review-only — not PCB input` marker;
 6. put the canonical model fingerprint on the root as
@@ -100,6 +103,11 @@ must open directly in a browser and:
    `data-group-id`, `data-path-id`, and `data-purpose-for` for complete model
    coverage; every tagged path contains a visible SVG wire shape; and
 8. contain no scripts, external images/resources, or PCB spatial information.
+
+`pcbforge.diagram.ReviewDiagram.save()` produces items 4–8 mechanically and
+runs the same SVG validation as `check-circuit-review`; items 1–3 are the
+authored drawing itself. The script is review support, not a design source;
+the model stays the approval contract.
 
 If the root model fingerprint is absent or stale, `check-circuit-review`
 reports the exact expected SHA-256 to place on the SVG before review.
