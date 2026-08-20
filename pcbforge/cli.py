@@ -12,7 +12,7 @@ from pcbforge.build_test import (
     check_build_test,
 )
 from pcbforge.compatibility import CompatibilityError, validate_project_compatibility
-from pcbforge.diagram import DiagramError
+from pcbforge.diagram import DiagramError, RenderResult
 from pcbforge.circuit_review import (
     CircuitReviewError,
     CircuitReviewInputError,
@@ -766,6 +766,8 @@ def main(argv: list[str] | None = None) -> int:
         state = "wrote" if args.write and result.wrote else "validated"
         print(f"pcbforge: {state} {result.stage} circuit review evidence")
         print(f"pcbforge: {result.summary}")
+        for warning in result.diagram_warnings:
+            print(f"pcbforge: diagram warning {warning}")
         print(f"pcbforge: evidence fingerprint {result.fingerprint}")
         return 0
 
@@ -786,10 +788,14 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 2
         try:
-            runpy.run_path(str(script), run_name="__main__")
+            namespace = runpy.run_path(str(script), run_name="__main__")
         except (DiagramError, CircuitReviewInputError) as exc:
             print(f"pcbforge render-circuit: {exc}", file=sys.stderr)
             return 1
+        result = namespace.get("result")
+        if isinstance(result, RenderResult):
+            for warning in result.warnings:
+                print(f"pcbforge: diagram warning [{warning.code}] {warning.message}")
         print("pcbforge: rendered and validated the circuit review diagram")
         return 0
 

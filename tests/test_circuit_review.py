@@ -94,12 +94,24 @@ paths:
 """
 
 
-def svg(model_hash: str, *, include_path: bool = True) -> str:
+def svg(
+    model_hash: str,
+    *,
+    include_path: bool = True,
+    include_audit: bool = True,
+) -> str:
     path = (
         """<g data-path-id="current-path">
     <text>Supply to ground</text><path d="M 20 80 H 180"/>
   </g>"""
         if include_path
+        else ""
+    )
+    audit = (
+        '<metadata id="pcbforge-diagram-audit">'
+        '{"schema":1,"bound_component_refs":["R1"],"warnings":[]}'
+        "</metadata>"
+        if include_audit
         else ""
     )
     return f"""<svg xmlns="http://www.w3.org/2000/svg"
@@ -112,6 +124,7 @@ def svg(model_hash: str, *, include_path: bool = True) -> str:
   <g data-purpose-for="R1"><text>Limits current</text></g>
   <text data-net-id="supply">+3V3</text>
   <text data-net-id="ground">GND</text>
+  {audit}
   {path}
 </svg>
 """
@@ -234,6 +247,8 @@ class CircuitReviewTests(CircuitReviewFixture):
         self.assertTrue(first.wrote)
         self.assertEqual(first.fingerprint, second.fingerprint)
         self.assertEqual(first.components, 1)
+        self.assertEqual(first.diagram_warnings, ())
+        self.assertEqual(evidence["diagram_audit"]["warnings"], [])
         self.assertEqual(evidence["material_differences"], [])
         self.assertNotIn("erc", evidence)
         self.assertEqual(baseline["source_baseline_schema"], 1)
@@ -256,6 +271,46 @@ class CircuitReviewTests(CircuitReviewFixture):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(CircuitReviewInputError, "data-path-id"):
+                check_circuit_review(project, "proposal", write=True)
+
+    def test_missing_diagram_audit_is_a_non_blocking_warning(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            model = read_circuit_model(
+                project / "review" / "circuit" / "circuit.yaml"
+            )
+            diagram = project / "review" / "circuit" / "circuit.svg"
+            diagram.write_text(
+                svg(
+                    circuit_model_fingerprint(model),
+                    include_audit=False,
+                ),
+                encoding="utf-8",
+            )
+            result = check_circuit_review(project, "proposal", write=True)
+            evidence = json.loads(
+                (project / result.evidence_path).read_text(encoding="utf-8")
+            )
+
+        self.assertTrue(result.diagram_warnings)
+        codes = {item["code"] for item in evidence["diagram_audit"]["warnings"]}
+        self.assertEqual(
+            codes,
+            {"missing-component-symbol", "missing-diagram-audit"},
+        )
+
+    def test_invalid_diagram_audit_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            diagram = project / "review" / "circuit" / "circuit.svg"
+            diagram.write_text(
+                diagram.read_text(encoding="utf-8").replace(
+                    '{"schema":1,"bound_component_refs":["R1"],"warnings":[]}',
+                    "not-json",
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(CircuitReviewInputError, "diagram-audit JSON"):
                 check_circuit_review(project, "proposal", write=True)
 
     def test_model_rejects_broken_paths_and_duplicate_pin_assignment(self) -> None:

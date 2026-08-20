@@ -33,6 +33,8 @@ PROJECT_PIN_SCHEMA = 1
 CONTRACT_FILENAME = "circuit-review.yaml"
 BASELINE_PATH = Path("review/circuit/source-baseline.json")
 STAGES = {"proposal", "final"}
+DIAGRAM_AUDIT_ID = "pcbforge-diagram-audit"
+DIAGRAM_AUDIT_SCHEMA = 1
 
 _COMPONENT_KINDS = {
     "battery",
@@ -155,14 +157,18 @@ class CircuitReviewResult:
     fingerprint: str
     evidence_path: Path
     wrote: bool
+    diagram_warnings: tuple[str, ...] = ()
 
     @property
     def summary(self) -> str:
-        return (
+        summary = (
             f"{self.components} components, {self.nets} nets, "
             f"{self.connected_pins} connected pins, {self.groups} groups, "
             f"and {self.paths} review paths passed"
         )
+        if self.diagram_warnings:
+            summary += f" with {len(self.diagram_warnings)} diagram warning(s)"
+        return summary
 
 
 def _load_yaml(path: Path) -> Mapping[str, Any]:
@@ -635,7 +641,99 @@ def _visible_text(element: ET.Element) -> str:
     return " ".join(text.strip() for text in element.itertext() if text.strip())
 
 
-def validate_circuit_svg(path: Path, model: CircuitModel) -> None:
+def _diagram_audit(root: ET.Element, model: CircuitModel) -> dict[str, Any]:
+    metadata = next(
+        (
+            element
+            for element in root.iter()
+            if element.tag.rsplit("}", 1)[-1] == "metadata"
+            and element.attrib.get("id") == DIAGRAM_AUDIT_ID
+        ),
+        None,
+    )
+    warnings: list[dict[str, str]] = []
+    if metadata is None:
+        bound: list[str] = []
+        warnings.append(
+            {
+                "code": "missing-diagram-audit",
+                "message": "the SVG has no PCBForge diagram-audit record",
+            }
+        )
+    else:
+        try:
+            payload = json.loads(metadata.text or "")
+        except json.JSONDecodeError as exc:
+            raise CircuitReviewInputError(
+                "circuit.svg: invalid PCBForge diagram-audit JSON"
+            ) from exc
+        if not isinstance(payload, dict) or set(payload) != {
+            "schema",
+            "bound_component_refs",
+            "warnings",
+        }:
+            raise CircuitReviewInputError(
+                "circuit.svg: invalid PCBForge diagram-audit fields"
+            )
+        if payload.get("schema") != DIAGRAM_AUDIT_SCHEMA:
+            raise CircuitReviewInputError(
+                "circuit.svg: unsupported PCBForge diagram-audit schema"
+            )
+        bound_value = payload.get("bound_component_refs")
+        warning_value = payload.get("warnings")
+        if (
+            not isinstance(bound_value, list)
+            or any(not isinstance(item, str) for item in bound_value)
+            or len(bound_value) != len(set(bound_value))
+        ):
+            raise CircuitReviewInputError(
+                "circuit.svg: bound_component_refs must contain unique strings"
+            )
+        if not isinstance(warning_value, list):
+            raise CircuitReviewInputError(
+                "circuit.svg: diagram warnings must be a list"
+            )
+        bound = sorted(bound_value)
+        for index, item in enumerate(warning_value):
+            if (
+                not isinstance(item, dict)
+                or set(item) != {"code", "message"}
+                or not isinstance(item.get("code"), str)
+                or not re.fullmatch(r"[a-z][a-z0-9-]*", item["code"])
+                or not isinstance(item.get("message"), str)
+                or not item["message"].strip()
+            ):
+                raise CircuitReviewInputError(
+                    f"circuit.svg: invalid diagram warning at index {index}"
+                )
+            warnings.append({"code": item["code"], "message": item["message"].strip()})
+
+    component_refs = {item.reference for item in model.components}
+    unknown = sorted(set(bound) - component_refs)
+    if unknown:
+        raise CircuitReviewInputError(
+            "circuit.svg: diagram audit has unknown component references: "
+            + ", ".join(unknown)
+        )
+    connected = {node.split(".", 1)[0] for net in model.nets for node in net.nodes}
+    for reference in sorted(connected - set(bound)):
+        warnings.append(
+            {
+                "code": "missing-component-symbol",
+                "message": (
+                    f"{reference} is connected but has no bound schematic symbol"
+                ),
+            }
+        )
+    unique = {(item["code"], item["message"]): item for item in warnings}
+    return {
+        "schema": DIAGRAM_AUDIT_SCHEMA,
+        "bound_component_refs": bound,
+        "warnings": [unique[key] for key in sorted(unique)],
+    }
+
+
+def validate_circuit_svg(path: Path, model: CircuitModel) -> dict[str, Any]:
     """Validate browser safety, model binding, and explanatory coverage."""
     try:
         raw = path.read_text(encoding="utf-8")
@@ -747,6 +845,7 @@ def validate_circuit_svg(path: Path, model: CircuitModel) -> None:
                 f"{path.name}: data-path-id {path_item.identifier!r} "
                 "must contain a visible wire shape"
             )
+    return _diagram_audit(root, model)
 
 
 def _normalize_footprint(value: str) -> str:
@@ -1035,7 +1134,7 @@ def check_circuit_review(
         )
 
     model = read_circuit_model(model_path)
-    validate_circuit_svg(diagram_path, model)
+    diagram_audit = validate_circuit_svg(diagram_path, model)
     model_fingerprint = circuit_model_fingerprint(model)
     if stage == "proposal":
         baseline_ok, detail = baseline_is_current(project_dir)
@@ -1083,6 +1182,7 @@ def check_circuit_review(
         "model_semantic_fingerprint": model_fingerprint,
         "model": _model_payload(model),
         "diagram_sha256": hashlib.sha256(diagram_path.read_bytes()).hexdigest(),
+        "diagram_audit": diagram_audit,
         "narrative_sha256": hashlib.sha256(narrative_path.read_bytes()).hexdigest(),
         "board_topology_sha256": board_hash,
         "compiler_net_names": compiler_names,
@@ -1130,6 +1230,9 @@ def check_circuit_review(
             raise CircuitReviewError(
                 f"{evidence_rel.as_posix()} is missing; rerun with --write"
             ) from exc
+    diagram_warnings = tuple(
+        f"[{item['code']}] {item['message']}" for item in diagram_audit["warnings"]
+    )
     return CircuitReviewResult(
         stage,
         len(model.components),
@@ -1140,4 +1243,5 @@ def check_circuit_review(
         circuit_review_status_fingerprint(project_dir, stage),
         evidence_rel,
         wrote,
+        diagram_warnings,
     )
