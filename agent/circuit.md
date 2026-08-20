@@ -87,26 +87,30 @@ real schematic: generate it from a `review/circuit/circuit_diagram.py`
 schemdraw script following [`circuit-svg.md`](circuit-svg.md). Never
 hand-write the SVG. The finished diagram must open directly in a browser and:
 
-1. show external power through protection to the named rail as continuous
-   wires, and show complete user-control, LED/load, MCU-support, programming,
-   and test paths at pin level;
-2. use logical names rather than compiler-generated labels in the drawing;
-3. group related parts and label ambiguous functions such as MOSFETs, switches,
-   connectors, and protection devices directly;
-4. give every passive a visible purpose note (the generated component
-   register satisfies this);
-5. include an accessible `<title>` and `<desc>` plus a prominent
-   `PCBForge review-only — not PCB input` marker;
-6. put the canonical model fingerprint on the root as
-   `data-pcbforge-model-sha256`;
-7. tag visible explanatory elements with `data-component-ref`, `data-net-id`,
+1. Show external power through protection to the named rail as continuous
+   wires.
+2. Show all user-control, load, MCU-support, programming, and test paths at pin
+   level.
+3. Use logical names rather than compiler-generated labels in the drawing.
+4. Group related parts and label ambiguous functions such as MOSFETs, switches,
+   connectors, and protection devices directly.
+5. Draw each local support part at its device pin with a real symbol and wire.
+6. Keep all diagram-audit warnings at zero before review.
+7. Give every passive a visible purpose note. The generated component
+   register satisfies this requirement.
+8. Include an accessible `<title>` and `<desc>` plus a prominent
+   `PCBForge review-only — not PCB input` marker.
+9. Put the canonical model fingerprint on the root as
+   `data-pcbforge-model-sha256`.
+10. Tag visible explanatory elements with `data-component-ref`, `data-net-id`,
    `data-group-id`, `data-path-id`, and `data-purpose-for` for complete model
-   coverage; every tagged path contains a visible SVG wire shape; and
-8. contain no scripts, external images/resources, or PCB spatial information.
+   coverage. Every tagged path contains a visible SVG wire shape.
+11. Include no scripts, external images, external resources, or PCB spatial
+    information.
 
-`pcbforge.diagram.ReviewDiagram.save()` produces items 4–8 mechanically and
-runs the same SVG validation as `check-circuit-review`; items 1–3 are the
-authored drawing itself. The script is review support, not a design source;
+`pcbforge.diagram.ReviewDiagram.save()` produces items 7–11 mechanically and
+runs the same SVG validation as `check-circuit-review`. Items 1–6 are the
+authored drawing itself. The script is review support, not a design source.
 the model stays the approval contract.
 
 If the root model fingerprint is absent or stale, `check-circuit-review`
