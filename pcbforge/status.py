@@ -982,7 +982,8 @@ def _approval_payload(
                         project_dir / ".pcbforge",
                         project_dir / CIRCUIT_REVIEW_FILENAME,
                         project_dir / "review" / "circuit" / "circuit.yaml",
-                        project_dir / "review" / "circuit" / "circuit.svg",
+                        project_dir / "review" / "circuit" / "circuit.kicad_sch",
+                        project_dir / "review" / "circuit" / "circuit.audit.json",
                         project_dir / "docs" / "circuit-proposal.md",
                         project_dir / BASELINE_PATH,
                     )
@@ -2218,7 +2219,7 @@ def _derive_phases(
             else:
                 state = "Ready"
                 detail = (
-                    "create the explanatory SVG and exact circuit proposal before "
+                    "create the review schematic and exact circuit proposal before "
                     f"physical source edits ({proposal_detail})"
                 )
         elif (
@@ -2302,7 +2303,7 @@ def _action_for(
         "circuit": NextAction(
             "AI",
             (
-                "Create the explanatory SVG and exact circuit proposal before "
+                "Create the review schematic and exact circuit proposal before "
                 "source edits."
             ),
             "pcbforge status review circuit --stage proposal",
@@ -3540,7 +3541,8 @@ def _prepare_proposal_review(
                     project_dir / ".pcbforge",
                     project_dir / CIRCUIT_REVIEW_FILENAME,
                     project_dir / "review" / "circuit" / "circuit.yaml",
-                    project_dir / "review" / "circuit" / "circuit.svg",
+                    project_dir / "review" / "circuit" / "circuit.kicad_sch",
+                    project_dir / "review" / "circuit" / "circuit.audit.json",
                     project_dir / "docs" / "circuit-proposal.md",
                     project_dir / BASELINE_PATH,
                 )

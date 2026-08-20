@@ -7,13 +7,14 @@ import json
 import os
 import re
 import tempfile
-import xml.etree.ElementTree as ET
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 import yaml
 
+from pcbforge import sexpr
 from pcbforge.artifact_hash import (
     ArtifactHashError,
     evidence_bytes,
@@ -27,14 +28,18 @@ from pcbforge.build_test import (
 )
 from pcbforge.initialize import InitInputError, read_spec
 
-CIRCUIT_REVIEW_SCHEMA = 1
+CIRCUIT_REVIEW_SCHEMA = 2
 CIRCUIT_MODEL_SCHEMA = 1
 PROJECT_PIN_SCHEMA = 1
 CONTRACT_FILENAME = "circuit-review.yaml"
 BASELINE_PATH = Path("review/circuit/source-baseline.json")
 STAGES = {"proposal", "final"}
-DIAGRAM_AUDIT_ID = "pcbforge-diagram-audit"
-DIAGRAM_AUDIT_SCHEMA = 1
+SCHEMATIC_AUDIT_SCHEMA = 2
+SCH_FORMAT_VERSION = "20250114"
+REVIEW_MARKER_TEXT = "PCBForge review-only"
+CommandRunner = Callable[..., subprocess.CompletedProcess]
+# Tests inject a fake kicad-cli here; production always shells out.
+KICAD_RUNNER: CommandRunner | None = None
 
 _COMPONENT_KINDS = {
     "battery",
@@ -98,7 +103,7 @@ _UniqueLoader.add_constructor(
 class CircuitReviewContract:
     build: str
     model: Path
-    diagram: Path
+    schematic: Path
     proposal_narrative: Path
     final_narrative: Path
 
@@ -329,10 +334,17 @@ def read_circuit_review_contract(project_dir: Path) -> CircuitReviewContract:
         "circuit_review_schema",
         "build",
         "model",
-        "diagram",
+        "schematic",
         "proposal_narrative",
         "final_narrative",
     }
+    if data.get("circuit_review_schema") == 1 and "diagram" in data:
+        raise CircuitReviewInputError(
+            "circuit-review.yaml schema 1 (SVG diagram) is no longer supported; "
+            "set circuit_review_schema: 2, replace `diagram:` with "
+            "`schematic: review/circuit/circuit.kicad_sch`, and author "
+            "review/circuit/circuit_schematic.py per agent/circuit-kicad.md"
+        )
     _strict_keys(data, allowed=keys, required=keys, field=CONTRACT_FILENAME)
     if type(data.get("circuit_review_schema")) is not int or data.get(
         "circuit_review_schema"
@@ -345,10 +357,10 @@ def read_circuit_review_contract(project_dir: Path) -> CircuitReviewContract:
         suffix=".yaml",
         prefix=Path("review/circuit"),
     )
-    diagram = _safe_path(
-        data.get("diagram"),
-        "diagram",
-        suffix=".svg",
+    schematic = _safe_path(
+        data.get("schematic"),
+        "schematic",
+        suffix=".kicad_sch",
         prefix=Path("review/circuit"),
     )
     proposal_narrative = _safe_path(
@@ -370,7 +382,7 @@ def read_circuit_review_contract(project_dir: Path) -> CircuitReviewContract:
     return CircuitReviewContract(
         build,
         model,
-        diagram,
+        schematic,
         proposal_narrative,
         final_narrative,
     )
@@ -631,221 +643,336 @@ def circuit_model_fingerprint(model: CircuitModel) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _visible_text(element: ET.Element) -> str:
-    style = element.attrib.get("style", "").replace(" ", "").casefold()
-    if (
-        element.attrib.get("display", "").casefold() == "none"
-        or "display:none" in style
-    ):
-        return ""
-    return " ".join(text.strip() for text in element.itertext() if text.strip())
+def audit_path_for(schematic_path: Path) -> Path:
+    """Sidecar audit record next to the schematic (``circuit.audit.json``)."""
+    schematic_path = Path(schematic_path)
+    return schematic_path.with_name(schematic_path.stem + ".audit.json")
 
 
-def _diagram_audit(root: ET.Element, model: CircuitModel) -> dict[str, Any]:
-    metadata = next(
-        (
-            element
-            for element in root.iter()
-            if element.tag.rsplit("}", 1)[-1] == "metadata"
-            and element.attrib.get("id") == DIAGRAM_AUDIT_ID
-        ),
-        None,
-    )
-    warnings: list[dict[str, str]] = []
-    if metadata is None:
-        bound: list[str] = []
-        warnings.append(
-            {
-                "code": "missing-diagram-audit",
-                "message": "the SVG has no PCBForge diagram-audit record",
-            }
+def _read_audit(path: Path, model: CircuitModel) -> dict[str, Any]:
+    label = path.name
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise CircuitReviewInputError(
+            f"missing {label}; run `pcbforge render-circuit`"
+        ) from exc
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise CircuitReviewInputError(f"{label}: invalid JSON: {exc}") from exc
+    required = {"schema", "model_sha256", "bound_component_refs", "symbol_choices", "nets", "warnings"}
+    if not isinstance(payload, dict) or set(payload) != required:
+        raise CircuitReviewInputError(f"{label}: invalid audit fields")
+    if payload.get("schema") != SCHEMATIC_AUDIT_SCHEMA:
+        raise CircuitReviewInputError(f"{label}: unsupported audit schema")
+    if payload.get("model_sha256") != circuit_model_fingerprint(model):
+        raise CircuitReviewInputError(
+            f"{label}: audit is stale for the current model; rerun `pcbforge render-circuit`"
         )
-    else:
-        try:
-            payload = json.loads(metadata.text or "")
-        except json.JSONDecodeError as exc:
-            raise CircuitReviewInputError(
-                "circuit.svg: invalid PCBForge diagram-audit JSON"
-            ) from exc
-        if not isinstance(payload, dict) or set(payload) != {
-            "schema",
-            "bound_component_refs",
-            "warnings",
-        }:
-            raise CircuitReviewInputError(
-                "circuit.svg: invalid PCBForge diagram-audit fields"
-            )
-        if payload.get("schema") != DIAGRAM_AUDIT_SCHEMA:
-            raise CircuitReviewInputError(
-                "circuit.svg: unsupported PCBForge diagram-audit schema"
-            )
-        bound_value = payload.get("bound_component_refs")
-        warning_value = payload.get("warnings")
+    bound_value = payload.get("bound_component_refs")
+    warning_value = payload.get("warnings")
+    if (
+        not isinstance(bound_value, list)
+        or any(not isinstance(item, str) for item in bound_value)
+        or len(bound_value) != len(set(bound_value))
+    ):
+        raise CircuitReviewInputError(f"{label}: bound_component_refs must contain unique strings")
+    if not isinstance(warning_value, list):
+        raise CircuitReviewInputError(f"{label}: warnings must be a list")
+    warnings: list[dict[str, str]] = []
+    for index, item in enumerate(warning_value):
         if (
-            not isinstance(bound_value, list)
-            or any(not isinstance(item, str) for item in bound_value)
-            or len(bound_value) != len(set(bound_value))
+            not isinstance(item, dict)
+            or set(item) != {"code", "message"}
+            or not isinstance(item.get("code"), str)
+            or not re.fullmatch(r"[a-z][a-z0-9-]*", item["code"])
+            or not isinstance(item.get("message"), str)
+            or not item["message"].strip()
         ):
-            raise CircuitReviewInputError(
-                "circuit.svg: bound_component_refs must contain unique strings"
-            )
-        if not isinstance(warning_value, list):
-            raise CircuitReviewInputError(
-                "circuit.svg: diagram warnings must be a list"
-            )
-        bound = sorted(bound_value)
-        for index, item in enumerate(warning_value):
-            if (
-                not isinstance(item, dict)
-                or set(item) != {"code", "message"}
-                or not isinstance(item.get("code"), str)
-                or not re.fullmatch(r"[a-z][a-z0-9-]*", item["code"])
-                or not isinstance(item.get("message"), str)
-                or not item["message"].strip()
-            ):
-                raise CircuitReviewInputError(
-                    f"circuit.svg: invalid diagram warning at index {index}"
-                )
-            warnings.append({"code": item["code"], "message": item["message"].strip()})
-
+            raise CircuitReviewInputError(f"{label}: invalid warning at index {index}")
+        warnings.append({"code": item["code"], "message": item["message"].strip()})
+    choices = payload.get("symbol_choices")
+    if not isinstance(choices, dict) or any(
+        not isinstance(v, dict) or set(v) != {"lib_id", "generic", "reason"} for v in choices.values()
+    ):
+        raise CircuitReviewInputError(f"{label}: invalid symbol_choices")
     component_refs = {item.reference for item in model.components}
-    unknown = sorted(set(bound) - component_refs)
+    unknown = sorted((set(bound_value) | set(choices)) - component_refs)
     if unknown:
         raise CircuitReviewInputError(
-            "circuit.svg: diagram audit has unknown component references: "
-            + ", ".join(unknown)
+            f"{label}: unknown component references: " + ", ".join(unknown)
         )
-    connected = {node.split(".", 1)[0] for net in model.nets for node in net.nodes}
-    for reference in sorted(connected - set(bound)):
+    return {
+        "schema": SCHEMATIC_AUDIT_SCHEMA,
+        "bound_component_refs": sorted(bound_value),
+        "symbol_choices": {key: choices[key] for key in sorted(choices)},
+        "warnings": warnings,
+    }
+
+
+def _kicad_cli(tool_root: Path | None) -> str:
+    root = (tool_root or Path(__file__).resolve().parents[1]).resolve()
+    return str(root / "scripts" / "kicad-cli")
+
+
+def _run_kicad(
+    runner: CommandRunner,
+    command: Sequence[str],
+    *,
+    label: str,
+) -> subprocess.CompletedProcess:
+    try:
+        completed = runner(
+            list(command),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        raise CircuitReviewInputError(f"cannot run kicad-cli for {label}: {exc}") from exc
+    return completed
+
+
+def _erc_violations(report_path: Path) -> list[str]:
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise CircuitReviewInputError(f"kicad-cli produced no ERC report: {exc}") from exc
+    violations: list[str] = []
+    for sheet in report.get("sheets", []) if isinstance(report, dict) else []:
+        for item in sheet.get("violations", []):
+            if item.get("severity") != "error":
+                continue
+            where = ""
+            for entry in item.get("items", []):
+                pos = entry.get("pos") or {}
+                if pos:
+                    where = f" @({pos.get('x', 0):.2f}, {pos.get('y', 0):.2f})"
+                    break
+            detail = "; ".join(
+                str(entry.get("description", "")).strip()
+                for entry in item.get("items", [])
+                if entry.get("description")
+            )
+            violations.append(
+                f"[{item.get('type', 'erc')}] {item.get('description', '').strip()}"
+                f"{where}" + (f": {detail}" if detail else "")
+            )
+    return violations
+
+
+def _parse_netlist(path: Path) -> dict[frozenset[str], str]:
+    """Endpoint sets (``REF.PIN``) keyed to the KiCad net name, power symbols dropped."""
+    try:
+        root = sexpr.parse(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, sexpr.SExprError) as exc:
+        raise CircuitReviewInputError(f"kicad-cli produced no netlist: {exc}") from exc
+    nets: dict[frozenset[str], str] = {}
+    nets_node = sexpr.child(root, "nets")
+    for net in sexpr.children(nets_node or [], "net"):
+        name = sexpr.atom(sexpr.child(net, "name"))
+        # local labels on the root sheet export as "/NAME"; power nets are bare
+        if name.startswith("/") and name.count("/") == 1:
+            name = name[1:]
+        endpoints = set()
+        for node in sexpr.children(net, "node"):
+            ref = sexpr.atom(sexpr.child(node, "ref"))
+            pin = sexpr.atom(sexpr.child(node, "pin"))
+            if ref.startswith("#"):
+                continue
+            endpoints.add(f"{ref}.{pin}")
+        if endpoints:
+            nets[frozenset(endpoints)] = name
+    return nets
+
+
+def _symbol_properties(symbol: sexpr.Node) -> dict[str, str]:
+    return {
+        sexpr.atom(prop, 1): sexpr.atom(prop, 2)
+        for prop in sexpr.children(symbol, "property")
+    }
+
+
+def _sheet_texts(root: sexpr.Node) -> list[str]:
+    texts = [sexpr.atom(node) for node in sexpr.children(root, "text")]
+    block = sexpr.child(root, "title_block")
+    if block is not None:
+        texts += [sexpr.atom(node) for node in sexpr.children(block, "title")]
+        texts += [sexpr.atom(node, 2) for node in sexpr.children(block, "comment")]
+    return texts
+
+
+def validate_circuit_schematic(
+    path: Path,
+    model: CircuitModel,
+    *,
+    tool_root: Path | None = None,
+    runner: CommandRunner | None = None,
+) -> dict[str, Any]:
+    """Validate structure, model binding, ERC and pin-exact netlist parity.
+
+    Returns the audit record (schema, bound references, symbol choices,
+    readability warnings) that the evidence file embeds.
+    """
+    path = Path(path)
+    label = path.name
+    runner = runner or KICAD_RUNNER or subprocess.run
+    try:
+        root = sexpr.parse(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise CircuitReviewInputError(f"missing {label}; run `pcbforge render-circuit`") from exc
+    except (OSError, UnicodeError, sexpr.SExprError) as exc:
+        raise CircuitReviewInputError(f"{label}: not a KiCad schematic: {exc}") from exc
+    if sexpr.head(root) != "kicad_sch":
+        raise CircuitReviewInputError(f"{label}: not a KiCad schematic")
+    if sexpr.atom(sexpr.child(root, "version")) != SCH_FORMAT_VERSION:
+        raise CircuitReviewInputError(
+            f"{label}: expected schematic format version {SCH_FORMAT_VERSION}"
+        )
+    if sexpr.atom(sexpr.child(root, "generator")) != "pcbforge":
+        raise CircuitReviewInputError(f"{label}: must be generated by pcbforge render-circuit")
+    forbidden = {"sheet", "image", "embedded_files", "bus", "bus_entry"}
+    present = sorted({sexpr.head(node) for node in root if isinstance(node, list)} & forbidden)
+    if present:
+        raise CircuitReviewInputError(
+            f"{label}: unsupported elements in a review schematic: " + ", ".join(present)
+        )
+    texts = _sheet_texts(root)
+    if not any(REVIEW_MARKER_TEXT in text for text in texts):
+        raise CircuitReviewInputError(
+            f"{label}: missing the visible `{REVIEW_MARKER_TEXT}` marker"
+        )
+    expected = circuit_model_fingerprint(model)
+    if not any(f"pcbforge_model_sha256={expected}" in text for text in texts):
+        raise CircuitReviewInputError(
+            f"{label}: model fingerprint is missing or stale; expected "
+            f"pcbforge_model_sha256={expected} (rerun `pcbforge render-circuit`)"
+        )
+
+    components = {item.reference: item for item in model.components}
+    group_of = {ref: group.identifier for group in model.groups for ref in group.references}
+    seen: dict[str, int] = {}
+    errors: list[str] = []
+    for symbol in sexpr.children(root, "symbol"):
+        props = _symbol_properties(symbol)
+        reference = props.get("Reference", "")
+        if reference.startswith("#"):
+            continue
+        component = components.get(reference)
+        if component is None:
+            errors.append(f"symbol {reference!r} is not in the model")
+            continue
+        seen[reference] = seen.get(reference, 0) + 1
+        if props.get("Value") != component.value:
+            errors.append(f"{reference}: value {props.get('Value')!r} != model {component.value!r}")
+        if _normalize_footprint(props.get("Footprint", "")) != _normalize_footprint(component.footprint):
+            errors.append(
+                f"{reference}: footprint {props.get('Footprint')!r} != model {component.footprint!r}"
+            )
+        if props.get("pcbforge_group") != group_of.get(reference):
+            errors.append(f"{reference}: pcbforge_group {props.get('pcbforge_group')!r} != {group_of.get(reference)!r}")
+        if props.get("pcbforge_purpose") != component.purpose:
+            errors.append(f"{reference}: pcbforge_purpose does not match the model")
+    missing = sorted(set(components) - set(seen))
+    if missing:
+        errors.append("model components missing from the schematic: " + ", ".join(missing))
+    duplicated = sorted(ref for ref, count in seen.items() if count > 1)
+    multi_unit_ok = set()
+    for ref in duplicated:
+        units = {
+            sexpr.atom(sexpr.child(symbol, "unit"))
+            for symbol in sexpr.children(root, "symbol")
+            if _symbol_properties(symbol).get("Reference") == ref
+        }
+        if len(units) == seen[ref]:
+            multi_unit_ok.add(ref)
+    duplicated = [ref for ref in duplicated if ref not in multi_unit_ok]
+    if duplicated:
+        errors.append("components placed more than once: " + ", ".join(duplicated))
+    group_titles = {group.title for group in model.groups}
+    shown = set(texts)
+    missing_groups = sorted(title for title in group_titles if title not in shown)
+    if missing_groups:
+        errors.append("group titles missing from the sheet: " + ", ".join(missing_groups))
+    if errors:
+        raise CircuitReviewError(f"{label}: structural checks failed:\n  - " + "\n  - ".join(errors))
+
+    audit = _read_audit(audit_path_for(path), model)
+    placed = set(audit["bound_component_refs"])
+    if placed != set(components):
+        raise CircuitReviewInputError(
+            f"{audit_path_for(path).name}: bound_component_refs do not match the model"
+        )
+
+    kicad = _kicad_cli(tool_root)
+    with tempfile.TemporaryDirectory(prefix="pcbforge-sch-") as temporary:
+        staging = Path(temporary)
+        erc_path = staging / "erc.json"
+        completed = _run_kicad(
+            runner,
+            (kicad, "sch", "erc", "--format", "json", "--severity-error", "--output", str(erc_path), str(path)),
+            label="ERC",
+        )
+        if not erc_path.is_file():
+            tail = (completed.stdout or "").strip().splitlines()[-1:] or [""]
+            raise CircuitReviewInputError(
+                f"kicad-cli could not run ERC on {label} (exit {completed.returncode}) {tail[0]}".strip()
+            )
+        violations = _erc_violations(erc_path)
+        if violations:
+            raise CircuitReviewError(f"{label}: ERC errors:\n  - " + "\n  - ".join(violations))
+        net_path = staging / "review.net"
+        completed = _run_kicad(
+            runner,
+            (kicad, "sch", "export", "netlist", "--format", "kicadsexpr", "--output", str(net_path), str(path)),
+            label="netlist export",
+        )
+        if not net_path.is_file():
+            raise CircuitReviewInputError(
+                f"kicad-cli could not export a netlist from {label} (exit {completed.returncode})"
+            )
+        schematic_nets = _parse_netlist(net_path)
+
+    model_nets = {frozenset(item.nodes): item for item in model.nets}
+    missing_topology = sorted(
+        model_nets[endpoints].identifier for endpoints in set(model_nets) - set(schematic_nets)
+    )
+    extra_topology = sorted(
+        schematic_nets[endpoints] + " {" + ", ".join(sorted(endpoints)) + "}"
+        for endpoints in set(schematic_nets) - set(model_nets)
+    )
+    parity: list[str] = []
+    if missing_topology:
+        parity.append("schematic is missing proposed endpoint sets: " + ", ".join(missing_topology))
+    if extra_topology:
+        parity.append("schematic has unproposed endpoint sets: " + ", ".join(extra_topology))
+    for endpoints in set(model_nets) & set(schematic_nets):
+        net = model_nets[endpoints]
+        actual = schematic_nets[endpoints]
+        if len(endpoints) < 2:
+            continue
+        if actual != net.display_name and not actual.startswith("Net-("):
+            parity.append(
+                f"{net.identifier}: schematic net is named {actual!r}, expected {net.display_name!r}"
+            )
+    if parity:
+        raise CircuitReviewError(f"{label}: netlist parity failed:\n  - " + "\n  - ".join(parity))
+
+    unlabeled = sorted(
+        model_nets[endpoints].identifier
+        for endpoints in set(model_nets) & set(schematic_nets)
+        if len(endpoints) >= 2 and schematic_nets[endpoints].startswith("Net-(")
+    )
+    warnings = list(audit["warnings"])
+    for identifier in unlabeled:
         warnings.append(
             {
-                "code": "missing-component-symbol",
-                "message": (
-                    f"{reference} is connected but has no bound schematic symbol"
-                ),
+                "code": "unlabeled-net",
+                "message": f"net {identifier} has no label or power symbol showing its name",
             }
         )
     unique = {(item["code"], item["message"]): item for item in warnings}
-    return {
-        "schema": DIAGRAM_AUDIT_SCHEMA,
-        "bound_component_refs": bound,
-        "warnings": [unique[key] for key in sorted(unique)],
-    }
-
-
-def validate_circuit_svg(path: Path, model: CircuitModel) -> dict[str, Any]:
-    """Validate browser safety, model binding, and explanatory coverage."""
-    try:
-        raw = path.read_text(encoding="utf-8")
-        root = ET.fromstring(raw)
-    except FileNotFoundError as exc:
-        raise CircuitReviewInputError(f"missing {path.name}") from exc
-    except (OSError, UnicodeError, ET.ParseError) as exc:
-        raise CircuitReviewInputError(f"invalid SVG {path}: {exc}") from exc
-    if root.tag.rsplit("}", 1)[-1] != "svg":
-        raise CircuitReviewInputError(f"{path.name}: root element must be <svg>")
-    unsafe_text = raw.casefold()
-    css_urls = re.findall(r"url\(([^)]*)\)", unsafe_text)
-    external_css_url = any(
-        not value.strip().strip("'\"").startswith("#") for value in css_urls
-    )
-    if (
-        any(token in unsafe_text for token in ("javascript:", "@import"))
-        or external_css_url
-    ):
-        raise CircuitReviewInputError(f"{path.name}: external or executable content")
-    for element in root.iter():
-        local = element.tag.rsplit("}", 1)[-1]
-        if local in {"script", "foreignObject", "image"}:
-            raise CircuitReviewInputError(
-                f"{path.name}: <{local}> is not allowed in a review SVG"
-            )
-        for key, value in element.attrib.items():
-            if key.rsplit("}", 1)[-1] == "href" and not value.startswith("#"):
-                raise CircuitReviewInputError(
-                    f"{path.name}: external references are not allowed"
-                )
-    title = next(
-        (
-            element
-            for element in root.iter()
-            if element.tag.rsplit("}", 1)[-1] == "title"
-        ),
-        None,
-    )
-    description = next(
-        (
-            element
-            for element in root.iter()
-            if element.tag.rsplit("}", 1)[-1] == "desc"
-        ),
-        None,
-    )
-    if title is None or not _visible_text(title):
-        raise CircuitReviewInputError(f"{path.name}: missing accessible <title>")
-    if description is None or not _visible_text(description):
-        raise CircuitReviewInputError(f"{path.name}: missing accessible <desc>")
-    if "review-only" not in " ".join(root.itertext()).casefold():
-        raise CircuitReviewInputError(
-            f"{path.name}: must visibly identify itself as review-only"
-        )
-    expected_hash = circuit_model_fingerprint(model)
-    if root.attrib.get("data-pcbforge-model-sha256") != expected_hash:
-        raise CircuitReviewInputError(
-            f"{path.name}: data-pcbforge-model-sha256 does not match circuit.yaml; "
-            f"expected {expected_hash}"
-        )
-
-    expected = {
-        "data-component-ref": {item.reference for item in model.components},
-        "data-net-id": {item.identifier for item in model.nets},
-        "data-group-id": {item.identifier for item in model.groups},
-        "data-path-id": {item.identifier for item in model.paths},
-        "data-purpose-for": {item.reference for item in model.components},
-    }
-    for attribute, wanted in expected.items():
-        tagged: dict[str, list[ET.Element]] = {}
-        for element in root.iter():
-            value = element.attrib.get(attribute)
-            if value:
-                tagged.setdefault(value, []).append(element)
-        unknown = sorted(set(tagged) - wanted)
-        missing = sorted(wanted - set(tagged))
-        if unknown or missing:
-            details = []
-            if missing:
-                details.append("missing " + ", ".join(missing))
-            if unknown:
-                details.append("unknown " + ", ".join(unknown))
-            raise CircuitReviewInputError(
-                f"{path.name}: {attribute} coverage failed: {'; '.join(details)}"
-            )
-        invisible = sorted(
-            identifier
-            for identifier, elements in tagged.items()
-            if not any(_visible_text(element) for element in elements)
-        )
-        if invisible:
-            raise CircuitReviewInputError(
-                f"{path.name}: {attribute} must tag visible explanatory content: "
-                + ", ".join(invisible)
-            )
-    for path_item in model.paths:
-        tagged = [
-            element
-            for element in root.iter()
-            if element.attrib.get("data-path-id") == path_item.identifier
-        ]
-        if not any(
-            child.tag.rsplit("}", 1)[-1] in {"line", "path", "polyline"}
-            for element in tagged
-            for child in element.iter()
-        ):
-            raise CircuitReviewInputError(
-                f"{path.name}: data-path-id {path_item.identifier!r} "
-                "must contain a visible wire shape"
-            )
-    return _diagram_audit(root, model)
+    audit["warnings"] = [unique[key] for key in sorted(unique)]
+    return audit
 
 
 def _normalize_footprint(value: str) -> str:
@@ -1033,7 +1160,8 @@ def circuit_review_inputs(project_dir: Path, stage: str) -> tuple[Path, ...]:
         project_dir / "docs" / "architecture.md",
         project_dir / BASELINE_PATH,
         project_dir / contract.model,
-        project_dir / contract.diagram,
+        project_dir / contract.schematic,
+        audit_path_for(project_dir / contract.schematic),
         project_dir / narrative,
     }
     if stage == "final":
@@ -1105,6 +1233,8 @@ def check_circuit_review(
     stage: str,
     *,
     write: bool = False,
+    tool_root: Path | None = None,
+    runner: CommandRunner | None = None,
 ) -> CircuitReviewResult:
     """Validate proposal comprehension evidence or final compiled parity."""
     project_dir = project_dir.expanduser().resolve()
@@ -1113,7 +1243,7 @@ def check_circuit_review(
     _read_pins(project_dir)
     contract = read_circuit_review_contract(project_dir)
     model_path = project_dir / contract.model
-    diagram_path = project_dir / contract.diagram
+    schematic_path = project_dir / contract.schematic
     narrative_rel = (
         contract.proposal_narrative if stage == "proposal" else contract.final_narrative
     )
@@ -1132,9 +1262,16 @@ def check_circuit_review(
         raise CircuitReviewInputError(
             "review-only circuit directories must not contain a KiCad PCB"
         )
+    if any(review_root.rglob("*.kicad_pro")):
+        raise CircuitReviewInputError(
+            "review-only circuit directories must not contain a KiCad project; "
+            "the review schematic opens standalone and never drives a board"
+        )
 
     model = read_circuit_model(model_path)
-    diagram_audit = validate_circuit_svg(diagram_path, model)
+    schematic_audit = validate_circuit_schematic(
+        schematic_path, model, tool_root=tool_root, runner=runner
+    )
     model_fingerprint = circuit_model_fingerprint(model)
     if stage == "proposal":
         baseline_ok, detail = baseline_is_current(project_dir)
@@ -1177,12 +1314,12 @@ def check_circuit_review(
         "circuit_review_schema": CIRCUIT_REVIEW_SCHEMA,
         "stage": stage,
         "model_path": contract.model.as_posix(),
-        "diagram": contract.diagram.as_posix(),
+        "schematic": contract.schematic.as_posix(),
         "narrative": narrative_rel.as_posix(),
         "model_semantic_fingerprint": model_fingerprint,
         "model": _model_payload(model),
-        "diagram_sha256": hashlib.sha256(diagram_path.read_bytes()).hexdigest(),
-        "diagram_audit": diagram_audit,
+        "schematic_sha256": hashlib.sha256(schematic_path.read_bytes()).hexdigest(),
+        "schematic_audit": schematic_audit,
         "narrative_sha256": hashlib.sha256(narrative_path.read_bytes()).hexdigest(),
         "board_topology_sha256": board_hash,
         "compiler_net_names": compiler_names,
@@ -1231,7 +1368,7 @@ def check_circuit_review(
                 f"{evidence_rel.as_posix()} is missing; rerun with --write"
             ) from exc
     diagram_warnings = tuple(
-        f"[{item['code']}] {item['message']}" for item in diagram_audit["warnings"]
+        f"[{item['code']}] {item['message']}" for item in schematic_audit["warnings"]
     )
     return CircuitReviewResult(
         stage,

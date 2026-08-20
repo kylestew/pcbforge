@@ -12,12 +12,12 @@ from pcbforge.build_test import (
     check_build_test,
 )
 from pcbforge.compatibility import CompatibilityError, validate_project_compatibility
-from pcbforge.diagram import DiagramError, RenderResult
 from pcbforge.circuit_review import (
     CircuitReviewError,
     CircuitReviewInputError,
     check_circuit_review,
 )
+from pcbforge.kicad_sch import RenderResult, SchematicError, export_preview
 from pcbforge.fab import (
     FabError,
     FabInputError,
@@ -151,9 +151,10 @@ def _parser() -> argparse.ArgumentParser:
         "check-circuit-review",
         help="validate the authored CIRCUIT review gate",
         description=(
-            "Validate the exact proposal model and authored explanatory SVG. "
-            "Final checks compare the approved model directly with the compiled "
-            "Atopile BOM and PCB topology; KiCad schematic generation is not used."
+            "Validate the exact proposal model and the generated review "
+            "schematic (structure, ERC, pin-exact netlist parity). Final checks "
+            "compare the approved model directly with the compiled Atopile BOM "
+            "and PCB topology."
         ),
     )
     check_circuit_review_parser.add_argument(
@@ -176,13 +177,14 @@ def _parser() -> argparse.ArgumentParser:
 
     render_circuit_parser = subcommands.add_parser(
         "render-circuit",
-        help="run the authored schemdraw circuit diagram script",
+        help="run the authored circuit schematic script",
         description=(
-            "Execute review/circuit/circuit_diagram.py inside the pinned "
-            "toolchain. The script draws the review schematic through "
-            "pcbforge.diagram.ReviewDiagram, whose save step stamps the model "
-            "fingerprint, generates register furniture, and validates the SVG "
-            "with the same gate as check-circuit-review."
+            "Execute review/circuit/circuit_schematic.py inside the pinned "
+            "toolchain. The script places symbols and wires through "
+            "pcbforge.kicad_sch.ReviewSchematic, whose save step embeds KiCad 9 "
+            "symbols, stamps the model fingerprint, generates group boxes and "
+            "registers, lints readability, runs ERC, and proves the netlist "
+            "against the model with the same gate as check-circuit-review."
         ),
     )
     render_circuit_parser.add_argument(
@@ -191,6 +193,11 @@ def _parser() -> argparse.ArgumentParser:
         default=".",
         metavar="PROJECT_DIR",
         help="initialized pcbforge project (default: current directory)",
+    )
+    render_circuit_parser.add_argument(
+        "--svg",
+        action="store_true",
+        help="also export review/circuit/preview/circuit.svg (and .png when a rasterizer exists)",
     )
 
     check_build_test_parser = subcommands.add_parser(
@@ -767,36 +774,43 @@ def main(argv: list[str] | None = None) -> int:
         print(f"pcbforge: {state} {result.stage} circuit review evidence")
         print(f"pcbforge: {result.summary}")
         for warning in result.diagram_warnings:
-            print(f"pcbforge: diagram warning {warning}")
+            print(f"pcbforge: schematic warning {warning}")
         print(f"pcbforge: evidence fingerprint {result.fingerprint}")
         return 0
 
     if args.command == "render-circuit":
         import runpy
 
-        script = (
-            Path(args.project_dir).expanduser().resolve()
-            / "review"
-            / "circuit"
-            / "circuit_diagram.py"
-        )
+        project_dir = Path(args.project_dir).expanduser().resolve()
+        script = project_dir / "review" / "circuit" / "circuit_schematic.py"
         if not script.is_file():
             print(
                 "pcbforge render-circuit: missing review/circuit/"
-                "circuit_diagram.py — author it per agent/circuit-svg.md",
+                "circuit_schematic.py — author it per agent/circuit-kicad.md",
                 file=sys.stderr,
             )
             return 2
         try:
             namespace = runpy.run_path(str(script), run_name="__main__")
-        except (DiagramError, CircuitReviewInputError) as exc:
+        except (SchematicError, CircuitReviewError) as exc:
             print(f"pcbforge render-circuit: {exc}", file=sys.stderr)
             return 1
         result = namespace.get("result")
         if isinstance(result, RenderResult):
+            for reference, choice in result.symbol_choices.items():
+                print(f"pcbforge: symbol {reference} -> {choice.symbol.lib_id} ({choice.reason})")
             for warning in result.warnings:
-                print(f"pcbforge: diagram warning [{warning.code}] {warning.message}")
-        print("pcbforge: rendered and validated the circuit review diagram")
+                print(f"pcbforge: schematic warning [{warning.code}] {warning.message}")
+            print(f"pcbforge: {result.summary}")
+        if args.svg:
+            try:
+                outputs = export_preview(project_dir)
+            except (SchematicError, CircuitReviewInputError) as exc:
+                print(f"pcbforge render-circuit: {exc}", file=sys.stderr)
+                return 1
+            for path in outputs:
+                print(f"pcbforge: preview {path.relative_to(project_dir).as_posix()}")
+        print("pcbforge: rendered and validated the circuit review schematic")
         return 0
 
     if args.command == "check-policy":

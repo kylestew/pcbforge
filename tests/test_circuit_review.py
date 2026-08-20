@@ -11,6 +11,7 @@ import yaml
 
 from pcbforge.cli import main
 from pcbforge.artifact_hash import semantic_pin_bytes
+from pcbforge import circuit_review
 from pcbforge.circuit_review import (
     CircuitReviewError,
     CircuitReviewInputError,
@@ -32,6 +33,8 @@ from pcbforge.status import (
     write_status,
 )
 
+
+from tests.kicad_fake import FakeKicad, audit_text, schematic_text
 
 TOOL_ROOT = Path(__file__).resolve().parents[1]
 
@@ -94,43 +97,23 @@ paths:
 """
 
 
-def svg(
-    model_hash: str,
-    *,
-    include_path: bool = True,
-    include_audit: bool = True,
-) -> str:
-    path = (
-        """<g data-path-id="current-path">
-    <text>Supply to ground</text><path d="M 20 80 H 180"/>
-  </g>"""
-        if include_path
-        else ""
-    )
-    audit = (
-        '<metadata id="pcbforge-diagram-audit">'
-        '{"schema":1,"bound_component_refs":["R1"],"warnings":[]}'
-        "</metadata>"
-        if include_audit
-        else ""
-    )
-    return f"""<svg xmlns="http://www.w3.org/2000/svg"
-  data-pcbforge-model-sha256="{model_hash}" role="img" viewBox="0 0 200 120">
-  <title>Garden logger circuit proposal</title>
-  <desc>Review-only explanatory current path.</desc>
-  <text>PCBForge review-only — not PCB input</text>
-  <g data-group-id="reviewed-branch"><text>Reviewed branch</text></g>
-  <g data-component-ref="R1"><text>R1 1k resistor</text></g>
-  <g data-purpose-for="R1"><text>Limits current</text></g>
-  <text data-net-id="supply">+3V3</text>
-  <text data-net-id="ground">GND</text>
-  {audit}
-  {path}
-</svg>
-"""
-
-
 class CircuitReviewFixture(unittest.TestCase):
+    def setUp(self) -> None:
+        self.kicad = FakeKicad()
+        patcher = mock.patch.object(circuit_review, "KICAD_RUNNER", self.kicad)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def write_schematic(self, project: Path, model_path: Path | None = None, **overrides) -> str:
+        model_path = model_path or project / "review" / "circuit" / "circuit.yaml"
+        model_hash = circuit_model_fingerprint(read_circuit_model(model_path))
+        review = model_path.parent
+        (review / "circuit.kicad_sch").write_text(
+            schematic_text(model_hash, **overrides), encoding="utf-8"
+        )
+        (review / "circuit.audit.json").write_text(audit_text(model_hash), encoding="utf-8")
+        return model_hash
+
     def project(self, root: Path) -> Path:
         project = root / "garden-logger"
         project.mkdir()
@@ -141,7 +124,7 @@ class CircuitReviewFixture(unittest.TestCase):
             "  architecture_diagram_schema: 1\n"
             "  mcu_schema: 1\n"
             "  circuit_schema: 1\n"
-            "  circuit_review_schema: 1\n"
+            "  circuit_review_schema: 2\n"
             "  build_test_schema: 1\n"
             "  layout_handoff_schema: 1\n"
             "  approval_schema: 1\n"
@@ -192,16 +175,12 @@ guidance:
         review.mkdir(parents=True)
         model_path = review / "circuit.yaml"
         model_path.write_text(MODEL, encoding="utf-8")
-        model = read_circuit_model(model_path)
-        (review / "circuit.svg").write_text(
-            svg(circuit_model_fingerprint(model)),
-            encoding="utf-8",
-        )
+        self.write_schematic(project, model_path)
         (project / "circuit-review.yaml").write_text(
-            f"""circuit_review_schema: 1
+            f"""circuit_review_schema: 2
 build: default
 model: review/{review_name}/circuit.yaml
-diagram: review/{review_name}/circuit.svg
+schematic: review/{review_name}/circuit.kicad_sch
 proposal_narrative: docs/{proposal_name}
 final_narrative: docs/{final_name}
 """,
@@ -230,7 +209,7 @@ final_narrative: docs/{final_name}
 
 
 class CircuitReviewTests(CircuitReviewFixture):
-    def test_proposal_writes_stable_authored_svg_evidence(self) -> None:
+    def test_proposal_writes_stable_authored_schematic_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))
             first = check_circuit_review(project, "proposal", write=True)
@@ -248,69 +227,126 @@ class CircuitReviewTests(CircuitReviewFixture):
         self.assertEqual(first.fingerprint, second.fingerprint)
         self.assertEqual(first.components, 1)
         self.assertEqual(first.diagram_warnings, ())
-        self.assertEqual(evidence["diagram_audit"]["warnings"], [])
+        self.assertEqual(evidence["schematic_audit"]["warnings"], [])
+        self.assertEqual(evidence["schematic"], "review/circuit/circuit.kicad_sch")
         self.assertEqual(evidence["material_differences"], [])
         self.assertNotIn("erc", evidence)
         self.assertEqual(baseline["source_baseline_schema"], 1)
 
-    def test_svg_must_match_and_cover_the_exact_model(self) -> None:
+    def test_schematic_must_match_the_exact_model(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))
-            diagram = project / "review" / "circuit" / "circuit.svg"
-            diagram.write_text(svg("0" * 64), encoding="utf-8")
-            with self.assertRaisesRegex(
-                CircuitReviewInputError,
-                "does not match circuit.yaml",
-            ):
+            schematic = project / "review" / "circuit" / "circuit.kicad_sch"
+            schematic.write_text(schematic_text("0" * 64), encoding="utf-8")
+            with self.assertRaisesRegex(CircuitReviewInputError, "fingerprint is missing or stale"):
                 check_circuit_review(project, "proposal", write=True)
-            model = read_circuit_model(
-                project / "review" / "circuit" / "circuit.yaml"
+            model_hash = self.write_schematic(project, marker=False)
+            with self.assertRaisesRegex(CircuitReviewInputError, "review-only"):
+                check_circuit_review(project, "proposal", write=True)
+            self.write_schematic(project, value="2k2")
+            with self.assertRaisesRegex(CircuitReviewError, "value '2k2'"):
+                check_circuit_review(project, "proposal", write=True)
+            self.write_schematic(project, group_title="Wrong title")
+            with self.assertRaisesRegex(CircuitReviewError, "group titles missing"):
+                check_circuit_review(project, "proposal", write=True)
+            self.write_schematic(project, version="20231120")
+            with self.assertRaisesRegex(CircuitReviewInputError, "format version"):
+                check_circuit_review(project, "proposal", write=True)
+            self.write_schematic(project)
+            check_circuit_review(project, "proposal", write=True)
+            self.assertTrue(any(call[1:3] == ["sch", "erc"] for call in self.kicad.calls))
+            self.assertTrue(
+                any(call[1:4] == ["sch", "export", "netlist"] for call in self.kicad.calls)
             )
-            diagram.write_text(
-                svg(circuit_model_fingerprint(model), include_path=False),
-                encoding="utf-8",
-            )
-            with self.assertRaisesRegex(CircuitReviewInputError, "data-path-id"):
+        self.assertEqual(len(model_hash), 64)
+
+    def test_erc_errors_and_netlist_parity_block_the_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            self.kicad.erc = ["Pin not connected"]
+            with self.assertRaisesRegex(CircuitReviewError, "(?s)ERC errors.*Pin not connected"):
+                check_circuit_review(project, "proposal", write=True)
+            self.kicad.erc = []
+            self.kicad.nets = {"+3V3": ["R1.1", "R1.2"]}
+            with self.assertRaisesRegex(CircuitReviewError, "missing proposed endpoint sets: ground, supply"):
+                check_circuit_review(project, "proposal", write=True)
+            self.kicad.nets = {"+3V3": ["R1.1"], "GND": ["R1.2"], "EXTRA": ["R1.3"]}
+            with self.assertRaisesRegex(CircuitReviewError, "unproposed endpoint sets: EXTRA"):
+                check_circuit_review(project, "proposal", write=True)
+            self.kicad.nets = {"+3V3": ["R1.1"], "GND": ["R1.2"]}
+            self.kicad.fail = True
+            with self.assertRaisesRegex(CircuitReviewInputError, "could not run ERC"):
                 check_circuit_review(project, "proposal", write=True)
 
-    def test_missing_diagram_audit_is_a_non_blocking_warning(self) -> None:
+    def test_multi_node_net_names_must_match_display_names(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))
-            model = read_circuit_model(
-                project / "review" / "circuit" / "circuit.yaml"
-            )
-            diagram = project / "review" / "circuit" / "circuit.svg"
-            diagram.write_text(
-                svg(
-                    circuit_model_fingerprint(model),
-                    include_audit=False,
+            model_path = project / "review" / "circuit" / "circuit.yaml"
+            model_path.write_text(
+                MODEL.replace("nodes: [R1.1]", "nodes: [R1.1, R1.2]").replace(
+                    "  - id: ground\n    display_name: GND\n    compiler_name: GND\n    nodes: [R1.2]\n",
+                    "",
                 ),
+                encoding="utf-8",
+            )
+            self.write_schematic(project)
+            capture_implementation_baseline(project)
+            self.kicad.nets = {"WRONG": ["R1.1", "R1.2"]}
+            with self.assertRaisesRegex(CircuitReviewError, "named 'WRONG', expected '\\+3V3'"):
+                check_circuit_review(project, "proposal", write=True)
+            self.kicad.nets = {"Net-(R1-Pad1)": ["R1.1", "R1.2"]}
+            result = check_circuit_review(project, "proposal", write=True)
+            self.assertIn("[unlabeled-net] net supply", result.diagram_warnings[0])
+            self.kicad.nets = {"+3V3": ["R1.1", "R1.2"]}
+            result = check_circuit_review(project, "proposal", write=True)
+            self.assertEqual(result.diagram_warnings, ())
+
+    def test_audit_sidecar_is_required_and_validated(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            audit = project / "review" / "circuit" / "circuit.audit.json"
+            model_hash = circuit_model_fingerprint(
+                read_circuit_model(project / "review" / "circuit" / "circuit.yaml")
+            )
+            audit.unlink()
+            with self.assertRaisesRegex(CircuitReviewInputError, "missing circuit.audit.json"):
+                check_circuit_review(project, "proposal", write=True)
+            audit.write_text("not-json", encoding="utf-8")
+            with self.assertRaisesRegex(CircuitReviewInputError, "invalid JSON"):
+                check_circuit_review(project, "proposal", write=True)
+            audit.write_text(audit_text("1" * 64), encoding="utf-8")
+            with self.assertRaisesRegex(CircuitReviewInputError, "audit is stale"):
+                check_circuit_review(project, "proposal", write=True)
+            audit.write_text(audit_text(model_hash, bound=()), encoding="utf-8")
+            with self.assertRaisesRegex(CircuitReviewInputError, "bound_component_refs"):
+                check_circuit_review(project, "proposal", write=True)
+            audit.write_text(
+                audit_text(model_hash, warnings=[{"code": "text-text-overlap", "message": "a vs b"}]),
                 encoding="utf-8",
             )
             result = check_circuit_review(project, "proposal", write=True)
-            evidence = json.loads(
-                (project / result.evidence_path).read_text(encoding="utf-8")
-            )
+            evidence = json.loads((project / result.evidence_path).read_text(encoding="utf-8"))
 
-        self.assertTrue(result.diagram_warnings)
-        codes = {item["code"] for item in evidence["diagram_audit"]["warnings"]}
-        self.assertEqual(
-            codes,
-            {"missing-component-symbol", "missing-diagram-audit"},
-        )
+        self.assertEqual(result.diagram_warnings, ("[text-text-overlap] a vs b",))
+        self.assertEqual(evidence["schematic_audit"]["warnings"][0]["code"], "text-text-overlap")
 
-    def test_invalid_diagram_audit_is_rejected(self) -> None:
+    def test_review_directory_must_not_hold_a_kicad_project(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))
-            diagram = project / "review" / "circuit" / "circuit.svg"
-            diagram.write_text(
-                diagram.read_text(encoding="utf-8").replace(
-                    '{"schema":1,"bound_component_refs":["R1"],"warnings":[]}',
-                    "not-json",
-                ),
+            (project / "review" / "circuit" / "circuit.kicad_pro").write_text("{}", encoding="utf-8")
+            with self.assertRaisesRegex(CircuitReviewInputError, "must not contain a KiCad project"):
+                check_circuit_review(project, "proposal", write=True)
+
+    def test_schema_one_contract_explains_the_migration(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            (project / "circuit-review.yaml").write_text(
+                "circuit_review_schema: 1\nbuild: default\nmodel: review/circuit/circuit.yaml\n"
+                "diagram: review/circuit/circuit.svg\nproposal_narrative: docs/circuit-proposal.md\n"
+                "final_narrative: docs/circuit-review.md\n",
                 encoding="utf-8",
             )
-            with self.assertRaisesRegex(CircuitReviewInputError, "diagram-audit JSON"):
+            with self.assertRaisesRegex(CircuitReviewInputError, "circuit_schematic.py"):
                 check_circuit_review(project, "proposal", write=True)
 
     def test_model_rejects_broken_paths_and_duplicate_pin_assignment(self) -> None:
@@ -436,19 +472,26 @@ groups:
                 ),
                 encoding="utf-8",
             )
-            model = read_circuit_model(model_path)
-            diagram = project / "review" / "circuit" / "circuit.svg"
-            diagram.write_text(
-                svg(circuit_model_fingerprint(model)).replace(
-                    "</svg>",
-                    """  <text data-component-ref="TP1">TP1 test pad</text>
-  <text data-purpose-for="TP1">Sense-node service access</text>
-  <text data-net-id="sense">SENSE</text>
-</svg>
-""",
+            model_hash = self.write_schematic(project, model_path)
+            schematic = project / "review" / "circuit" / "circuit.kicad_sch"
+            schematic.write_text(
+                schematic.read_text(encoding="utf-8").replace(
+                    "  (sheet_instances",
+                    """  (symbol (lib_id "Connector:TestPoint") (at 70 50 0) (unit 1) (uuid "s2")
+    (property "Reference" "TP1" (at 72 50 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "1.5mm test pad" (at 72 52 0) (effects (font (size 1.27 1.27))))
+    (property "Footprint" "TestPoint:TestPoint_Pad_D1.5mm" (at 70 50 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "pcbforge_group" "reviewed-branch" (at 70 50 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "pcbforge_purpose" "Exposes the reviewed sense node." (at 70 50 0) (effects (font (size 1.27 1.27)) (hide yes)))
+  )
+  (sheet_instances""",
                 ),
                 encoding="utf-8",
             )
+            (project / "review" / "circuit" / "circuit.audit.json").write_text(
+                audit_text(model_hash, bound=("R1", "TP1")), encoding="utf-8"
+            )
+            self.kicad.nets = {"+3V3": ["R1.1"], "GND": ["R1.2"], "SENSE": ["TP1.1"]}
             bom = project / "build" / "builds" / "default" / "default.bom.json"
             payload = json.loads(bom.read_text(encoding="utf-8"))
             payload["components"][0]["value"] = ""

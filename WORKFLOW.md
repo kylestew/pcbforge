@@ -169,10 +169,11 @@ returns to the ARCHITECT proposal gate.
 ## 3. CIRCUIT
 
 Follow `agent/circuit.md`. Before physical source edits, author the exact
-review-only circuit model and the explanatory schematic under
-`review/circuit/` — the SVG is generated from a schemdraw script via
-`pcbforge render-circuit` per `agent/circuit-svg.md` — plus
-`docs/circuit-proposal.md`. Obtain CIRCUIT proposal approval.
+review-only circuit model and the review schematic under `review/circuit/` —
+a KiCad 9 sheet generated from a Python script via `pcbforge render-circuit`
+per `agent/circuit-kicad.md`, ERC-clean and netlist-proven against the model,
+kept open beside pcbnew during hand layout — plus `docs/circuit-proposal.md`.
+Obtain CIRCUIT proposal approval.
 
 Then implement the complete circuit: physical connections, exact parts,
 values, official symbols/footprints, constraints, sourcing, protection,
@@ -185,7 +186,7 @@ Final evidence includes current:
 - pinned build and IOC check;
 - `pcbforge check-parts`;
 - `pcbforge check-policy`;
-- authored model/SVG versus source, BOM, and PCB parity;
+- authored model/schematic versus source, BOM, and PCB parity;
 - `build-test.yaml`, marked assertions, and `docs/build-test.md`;
 - concise source-owned KiCad net names matching every proposal-model
   `compiler_name`, with unused single-pad nets named `NC_<REF>_<PIN>`;
