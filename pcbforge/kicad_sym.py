@@ -328,20 +328,26 @@ def generic_symbol(
     *,
     reference_prefix: str = "U",
     sides: Mapping[str, str] | None = None,
+    pitch: float = 2.54,
 ) -> LibSymbol:
     """Generate a rectangular box symbol with numbered pins on a 2.54 mm pitch.
 
     ``pins`` is a sequence of ``(number, name)``. ``sides`` may force a pin
-    number to ``left``/``right``/``top``/``bottom``; otherwise supply-like
-    names go top (positive) / bottom (ground) and the rest alternate
-    left/right in pin-number order.
+    number to ``left``/``right``/``top``/``bottom`` and its insertion order is
+    the order along that side (top to bottom, left to right); otherwise
+    supply-like names go top (positive) / bottom (ground) and the rest
+    alternate left/right in pin-number order.
     """
     if not pins:
         raise SymbolError(f"generic symbol {name!r} needs at least one pin")
     sides = dict(sides or {})
     buckets: dict[str, list[tuple[str, str]]] = {"left": [], "right": [], "top": [], "bottom": []}
     rest: list[tuple[str, str]] = []
-    for number, pin_name in pins:
+    # the caller's ``sides`` order is the pin order along each side
+    by_number = {number: pin_name for number, pin_name in pins}
+    ordered = [(n, by_number[n]) for n in sides if n in by_number]
+    ordered += [(n, name) for n, name in pins if n not in sides]
+    for number, pin_name in ordered:
         side = sides.get(number)
         if side is None and _POWER_NAME_RE.match(pin_name or ""):
             side = "bottom" if re.match(r"^(GND|VSS|[ADP]GND)$", pin_name, re.I) else "top"
@@ -352,12 +358,13 @@ def generic_symbol(
     half = (len(rest) + 1) // 2
     buckets["left"] += rest[:half]
     buckets["right"] += rest[half:]
+    pitch = round(round(pitch / 1.27) * 1.27, 4) or 2.54
     rows = max(len(buckets["left"]), len(buckets["right"]), 1)
     cols = max(len(buckets["top"]), len(buckets["bottom"]), 1)
     longest = max((len(pin_name) for _, pin_name in pins), default=1)
-    half_w = max(cols * 1.27 + 1.27, round((longest * 1.3 + 2.54) / 1.27) * 1.27 / 2 + 2.54)
+    half_w = max(cols * pitch / 2 + 1.27, round((longest * 1.3 + 2.54) / 1.27) * 1.27 / 2 + 2.54)
     half_w = math.ceil(half_w / 1.27) * 1.27
-    half_h = math.ceil((rows * 2.54 / 2 + 1.27) / 1.27) * 1.27
+    half_h = math.ceil((rows * pitch / 2 + 1.27) / 1.27) * 1.27
     length = 2.54
     lib_id = f"{GENERIC_LIB}:{name}"
     node = _symbol_header(lib_id, reference_prefix, name)
@@ -386,9 +393,9 @@ def generic_symbol(
         unit_node.append(_pin_node(number, pin_name, "passive", x, y, rotation, length))
         pin_list.append(Pin(number, pin_name, "passive", x, y, rotation, length, 1))
 
-    def spread(count: int, pitch: float = 2.54) -> list[float]:
-        start = (count - 1) * pitch / 2
-        return [round((start - index * pitch) / 1.27) * 1.27 for index in range(count)]
+    def spread(count: int, step: float = pitch) -> list[float]:
+        start = (count - 1) * step / 2
+        return [round((start - index * step) / 1.27) * 1.27 for index in range(count)]
 
     for (number, pin_name), y in zip(buckets["left"], spread(len(buckets["left"]))):
         add(number, pin_name, -half_w - length, y, 0)
@@ -493,7 +500,11 @@ _KIND_SYMBOLS: Mapping[str, tuple[str, ...]] = {
     "battery": ("Device:Battery_Cell", "Device:Battery"),
     "switch": ("Switch:SW_Push", "Switch:SW_SPST", "Switch:SW_DIP_x01"),
     "test-point": ("Connector:TestPoint",),
-    "mechanical": ("Mechanical:MountingHole", "Mechanical:MountingHole_Pad"),
+    "mechanical": (
+        "Mechanical:MountingHole",
+        "Mechanical:MountingHole_Pad",
+        "Jumper:SolderJumper_2_Open",
+    ),
     "mosfet": ("Device:Q_NMOS_GSD", "Device:Q_PMOS_GSD"),
     "transistor": ("Device:Q_NPN_BEC", "Device:Q_PNP_BEC"),
 }
@@ -517,6 +528,10 @@ _MPN_LIBS = (
     "Sensor_Temperature",
     "Sensor_Motion",
     "Interface_USB",
+    "Interface_UART",
+    "Driver_Motor",
+    "Power_Protection",
+    "Jumper",
     "Memory_EEPROM",
     "Memory_Flash",
     "Amplifier_Operational",
@@ -570,6 +585,7 @@ def choose_symbol(
     override: str | None = None,
     pin_names: Mapping[str, str] | None = None,
     pin_sides: Mapping[str, str] | None = None,
+    pin_pitch: float = 2.54,
 ) -> SymbolChoice:
     """Pick a stock symbol whose pin numbers equal the footprint pads, else a box.
 
@@ -586,6 +602,7 @@ def choose_symbol(
             [(number, names.get(number, "")) for number in numbers],
             reference_prefix=re.match(r"^[A-Z]+", reference).group(0) if re.match(r"^[A-Z]+", reference) else "U",
             sides=pin_sides,
+            pitch=pin_pitch,
         )
         return SymbolChoice(symbol, reason, True)
 

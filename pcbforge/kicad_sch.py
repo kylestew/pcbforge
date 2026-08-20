@@ -283,6 +283,7 @@ class ReviewSchematic:
         self._paths = {p.identifier: p for p in self.model.paths}
         self._pin_names: dict[str, dict[str, str]] = {}
         self._pin_sides: dict[str, dict[str, str]] = {}
+        self._pin_pitch: dict[str, float] = {}
         self._net_of_node = {
             node: net.identifier for net in self.model.nets for node in net.nodes
         }
@@ -330,6 +331,7 @@ class ReviewSchematic:
                 override=override,
                 pin_names=self._pin_names.get(reference),
                 pin_sides=self._pin_sides.get(reference),
+                pin_pitch=self._pin_pitch.get(reference, 2.54),
             )
         except SymbolError as exc:
             raise SchematicError(str(exc)) from exc
@@ -342,15 +344,19 @@ class ReviewSchematic:
         names: Mapping[str, str],
         *,
         sides: Mapping[str, str] | None = None,
+        pitch: float = 2.54,
     ) -> None:
         """Name (and optionally side) pins of a generated box symbol; call before ``place``.
 
-        ``sides`` maps pin number to ``left``/``right``/``top``/``bottom``.
+        ``sides`` maps pin number to ``left``/``right``/``top``/``bottom`` in
+        the order they should appear; ``pitch`` is the pin spacing (5.08 gives
+        hanging parts room on dense boxes).
         """
         if reference not in self._components:
             raise SchematicError(f"unknown component reference {reference!r}")
         self._pin_names[reference] = {str(k): v for k, v in names.items()}
         self._pin_sides[reference] = {str(k): v for k, v in (sides or {}).items()}
+        self._pin_pitch[reference] = pitch
         self.choices.pop(reference, None)
 
     def place(
@@ -614,7 +620,18 @@ class ReviewSchematic:
         group_boxes = self._group_boxes()
         furniture = self._furniture(group_boxes)
         geometry = self._geometry(junctions, group_boxes, furniture)
-        warnings = sorted(set(lint(geometry)), key=lambda w: (w.code, w.message))
+        warnings = list(lint(geometry))
+        tips_by_ref = {ref: set(p.pins.values()) for ref, p in self.placed.items()}
+        for point in getattr(self, "_pass_pin_points", ()):
+            owners = sorted(ref for ref, tips in tips_by_ref.items() if point in tips)
+            warnings.append(
+                SchematicWarning(
+                    "wire-passes-pin",
+                    f"wire runs through pin tip of {', '.join(owners)} at ({point[0]:.2f}, {point[1]:.2f}) "
+                    "without ending there; KiCad connects it",
+                )
+            )
+        warnings = sorted(set(warnings), key=lambda w: (w.code, w.message))
         missing_symbols = tuple(
             sorted(ref for ref in self._connected_refs() if ref not in self.placed)
         )
@@ -753,7 +770,20 @@ class ReviewSchematic:
         (KiCad does this itself on save, so split files stay stable).
         """
         cut_points: set[Point] = set(junctions)
-        cut_points |= {tip for placed in self.placed.values() for tip in placed.pins.values()}
+        pin_tips = {tip for placed in self.placed.values() for tip in placed.pins.values()}
+        wire_ends = {w.start for w in self._wires} | {w.end for w in self._wires}
+        # a multi-pin part's tip inside a run that no wire ends on is a
+        # connection nobody drew (single-pin parts such as test pads sit on
+        # wires by design)
+        multi_tips = {
+            tip for placed in self.placed.values() if len(placed.pins) > 1 for tip in placed.pins.values()
+        }
+        self._pass_pin_points = sorted(
+            tip
+            for tip in multi_tips
+            if tip not in wire_ends and any(_strictly_inside(tip, w.start, w.end) for w in self._wires)
+        )
+        cut_points |= pin_tips
         cut_points |= {placed.at for placed in self._powers}
         cut_points |= {label.at for label in self._labels}
         for wire in self._wires:
@@ -848,6 +878,13 @@ class ReviewSchematic:
             ref = owner(power.at)
             if ref:
                 out.setdefault(ref, []).append(_power_box(power))
+        for wire in self._wires:
+            ref = owner(wire.start)
+            if ref:
+                out.setdefault(ref, []).append(
+                    Box(min(wire.start[0], wire.end[0]), min(wire.start[1], wire.end[1]),
+                        max(wire.start[0], wire.end[0]), max(wire.start[1], wire.end[1]))
+                )
         return out
 
     def _furniture(self, group_boxes: dict[str, Box]) -> list[_Text]:

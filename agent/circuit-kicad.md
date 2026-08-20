@@ -87,7 +87,7 @@ changes leaves the approved bytes alone.
 | `sch.no_connect(ref, n)` | no-connect marker; single-node model nets get one automatically |
 | `sch.note((x, y), text)` | free text |
 | `sch.group_box(group_id, (x1, y1, x2, y2))` | override the automatic group rectangle |
-| `sch.pin_names(ref, {"A": "anode"}, sides={"A": "left"})` | name and side pins of a generated box (call before `place`) |
+| `sch.pin_names(ref, {"A": "anode"}, sides={"A": "left"}, pitch=5.08)` | name and side pins of a generated box (call before `place`); `sides` insertion order is the pin order along each side; `pitch=5.08` leaves room for parts hanging from pin rows |
 | `sch.symbol_for(ref).symbol.pins` | the resolved symbol's pin table (number, name, lib position, direction) — read it before choosing a rotation |
 
 All identifiers are model IDs; a typo fails immediately. `Reference`,
@@ -141,8 +141,14 @@ which the gate proves equal to the board.
 5. Externally driven rails need `flag=True` once, or ERC reports
    `power_pin_not_driven`.
 6. A wire that passes over a pin tip connects to it in KiCad. The lint
-   reports `wire-passes-pin`; reroute.
-7. Mechanical parts (mounting holes) still get a symbol; the stock
+   reports `wire-passes-pin`; reroute. Stubs that go *through* a
+   connector's neighbouring pins (a ground stub dropped past pins 3 and 4)
+   are the classic case — use a label along the pin row instead.
+7. Dense boxes: parts hanging from a pin row cross the rows below them.
+   Fan rows out as a staircase (top rows reach furthest) or give each pin a
+   column and build the RC chain below the box; keep a ≥ 20 mm column pitch
+   when values are shown.
+8. Mechanical parts (mounting holes) still get a symbol; the stock
    `Mechanical:MountingHole` has no pins and no wires.
 
 ## Iterate until proven
