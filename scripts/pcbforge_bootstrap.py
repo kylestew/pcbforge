@@ -111,6 +111,7 @@ def project_argument(argv: Sequence[str], cwd: Path) -> Path | None:
         "check-ioc",
         "check-parts",
         "check-circuit-review",
+        "render-circuit",
         "check-build-test",
         "prepare-layout",
         "check-layout-handoff",

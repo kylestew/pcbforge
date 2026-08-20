@@ -44,6 +44,8 @@ class BootstrapArgumentTests(unittest.TestCase):
         cases = {
             ("init", "board"): cwd / "board",
             ("check-circuit-review", "--stage", "final", "board"): cwd / "board",
+            ("render-circuit", "--svg", "board"): cwd / "board",
+            ("render-circuit",): cwd,
             (
                 "policy",
                 "approve-exception",
