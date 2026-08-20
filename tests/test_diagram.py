@@ -14,7 +14,7 @@ from pcbforge.circuit_review import (
     read_circuit_model,
     validate_circuit_svg,
 )
-from pcbforge.diagram import DiagramError, ReviewDiagram
+from pcbforge.diagram import DiagramError, ReviewDiagram, _segment_intersection
 
 MODEL = """\
 circuit_model_schema: 1
@@ -84,6 +84,44 @@ paths:
   - {id: pass-through, title: Field pass-through, purpose: Keeps the field trunk continuous., nodes: [J1.1, J2.1]}
   - {id: conversion, title: Local conversion, purpose: Shows the converter and output filter., nodes: [U1.3, L1.1, L1.2, C1.1]}
 """
+
+
+class SegmentIntersectionTests(unittest.TestCase):
+    """Tolerances must scale with segment length, not with a raw epsilon."""
+
+    def test_short_separate_segments_do_not_intersect(self) -> None:
+        # a 0.2 stub sitting 0.2 above a 0.2 wire touches nothing
+        self.assertIsNone(
+            _segment_intersection((0, 0), (0.2, 0), (0.1, 0.2), (0.1, 0.4))
+        )
+        self.assertIsNone(
+            _segment_intersection((0, 0), (0.2, 0), (0.1, 0.06), (0.1, 0.26))
+        )
+
+    def test_long_separate_segments_still_do_not_intersect(self) -> None:
+        self.assertIsNone(
+            _segment_intersection((0, 0), (3.0, 0), (0.1, 0.06), (0.1, 0.26))
+        )
+
+    def test_real_short_crossing_is_still_found(self) -> None:
+        kind, point = _segment_intersection(
+            (-0.1, 0), (0.1, 0), (0, -0.1), (0, 0.1)
+        )
+        self.assertEqual(kind, "point")
+        self.assertAlmostEqual(point[0], 0.0)
+        self.assertAlmostEqual(point[1], 0.0)
+
+    def test_genuine_collinear_overlap_is_still_found(self) -> None:
+        self.assertEqual(
+            _segment_intersection((0, 0), (4, 0), (2, 0), (6, 0)),
+            ("overlap", None),
+        )
+
+    def test_gap_sentinel_is_ignored(self) -> None:
+        nan = float("nan")
+        self.assertIsNone(
+            _segment_intersection((0, 0), (nan, 0), (0, -1), (0, 1))
+        )
 
 
 class DiagramFixture(unittest.TestCase):
@@ -248,6 +286,86 @@ class DiagramTests(DiagramFixture):
         self.assertIn(
             "overlapping-wire-runs", {warning.code for warning in result.warnings}
         )
+
+    def test_short_parallel_stubs_are_not_reported(self) -> None:
+        diagram = self.make_diagram()
+        self.draw_minimal(diagram)
+        diagram.drawing += diagram.elm.Line().at((6, 0)).right().length(0.4)
+        diagram.drawing += diagram.elm.Line().at((6, 0.2)).right().length(0.4)
+        codes = {warning.code for warning in diagram.save().warnings}
+        self.assertNotIn("overlapping-wire-runs", codes)
+        self.assertNotIn("ambiguous-wire-crossing", codes)
+
+    def test_a_wire_label_does_not_overlap_its_own_wire(self) -> None:
+        for direction in ("right", "down"):
+            with self.subTest(direction=direction):
+                diagram = self.make_diagram()
+                self.draw_minimal(diagram)
+                line = diagram.elm.Line().at((6, 0))
+                diagram.drawing += (
+                    getattr(line, direction)().length(3).label("SDA")
+                )
+                self.assertNotIn(
+                    "text-wire-overlap",
+                    {warning.code for warning in diagram.save().warnings},
+                )
+
+    def test_fluent_dot_marks_a_junction(self) -> None:
+        cases = (
+            ("dot", lambda line: line.dot(), False),
+            ("open dot", lambda line: line.dot(open=True), True),
+            ("no dot", lambda line: line, True),
+        )
+        for name, mutate, expected in cases:
+            with self.subTest(case=name):
+                diagram = self.make_diagram()
+                self.draw_minimal(diagram)
+                elm = diagram.elm
+                diagram.drawing += elm.Line().at((6, 0)).right().length(4)
+                diagram.drawing += mutate(
+                    elm.Line().at((8, 1)).down().length(1)
+                )
+                self.assertEqual(
+                    "ambiguous-wire-crossing"
+                    in {warning.code for warning in diagram.save().warnings},
+                    expected,
+                )
+
+    def test_fluent_idot_marks_a_junction(self) -> None:
+        diagram = self.make_diagram()
+        self.draw_minimal(diagram)
+        elm = diagram.elm
+        diagram.drawing += elm.Line().at((6, 0)).right().length(4)
+        diagram.drawing += elm.Line().at((8, 0)).down().length(1).idot()
+        self.assertNotIn(
+            "ambiguous-wire-crossing",
+            {warning.code for warning in diagram.save().warnings},
+        )
+
+    def test_wire_through_a_curved_or_filled_symbol_body_is_reported(
+        self,
+    ) -> None:
+        # the fixture model only carries R1 and TP1; the audit cares that the
+        # symbol is bound, not which kind of part the model calls it
+        cases = (
+            ("polygon body", "Opamp", (8, 0), (7.5, 0.1), 3),
+            ("arc body", "BjtNpn", (8, 0), (7.6, 0.2), 2),
+        )
+        for name, symbol, at, wire_at, length in cases:
+            with self.subTest(case=name):
+                diagram = self.make_diagram()
+                self.draw_minimal(diagram)
+                elm = diagram.elm
+                diagram.component(
+                    "TP1", getattr(elm, symbol)().at(at).right()
+                )
+                diagram.drawing += (
+                    elm.Line().at(wire_at).right().length(length)
+                )
+                self.assertIn(
+                    "wire-symbol-overlap",
+                    {warning.code for warning in diagram.save().warnings},
+                )
 
     def test_converter_support_regression_has_zero_warnings(self) -> None:
         self.model_path.write_text(REGRESSION_MODEL, encoding="utf-8")
