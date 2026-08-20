@@ -8,6 +8,7 @@ serialisation, readability lint, audit record, and finally runs the same
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import re
@@ -28,6 +29,7 @@ from pcbforge.circuit_review import (
     read_circuit_review_contract,
     validate_circuit_schematic,
 )
+from pcbforge.kicad_project import KicadProjectError, register_root_sheet
 from pcbforge.kicad_sym import GRID, LibSymbol, SymbolChoice, SymbolError
 from pcbforge.sch_lint import Box, LintWarning, SheetGeometry, TextBox, lint
 from pcbforge.sexpr import Quoted
@@ -233,26 +235,36 @@ class ReviewSchematic:
         symbols_dir: Path | None = None,
         board_pads: Mapping[str, set[str]] | None = None,
         runner: CommandRunner | None = None,
-        project_name: str = "pcbforge-review",
+        project_name: str | None = None,
+        audit_path: Path | None = None,
     ) -> None:
         self.project_dir = None
+        self.project_path: Path | None = None
+        self.board_path: Path | None = None
         if project_dir is not None:
             project_dir = Path(project_dir).expanduser().resolve()
             contract = read_circuit_review_contract(project_dir)
             model_path = project_dir / contract.model
             output_path = project_dir / contract.schematic
+            audit_path = audit_path_for(project_dir)
+            # the contract already proved the sheet is <spec.name>.kicad_sch
+            project_name = project_name or Path(contract.schematic).stem
+            self.project_path = project_dir / f"{project_name}.kicad_pro"
+            self.board_path = project_dir / f"{project_name}.kicad_pcb"
             self.project_dir = project_dir
         if model_path is None or output_path is None:
             raise SchematicError("pass project_dir, or both model_path and output_path")
         self.model: CircuitModel = read_circuit_model(Path(model_path))
         self.output_path = Path(output_path)
-        self.audit_path = audit_path_for(self.output_path)
+        self.audit_path = Path(audit_path) if audit_path else self.output_path.with_name(
+            self.output_path.stem + ".audit.json"
+        )
         self.title = title
         self.desc = desc
         self.tool_root = (tool_root or Path(__file__).resolve().parents[1]).resolve()
         self.symbols_dir = Path(symbols_dir) if symbols_dir else kicad_sym.symbols_dir(self.tool_root)
         self.runner = runner
-        self.project_name = project_name
+        self.project_name = project_name or "pcbforge-review"
         self.fingerprint = circuit_model_fingerprint(self.model)
         self._board_pads = dict(board_pads or {})
         if not self._board_pads and self.project_dir is not None:
@@ -496,14 +508,14 @@ class ReviewSchematic:
         end = tip
         if length > 0:
             end = self.stub(tip, vector, length, path=path)
-        self._labels.append(_Label(net.display_name, end, _label_angle(vector), net_id))
+        self._labels.append(_Label(_net_name(net), end, _label_angle(vector), net_id))
         return end
 
     def label_at(self, point: Point, net_id: str, *, direction: Point | str = "right") -> Point:
         """Net label on an existing wire end / point."""
         net = self._net(net_id)
         point = _p(point)
-        self._labels.append(_Label(net.display_name, point, _label_angle(_vector(direction)), net_id))
+        self._labels.append(_Label(_net_name(net), point, _label_angle(_vector(direction)), net_id))
         return point
 
     def power(
@@ -538,8 +550,8 @@ class ReviewSchematic:
         """Power symbol at a point that is already on a wire (e.g. a rail)."""
         net = self._net(net_id)
         vector = _vector(direction)
-        style = style or ("ground" if _GROUND_RE.match(net.display_name) else "rail")
-        symbol = kicad_sym.power_symbol(net.display_name, style)
+        style = style or ("ground" if _GROUND_RE.match(_net_name(net)) else "rail")
+        symbol = kicad_sym.power_symbol(_net_name(net), style)
         natural = (0.0, -1.0) if style == "rail" else (0.0, 1.0)
         rotation = _rotation_between(natural, vector)
         point = _p(point)
@@ -607,9 +619,11 @@ class ReviewSchematic:
             for ref in missing_symbols
         ]
         text = self._serialize(junctions, group_boxes, furniture, geometry)
+        self.root_uuid = _root_uuid(self.fingerprint)
         audit = {
             "schema": SCHEMATIC_AUDIT_SCHEMA,
             "model_sha256": self.fingerprint,
+            "schematic_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
             "bound_component_refs": sorted(self.placed),
             "symbol_choices": {
                 ref: {"lib_id": c.symbol.lib_id, "generic": c.generic, "reason": c.reason}
@@ -626,12 +640,15 @@ class ReviewSchematic:
             "warnings": [w.payload() for w in warnings],
         }
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
+        self.audit_path.parent.mkdir(parents=True, exist_ok=True)
         self.output_path.write_text(text, encoding="utf-8")
         self.audit_path.write_text(json.dumps(audit, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         try:
             verified = validate_circuit_schematic(
                 self.output_path,
                 self.model,
+                audit_path=self.audit_path,
+                project_name=self.project_name if self.project_dir else None,
                 tool_root=self.tool_root,
                 runner=self.runner,
             )
@@ -650,6 +667,11 @@ class ReviewSchematic:
             warnings = sorted((SchematicWarning(code, message) for code, message in merged), key=lambda w: (w.code, w.message))
             audit["warnings"] = [w.payload() for w in warnings]
             self.audit_path.write_text(json.dumps(audit, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        if self.project_path is not None and self.project_path.is_file():
+            try:
+                register_root_sheet(self.project_path, self.root_uuid, board_path=self.board_path)
+            except KicadProjectError as exc:
+                raise SchematicError(str(exc)) from exc
         return RenderResult(
             path=self.output_path,
             audit_path=self.audit_path,
@@ -849,11 +871,11 @@ class ReviewSchematic:
                 lines.append(f"{ref}  {component.value}  — {component.purpose}")
         texts.append(_Text("\n".join(lines), (rx, y + len(lines) * 1.27 * 1.35), 1.0, None, furniture=True))
         y = snap(y + len(lines) * 1.27 * 1.35 + 7.62)
-        lines = ["Net register (schematic name · compiler name)"]
+        lines = ["Net register (sheet/board name · model name)"]
         for net in self.model.nets:
             if len(net.nodes) < 2:
                 continue
-            lines.append(f"{net.display_name} · {net.compiler_name}  ({len(net.nodes)} pins)")
+            lines.append(f"{_net_name(net)} · {net.display_name}  ({len(net.nodes)} pins)")
         texts.append(_Text("\n".join(lines), (rx, y + len(lines) * 1.27 * 1.35), 1.0, None, furniture=True))
         y = snap(y + len(lines) * 1.27 * 1.35 + 7.62)
         if self.model.paths:
@@ -943,12 +965,12 @@ class ReviewSchematic:
         furniture: list[_Text],
         geometry: SheetGeometry,
     ) -> str:
-        ns = uuid.uuid5(uuid.NAMESPACE_URL, f"pcbforge:{self.fingerprint}")
+        ns = _namespace(self.fingerprint)
 
         def uid(key: str) -> str:
             return str(uuid.uuid5(ns, key))
 
-        root_uuid = uid("root")
+        root_uuid = _root_uuid(self.fingerprint)
         content = self._content_box(group_boxes)
         width = snap(max(content.x2 + 120.0, 210.0))
         height = snap(max(content.y2 + 25.4, 148.0))
@@ -1082,6 +1104,19 @@ class ReviewSchematic:
 # ----------------------------------------------------------------------
 # helpers
 # ----------------------------------------------------------------------
+
+
+def _namespace(fingerprint: str) -> uuid.UUID:
+    return uuid.uuid5(uuid.NAMESPACE_URL, f"pcbforge:{fingerprint}")
+
+
+def _root_uuid(fingerprint: str) -> str:
+    return str(uuid.uuid5(_namespace(fingerprint), "root"))
+
+
+def _net_name(net) -> str:
+    """The name KiCad (and the board) use for a net: compiler name, else display."""
+    return net.compiler_name or net.display_name
 
 
 def _board_pads(project_dir: Path) -> dict[str, set[str]]:
@@ -1240,7 +1275,7 @@ def export_preview(
     schematic = project_dir / contract.schematic
     root = (tool_root or Path(__file__).resolve().parents[1]).resolve()
     kicad = str(root / "scripts" / "kicad-cli")
-    preview_dir = schematic.parent / "preview"
+    preview_dir = project_dir / "review" / "circuit" / "preview"
     preview_dir.mkdir(parents=True, exist_ok=True)
     outputs: list[Path] = []
     with tempfile.TemporaryDirectory(prefix="pcbforge-sch-preview-") as temporary:
@@ -1264,10 +1299,10 @@ def export_preview(
             )
         text = produced[0].read_text(encoding="utf-8")
         text = re.sub(r"<text\b.*?</text>", "", text, flags=re.S)
-        svg_path = preview_dir / (schematic.stem + ".svg")
+        svg_path = preview_dir / "circuit.svg"
         svg_path.write_text(text, encoding="utf-8")
         outputs.append(svg_path)
-    png_path = preview_dir / (schematic.stem + ".png")
+    png_path = preview_dir / "circuit.png"
     rsvg = shutil.which("rsvg-convert")
     magick = shutil.which("magick")
     command: list[str] | None = None

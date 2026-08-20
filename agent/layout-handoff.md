@@ -168,8 +168,10 @@ The schema rules are:
    assignments, and the `.kicad_pro` diff. PCBForge may replace its own
    `pcbforge:` entries; it must preserve every non-PCBForge entry.
 5. Present `docs/placement-brief.md` beside the current, approved CIRCUIT
-   review schematic (`review/circuit/circuit.kicad_sch`, opened in KiCad 9
-   eeschema next to pcbnew). PCBForge has already compared its exact approved proposal model with
+   review schematic: open `<project>.kicad_pro` in KiCad 9 so eeschema and
+   pcbnew cross-probe (footprint ↔ symbol, net highlight). Never run Update
+   PCB from Schematic; the handoff check refuses a board carrying schematic
+   links. PCBForge has already compared its exact approved proposal model with
    the compiled BOM and PCB topology; the handoff checks that this evidence is
    still current before layout.
    Confirm the `polarity-marking` and `pin1-marking` policy assurances have

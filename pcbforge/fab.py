@@ -22,6 +22,7 @@ from pcbforge.build_test import (
     BuildTestInputError,
     BoardEvidence,
     read_board_evidence,
+    schematic_tamper_message,
     read_bom_components,
     read_build_test_contract,
     require_current_acceptance,
@@ -154,9 +155,13 @@ def _spec(project_dir: Path) -> Any:
 
 def _board_evidence(path: Path) -> BoardEvidence:
     try:
-        return read_board_evidence(path)
+        board = read_board_evidence(path)
     except (BuildTestInputError, BuildTestError) as exc:
         raise FabInputError(str(exc)) from exc
+    tamper = schematic_tamper_message(board, path.name)
+    if tamper:
+        raise FabInputError(tamper)
+    return board
 
 
 def _layers(layer_count: int) -> tuple[str, ...]:

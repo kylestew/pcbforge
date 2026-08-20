@@ -44,6 +44,10 @@ AT_RE = re.compile(r"\n\s*\(at\s+([^)]+)\)")
 LAYER_RE = re.compile(r'\n\s*\(layer\s+"([^"]+)"\)')
 PAD_RE = re.compile(r'^\(pad\s+"?([^"\s)]+)"?')
 NET_RE = re.compile(r'\(net\s+(?:"([^"]+)"|([^\s()]+))(?:\s+"((?:\\.|[^"])*)")?\)')
+# Atopile never writes these; KiCad's "Update PCB from Schematic" does.
+SCHEMATIC_LINK_RE = re.compile(
+    r'\n\s*\(path\s+"|\(property\s+"(?:Sheetname|Sheetfile)"'
+)
 UNFITTED_PCB_FEATURES = (
     (
         re.compile(r"^H[1-9][0-9]*$"),
@@ -112,6 +116,7 @@ class BoardEvidence:
     connectivity_sha256: str
     user_art_count: int
     user_art_sha256: str
+    schematic_links: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -438,6 +443,7 @@ def read_board_evidence(path: Path) -> BoardEvidence:
     placements: list[tuple[str, str, str]] = []
     pads: list[tuple[str, str]] = []
     pad_nets: list[tuple[str, str, str]] = []
+    schematic_links: list[str] = []
     user_art_hashes: list[str] = []
     user_art_heads = {
         "segment",
@@ -462,6 +468,8 @@ def read_board_evidence(path: Path) -> BoardEvidence:
         footprint = footprint_match.group(1) if footprint_match else ""
         references.append(reference)
         footprints.append((reference, footprint))
+        if SCHEMATIC_LINK_RE.search(block):
+            schematic_links.append(reference)
         at = AT_RE.search(block)
         layer = LAYER_RE.search(block)
         placements.append(
@@ -492,6 +500,26 @@ def read_board_evidence(path: Path) -> BoardEvidence:
         _aggregate_hash(["\0".join(item) for item in connectivity]),
         len(user_art_hashes),
         _aggregate_hash(user_art_hashes),
+        tuple(sorted(schematic_links)),
+    )
+
+
+def schematic_tamper_message(board: BoardEvidence, board_name: str) -> str | None:
+    """Explain a board whose footprints were linked to a schematic by KiCad.
+
+    Atopile owns the board and never writes footprint ``path``/``Sheetfile``
+    properties; their presence means "Update PCB from Schematic" (or
+    back-annotation) ran against the review schematic.
+    """
+    if not board.schematic_links:
+        return None
+    refs = ", ".join(board.schematic_links[:8])
+    more = "" if len(board.schematic_links) <= 8 else f" (+{len(board.schematic_links) - 8} more)"
+    return (
+        f"{board_name}: footprints {refs}{more} carry schematic links; the board "
+        "was updated from the review schematic. Restore the board from "
+        f"{board_name.rsplit('.', 1)[0]}-backups/ or rebuild it with atopile; "
+        "never use Update PCB from Schematic or Update Schematic from PCB"
     )
 
 

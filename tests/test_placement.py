@@ -409,6 +409,33 @@ fingerprint: {fingerprint}
         self.assertTrue(brief_exists)
         self.assertFalse(root_alias_exists)
 
+    def test_board_linked_to_a_schematic_blocks_the_handoff(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            pro = project / "garden-logger.kicad_pro"
+            data = json.loads(pro.read_text(encoding="utf-8"))
+            data["sheets"] = [["11111111-1111-1111-1111-111111111111", "Root"]]
+            pro.write_text(json.dumps(data), encoding="utf-8")
+            board = project / "garden-logger.kicad_pcb"
+            clean = board.read_text(encoding="utf-8")
+            board.write_text(
+                clean.replace(
+                    '(property "Reference" "U1")',
+                    '(property "Reference" "U1")\n    (path "/11111111-1111-1111-1111-111111111111/abc")',
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(PlacementInputError, "carry schematic links"):
+                generate_brief(project, tool_root=TOOL_ROOT)
+            with self.assertRaisesRegex(PlacementInputError, "carry schematic links"):
+                check_brief(project, tool_root=TOOL_ROOT)
+            board.write_text(clean, encoding="utf-8")
+            generate_brief(project, tool_root=TOOL_ROOT)
+            check_brief(project, tool_root=TOOL_ROOT)
+            kept = json.loads(pro.read_text(encoding="utf-8"))["sheets"]
+        self.assertEqual(kept, [["11111111-1111-1111-1111-111111111111", "Root"]])
+
     def test_generation_is_safe_preserving_idempotent_and_checkable(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))

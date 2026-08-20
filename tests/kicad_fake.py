@@ -78,6 +78,7 @@ def schematic_text(
     group_title: str = "Reviewed branch",
     purpose: str = "Limits current in the reviewed branch.",
     version: str = SCH_FORMAT_VERSION,
+    project_name: str = "garden-logger",
 ) -> str:
     """A hand-minimal schematic that satisfies the structural gate for MODEL."""
     marker_text = (
@@ -99,6 +100,7 @@ def schematic_text(
     (property "Footprint" "Resistor_SMD:R_0603_1608Metric" (at 50 50 0) (effects (font (size 1.27 1.27)) (hide yes)))
     (property "pcbforge_group" "reviewed-branch" (at 50 50 0) (effects (font (size 1.27 1.27)) (hide yes)))
     (property "pcbforge_purpose" "{purpose}" (at 50 50 0) (effects (font (size 1.27 1.27)) (hide yes)))
+    (instances (project "{project_name}" (path "/00000000-0000-0000-0000-000000000001" (reference "R1") (unit 1))))
   )
   (sheet_instances (path "/" (page "1")))
 )
@@ -111,11 +113,13 @@ def audit_text(
     warnings: Sequence[Mapping[str, str]] = (),
     bound: Sequence[str] = ("R1",),
     schema: int = SCHEMATIC_AUDIT_SCHEMA,
+    schematic_sha256: str = "",
 ) -> str:
     return json.dumps(
         {
             "schema": schema,
             "model_sha256": model_hash,
+            "schematic_sha256": schematic_sha256,
             "bound_component_refs": list(bound),
             "symbol_choices": {
                 ref: {"lib_id": "Device:R", "generic": False, "reason": "stock"} for ref in bound

@@ -3,10 +3,12 @@
 
 Use this playbook when Gate A of [`circuit.md`](circuit.md) requires the
 review schematic at the contract `schematic` path. The schematic is a real
-KiCad 9 sheet (`review/circuit/circuit.kicad_sch`) generated from a Python
-script — never hand-drawn in eeschema, never hand-edited, never paired with a
-`.kicad_pro`. Atopile owns the board; the sheet is a review artifact the user
-keeps open beside pcbnew while placing and routing by hand.
+KiCad 9 sheet, `<project>.kicad_sch`, generated from a Python script and
+installed beside `<project>.kicad_pro` so that eeschema and pcbnew
+**cross-probe** it during hand layout: click a footprint and its symbol
+highlights, highlight a net in either editor and the other follows. Atopile
+still owns the board. The sheet is never hand-drawn, never edited or saved
+from KiCad, and never used to update the board — the gates refuse both.
 
 ## Why a script
 
@@ -45,7 +47,9 @@ Run it with:
 pcbforge render-circuit --svg
 ```
 
-`save()` writes the sheet and `review/circuit/circuit.audit.json`, then runs
+`save()` writes `<project>.kicad_sch`, records its hash in
+`review/circuit/schematic.audit.json`, registers the root sheet in
+`<project>.kicad_pro` (`sheets`; every other key untouched), then runs
 the same `validate_circuit_schematic` gate as `check-circuit-review` and
 raises on any failure: structural binding, ERC errors, and netlist parity.
 A script that exits cleanly has already passed the schematic side of the
@@ -76,7 +80,7 @@ changes leaves the approved bytes alone.
 | `sch.connect(a, b, route="hv"\|"vh", path=None)` | one-bend Manhattan wire |
 | `sch.drop(ref, n, y)` | vertical wire from a pin tip to a rail at `y`; returns the rail point |
 | `sch.rail(y, x1, x2)` / `sch.stub(point, direction, length)` | horizontal run / short wire |
-| `sch.label(ref, n, net_id, direction=None, length=2.54)` | net label (model `display_name`) on a stub from a pin; `length=0` puts it on the tip |
+| `sch.label(ref, n, net_id, direction=None, length=2.54)` | net label (model `compiler_name`, the board's net name) on a stub from a pin; `length=0` puts it on the tip |
 | `sch.label_at(point, net_id, direction)` | net label on an existing wire end |
 | `sch.power(ref, n, net_id, direction=None, flag=False)` | rail arrow or ground symbol on a stub from a pin |
 | `sch.power_at(point, net_id, direction="up", flag=True)` | power symbol on a rail point; `flag=True` adds `PWR_FLAG` for externally driven rails |
@@ -105,28 +109,40 @@ cannot be overridden.
   (battery, USB, connector). Ground symbols point down, rail arrows up.
 - Draw local support parts (bypass, pull-ups, filters, current limits) with
   wires at the device pins they serve. A label is not a substitute.
-- Labels for everything that leaves a group, using the model net; the net
-  register lists the compiler name beside it so pcbnew's ratsnest names are
-  findable from the sheet. A label may sit anywhere along a wire
+- Labels for everything that leaves a group, using the model net id; the
+  sheet shows the compiler name (what pcbnew's ratsnest and net highlight
+  use) and the net register lists the model display name beside it. A
+  label may sit anywhere along a wire
   (`label_at` at a run's midpoint names a local two-pin net without
   crowding the symbols).
 - Use `path="<path-id>"` on the wires that realise each model path; the
   legend colours them. Every model path needs at least one such wire.
 
+## Using it during layout
+
+Open `<project>.kicad_pro` in KiCad 9 (project manager), then both
+editors. Selecting a footprint in pcbnew highlights the symbol; `Highlight
+Net` in either editor highlights the other; clicking a pin highlights the
+pad. Cross-probe is by reference designator, pin number and net name, all of
+which the gate proves equal to the board.
+
 ## Hard rules
 
-1. Never hand-edit `circuit.kicad_sch` or `circuit.audit.json`; re-run the
-   script. Never create a `.kicad_pro` under `review/` and never use
-   "Update PCB from Schematic" with this sheet.
-2. Open the sheet with KiCad 9. Do not save it from KiCad 10 (it would
-   rewrite the format the gate expects).
-3. Every group needs ≥ 1 placed part; every component exactly one placement
+1. Never hand-edit `<project>.kicad_sch` or `schematic.audit.json`; re-run
+   the script. Never save the sheet from KiCad — even an untouched save
+   rewrites it and the gate reports "modified outside render-circuit".
+2. Never run **Update PCB from Schematic** (F8) or **Update Schematic from
+   PCB**. Atopile owns the board; both gates and fab-out refuse a board whose
+   footprints carry schematic links (`path`/`Sheetfile`). Recover from
+   `<project>-backups/` or rebuild with atopile.
+3. Open the sheet with KiCad 9, not 10 (format pin).
+4. Every group needs ≥ 1 placed part; every component exactly one placement
    (one per unit for multi-unit symbols).
-4. Externally driven rails need `flag=True` once, or ERC reports
+5. Externally driven rails need `flag=True` once, or ERC reports
    `power_pin_not_driven`.
-5. A wire that passes over a pin tip connects to it in KiCad. The lint
+6. A wire that passes over a pin tip connects to it in KiCad. The lint
    reports `wire-passes-pin`; reroute.
-6. Mechanical parts (mounting holes) still get a symbol; the stock
+7. Mechanical parts (mounting holes) still get a symbol; the stock
    `Mechanical:MountingHole` has no pins and no wires.
 
 ## Iterate until proven

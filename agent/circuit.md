@@ -25,10 +25,10 @@ until the topology proposal below is approved.
 Create `circuit-review.yaml`:
 
 ```yaml
-circuit_review_schema: 2
+circuit_review_schema: 3
 build: default
 model: review/circuit/circuit.yaml
-schematic: review/circuit/circuit.kicad_sch
+schematic: <project>.kicad_sch
 proposal_narrative: docs/circuit-proposal.md
 final_narrative: docs/circuit-review.md
 ```
@@ -83,19 +83,21 @@ a second design source after CIRCUIT; compiled Atopile output remains the
 electrical authority.
 
 Deliberately author the review schematic for human comprehension: generate
-`review/circuit/circuit.kicad_sch` from a `review/circuit/circuit_schematic.py`
-script following [`circuit-kicad.md`](circuit-kicad.md) and
-`pcbforge render-circuit`. Never hand-edit the sheet, never pair it with a
-`.kicad_pro`, and never drive a board from it — Atopile owns the PCB; the
-sheet is what the user keeps open in eeschema while hand-placing and routing.
-The finished schematic must:
+`<project>.kicad_sch` (beside the KiCad project, so eeschema and pcbnew
+cross-probe it) from a `review/circuit/circuit_schematic.py` script
+following [`circuit-kicad.md`](circuit-kicad.md) and
+`pcbforge render-circuit`. Never hand-edit or save the sheet from KiCad and
+never update the board from it — Atopile owns the PCB; the gates refuse a
+modified sheet or a board carrying schematic links. The finished schematic
+must:
 
 1. Show external power through protection to the named rail as continuous
    wires.
 2. Show all user-control, load, MCU-support, programming, and test paths at pin
    level.
-3. Use the model's logical net names in the drawing; the generated net
-   register maps each to its compiler name.
+3. Name nets as the board does (model `compiler_name`) so KiCad net
+   highlight crosses over; the generated net register maps each to the
+   model display name.
 4. Group related parts — one region per model group, drawn by the tool — and
    label ambiguous functions such as MOSFETs, switches, connectors, and
    protection devices directly.
@@ -109,16 +111,19 @@ The finished schematic must:
    `Footprint`, hidden `pcbforge_group`/`pcbforge_purpose`), colour every
    model path, and pass `kicad-cli sch erc` with zero errors.
 10. Export a netlist whose pin-exact endpoint sets equal the model nets; the
-    schematic net name of every multi-pin net is the model display name.
-11. Include no hierarchy, images, embedded files, or PCB spatial information.
+    schematic net name of every multi-pin net is the model compiler name.
+11. Include no hierarchy, images, embedded files, or PCB spatial information;
+    its symbol instances belong to the project and its root sheet is
+    registered in `<project>.kicad_pro`.
 
 `pcbforge.kicad_sch.ReviewSchematic.save()` produces items 7–11 mechanically
 and runs the same validation as `check-circuit-review`. Items 1–6 are the
 authored drawing itself. The script is review support, not a design source;
 the model stays the approval contract.
 
-If the sheet's model fingerprint is absent or stale, `check-circuit-review`
-reports the expected SHA-256; re-run `pcbforge render-circuit`.
+If the sheet's model fingerprint is absent or stale, or the sheet bytes no
+longer match `review/circuit/schematic.audit.json`, `check-circuit-review`
+says so; re-run `pcbforge render-circuit`.
 
 Write `docs/circuit-proposal.md`. It must contain the exact phrase
 `PCBForge review-only`, identify itself as a proposal, explain every circuit
@@ -131,9 +136,10 @@ pcbforge check-circuit-review --stage proposal --write
 ```
 
 PCBForge parses the exact model, validates the schematic's model binding,
-ERC, and netlist parity, checks that no review PCB or KiCad project exists,
-proves the product topology is unchanged, and binds the packet to the
-ARCHITECT handoff baseline. Then
+ERC, and netlist parity, refuses a board whose footprints were linked to a
+schematic by KiCad, checks that no review PCB or KiCad project exists under
+`review/`, proves the product topology is unchanged, and binds the packet to
+the ARCHITECT handoff baseline. Then
 follow the
 [standard review and approval protocol](operating-manual.md#review-and-approval-protocol)
 using its proposal variant for CIRCUIT. Present the schematic (or its

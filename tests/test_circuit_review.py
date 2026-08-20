@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import tempfile
@@ -104,14 +105,23 @@ class CircuitReviewFixture(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def write_schematic(self, project: Path, model_path: Path | None = None, **overrides) -> str:
+    def write_schematic(
+        self,
+        project: Path,
+        model_path: Path | None = None,
+        *,
+        audit_sha: str | None = None,
+        **overrides,
+    ) -> str:
         model_path = model_path or project / "review" / "circuit" / "circuit.yaml"
         model_hash = circuit_model_fingerprint(read_circuit_model(model_path))
-        review = model_path.parent
-        (review / "circuit.kicad_sch").write_text(
-            schematic_text(model_hash, **overrides), encoding="utf-8"
+        sheet = project / "garden-logger.kicad_sch"
+        text = schematic_text(model_hash, **overrides)
+        sheet.write_text(text, encoding="utf-8")
+        sha = audit_sha if audit_sha is not None else hashlib.sha256(text.encode("utf-8")).hexdigest()
+        (project / "review" / "circuit" / "schematic.audit.json").write_text(
+            audit_text(model_hash, schematic_sha256=sha), encoding="utf-8"
         )
-        (review / "circuit.audit.json").write_text(audit_text(model_hash), encoding="utf-8")
         return model_hash
 
     def project(self, root: Path) -> Path:
@@ -124,7 +134,7 @@ class CircuitReviewFixture(unittest.TestCase):
             "  architecture_diagram_schema: 1\n"
             "  mcu_schema: 1\n"
             "  circuit_schema: 1\n"
-            "  circuit_review_schema: 2\n"
+            "  circuit_review_schema: 3\n"
             "  build_test_schema: 1\n"
             "  layout_handoff_schema: 1\n"
             "  approval_schema: 1\n"
@@ -155,6 +165,19 @@ guidance:
             encoding="utf-8",
         )
         (project / "garden-logger.kicad_pcb").write_text(BOARD, encoding="utf-8")
+        (project / "garden-logger.kicad_pro").write_text(
+            json.dumps(
+                {
+                    "meta": {"filename": "garden-logger.kicad_pro", "version": 1},
+                    "net_settings": {
+                        "classes": [{"name": "Default", "clearance": 0.2}],
+                        "netclass_patterns": [],
+                    },
+                    "user_key": {"kept": True},
+                }
+            ),
+            encoding="utf-8",
+        )
         (project / "docs").mkdir()
         (project / "docs" / "architecture.md").write_text(
             "# architecture\n",
@@ -177,10 +200,10 @@ guidance:
         model_path.write_text(MODEL, encoding="utf-8")
         self.write_schematic(project, model_path)
         (project / "circuit-review.yaml").write_text(
-            f"""circuit_review_schema: 2
+            f"""circuit_review_schema: 3
 build: default
 model: review/{review_name}/circuit.yaml
-schematic: review/{review_name}/circuit.kicad_sch
+schematic: garden-logger.kicad_sch
 proposal_narrative: docs/{proposal_name}
 final_narrative: docs/{final_name}
 """,
@@ -228,7 +251,7 @@ class CircuitReviewTests(CircuitReviewFixture):
         self.assertEqual(first.components, 1)
         self.assertEqual(first.diagram_warnings, ())
         self.assertEqual(evidence["schematic_audit"]["warnings"], [])
-        self.assertEqual(evidence["schematic"], "review/circuit/circuit.kicad_sch")
+        self.assertEqual(evidence["schematic"], "garden-logger.kicad_sch")
         self.assertEqual(evidence["material_differences"], [])
         self.assertNotIn("erc", evidence)
         self.assertEqual(baseline["source_baseline_schema"], 1)
@@ -236,7 +259,7 @@ class CircuitReviewTests(CircuitReviewFixture):
     def test_schematic_must_match_the_exact_model(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))
-            schematic = project / "review" / "circuit" / "circuit.kicad_sch"
+            schematic = project / "garden-logger.kicad_sch"
             schematic.write_text(schematic_text("0" * 64), encoding="utf-8")
             with self.assertRaisesRegex(CircuitReviewInputError, "fingerprint is missing or stale"):
                 check_circuit_review(project, "proposal", write=True)
@@ -251,6 +274,12 @@ class CircuitReviewTests(CircuitReviewFixture):
                 check_circuit_review(project, "proposal", write=True)
             self.write_schematic(project, version="20231120")
             with self.assertRaisesRegex(CircuitReviewInputError, "format version"):
+                check_circuit_review(project, "proposal", write=True)
+            self.write_schematic(project, project_name="other")
+            with self.assertRaisesRegex(CircuitReviewInputError, "instances belong to project"):
+                check_circuit_review(project, "proposal", write=True)
+            self.write_schematic(project, audit_sha="f" * 64)
+            with self.assertRaisesRegex(CircuitReviewInputError, "modified outside"):
                 check_circuit_review(project, "proposal", write=True)
             self.write_schematic(project)
             check_circuit_review(project, "proposal", write=True)
@@ -304,12 +333,13 @@ class CircuitReviewTests(CircuitReviewFixture):
     def test_audit_sidecar_is_required_and_validated(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))
-            audit = project / "review" / "circuit" / "circuit.audit.json"
+            audit = project / "review" / "circuit" / "schematic.audit.json"
             model_hash = circuit_model_fingerprint(
                 read_circuit_model(project / "review" / "circuit" / "circuit.yaml")
             )
+            sheet_sha = hashlib.sha256((project / "garden-logger.kicad_sch").read_bytes()).hexdigest()
             audit.unlink()
-            with self.assertRaisesRegex(CircuitReviewInputError, "missing circuit.audit.json"):
+            with self.assertRaisesRegex(CircuitReviewInputError, "missing schematic.audit.json"):
                 check_circuit_review(project, "proposal", write=True)
             audit.write_text("not-json", encoding="utf-8")
             with self.assertRaisesRegex(CircuitReviewInputError, "invalid JSON"):
@@ -317,11 +347,11 @@ class CircuitReviewTests(CircuitReviewFixture):
             audit.write_text(audit_text("1" * 64), encoding="utf-8")
             with self.assertRaisesRegex(CircuitReviewInputError, "audit is stale"):
                 check_circuit_review(project, "proposal", write=True)
-            audit.write_text(audit_text(model_hash, bound=()), encoding="utf-8")
+            audit.write_text(audit_text(model_hash, bound=(), schematic_sha256=sheet_sha), encoding="utf-8")
             with self.assertRaisesRegex(CircuitReviewInputError, "bound_component_refs"):
                 check_circuit_review(project, "proposal", write=True)
             audit.write_text(
-                audit_text(model_hash, warnings=[{"code": "text-text-overlap", "message": "a vs b"}]),
+                audit_text(model_hash, warnings=[{"code": "text-text-overlap", "message": "a vs b"}], schematic_sha256=sheet_sha),
                 encoding="utf-8",
             )
             result = check_circuit_review(project, "proposal", write=True)
@@ -346,7 +376,30 @@ class CircuitReviewTests(CircuitReviewFixture):
                 "final_narrative: docs/circuit-review.md\n",
                 encoding="utf-8",
             )
-            with self.assertRaisesRegex(CircuitReviewInputError, "circuit_schematic.py"):
+            with self.assertRaisesRegex(CircuitReviewInputError, "schema 1 is no longer supported"):
+                check_circuit_review(project, "proposal", write=True)
+            (project / "circuit-review.yaml").write_text(
+                "circuit_review_schema: 3\nbuild: default\nmodel: review/circuit/circuit.yaml\n"
+                "schematic: review/circuit/circuit.kicad_sch\nproposal_narrative: docs/circuit-proposal.md\n"
+                "final_narrative: docs/circuit-review.md\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(CircuitReviewInputError, "expected garden-logger.kicad_sch in the project root"):
+                check_circuit_review(project, "proposal", write=True)
+
+    def test_board_linked_to_a_schematic_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            board = project / "garden-logger.kicad_pcb"
+            board.write_text(
+                board.read_text(encoding="utf-8").replace(
+                    '(property "Reference" "R1")',
+                    '(property "Reference" "R1")\n    (path "/00000000-0000-0000-0000-000000000001/abc")\n'
+                    '    (property "Sheetfile" "garden-logger.kicad_sch")',
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(CircuitReviewInputError, "footprints R1 carry schematic links"):
                 check_circuit_review(project, "proposal", write=True)
 
     def test_model_rejects_broken_paths_and_duplicate_pin_assignment(self) -> None:
@@ -473,7 +526,7 @@ groups:
                 encoding="utf-8",
             )
             model_hash = self.write_schematic(project, model_path)
-            schematic = project / "review" / "circuit" / "circuit.kicad_sch"
+            schematic = project / "garden-logger.kicad_sch"
             schematic.write_text(
                 schematic.read_text(encoding="utf-8").replace(
                     "  (sheet_instances",
@@ -488,8 +541,13 @@ groups:
                 ),
                 encoding="utf-8",
             )
-            (project / "review" / "circuit" / "circuit.audit.json").write_text(
-                audit_text(model_hash, bound=("R1", "TP1")), encoding="utf-8"
+            (project / "review" / "circuit" / "schematic.audit.json").write_text(
+                audit_text(
+                    model_hash,
+                    bound=("R1", "TP1"),
+                    schematic_sha256=hashlib.sha256(schematic.read_bytes()).hexdigest(),
+                ),
+                encoding="utf-8",
             )
             self.kicad.nets = {"+3V3": ["R1.1"], "GND": ["R1.2"], "SENSE": ["TP1.1"]}
             bom = project / "build" / "builds" / "default" / "default.bom.json"

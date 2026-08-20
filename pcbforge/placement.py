@@ -20,6 +20,7 @@ from pcbforge.build_test import (
     BoardEvidence,
     fingerprint_inputs,
     read_board_evidence,
+    schematic_tamper_message,
     require_current_acceptance,
 )
 from pcbforge.fsutil import AtomicWriteError, commit_outputs
@@ -1284,6 +1285,9 @@ def _project_context(
         board = read_board_evidence(project_dir / f"{spec.name}.kicad_pcb")
     except (BuildTestInputError, BuildTestError) as exc:
         raise PlacementInputError(str(exc)) from exc
+    tamper = schematic_tamper_message(board, f"{spec.name}.kicad_pcb")
+    if tamper:
+        raise PlacementInputError(tamper)
     contract = read_placement_contract(
         project_dir,
         tool_root=tool_root,

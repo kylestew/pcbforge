@@ -353,7 +353,7 @@ class InitializeTests(unittest.TestCase):
             self.assertEqual(pin_data["guidance"]["status_schema"], 1)
             self.assertEqual(
                 pin_data["guidance"]["circuit_review_schema"],
-                2,
+                3,
             )
             self.assertEqual(
                 pin_data["policy"]["profile"],
@@ -389,9 +389,9 @@ class InitializeTests(unittest.TestCase):
             self.assertIn("## Manufacturing and technology policy", agents)
             self.assertIn("pcbforge check-policy", agents)
             self.assertIn("policy confirm-sourcing", agents)
-            self.assertIn("never use\n   \"Update PCB from Schematic\"", agents)
+            self.assertIn("Update PCB from\n   Schematic", agents)
             self.assertIn("check-circuit-review --stage proposal", agents)
-            self.assertIn("review/circuit/circuit.kicad_sch", agents)
+            self.assertIn(".kicad_sch` beside the KiCad", agents)
             self.assertIn("pcbforge render-circuit", agents)
             self.assertIn("Do not choose non-MCU parts", agents)
             self.assertIn("docs/architecture.md", agents)

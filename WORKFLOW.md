@@ -169,11 +169,12 @@ returns to the ARCHITECT proposal gate.
 ## 3. CIRCUIT
 
 Follow `agent/circuit.md`. Before physical source edits, author the exact
-review-only circuit model and the review schematic under `review/circuit/` —
-a KiCad 9 sheet generated from a Python script via `pcbforge render-circuit`
-per `agent/circuit-kicad.md`, ERC-clean and netlist-proven against the model,
-kept open beside pcbnew during hand layout — plus `docs/circuit-proposal.md`.
-Obtain CIRCUIT proposal approval.
+review-only circuit model under `review/circuit/` and the review schematic
+`<project>.kicad_sch` — a KiCad 9 sheet generated from
+`review/circuit/circuit_schematic.py` via `pcbforge render-circuit` per
+`agent/circuit-kicad.md`, ERC-clean, netlist-proven against the model, and
+installed beside the KiCad project so pcbnew cross-probes it during hand
+layout — plus `docs/circuit-proposal.md`. Obtain CIRCUIT proposal approval.
 
 Then implement the complete circuit: physical connections, exact parts,
 values, official symbols/footprints, constraints, sourcing, protection,

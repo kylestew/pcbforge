@@ -127,7 +127,7 @@ class PolicyFixture(unittest.TestCase):
   architecture_diagram_schema: 1
   mcu_schema: 1
   circuit_schema: 1
-  circuit_review_schema: 2
+  circuit_review_schema: 3
   policy_schema: 1
   build_test_schema: 1
   layout_handoff_schema: 1

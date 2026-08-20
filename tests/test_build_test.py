@@ -9,6 +9,8 @@ from unittest import mock
 
 from pcbforge.artifact_hash import ArtifactHashError, semantic_bom_sha256
 from pcbforge.build_test import (
+    read_board_evidence,
+    schematic_tamper_message,
     BUILD_TEST_REPORT,
     AssertionLocation,
     BomComponent,
@@ -196,6 +198,25 @@ guidance:
 
 
 class ContractTests(BuildTestFixture):
+    def test_board_evidence_reports_schematic_links(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            board = Path(temporary) / "garden-logger.kicad_pcb"
+            board.write_text(BOARD, encoding="utf-8")
+            clean = read_board_evidence(board)
+            board.write_text(
+                BOARD.replace(
+                    '(property "Reference" "R1")',
+                    '(property "Reference" "R1")\n    (property "Sheetfile" "garden-logger.kicad_sch")',
+                ),
+                encoding="utf-8",
+            )
+            linked = read_board_evidence(board)
+        self.assertEqual(clean.schematic_links, ())
+        self.assertIsNone(schematic_tamper_message(clean, board.name))
+        self.assertEqual(linked.schematic_links, ("R1",))
+        self.assertIn("R1 carry schematic links", schematic_tamper_message(linked, board.name))
+        self.assertEqual(clean.connectivity_sha256, linked.connectivity_sha256)
+
     def test_semantic_bom_hash_ignores_only_top_level_build_id(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))

@@ -38,7 +38,7 @@ CIRCUIT_GUIDE_SCHEMA = 1
 BUILD_TEST_GUIDE_SCHEMA = 1
 LAYOUT_HANDOFF_GUIDE_SCHEMA = 1
 APPROVAL_GUIDE_SCHEMA = 1
-CIRCUIT_REVIEW_SCHEMA = 2
+CIRCUIT_REVIEW_SCHEMA = 3
 POLICY_GUIDE_SCHEMA = POLICY_SCHEMA
 STATUS_SCHEMA = 1
 BOARD_ORIGIN_MM = 100.0
@@ -837,10 +837,12 @@ Before adding physical parts, follow `{tool_root}/agent/circuit.md`:
 1. Do not edit physical Atopile source yet. Create `circuit-review.yaml`, the
    exact `review/circuit/circuit.yaml` proposal model, the authored
    `review/circuit/circuit_schematic.py` script that `pcbforge render-circuit`
-   turns into the review-only `review/circuit/circuit.kicad_sch`, and
+   turns into the review-only `{spec.name}.kicad_sch` beside the KiCad
+   project (so eeschema and pcbnew cross-probe it during layout), and
    `docs/circuit-proposal.md`. The review schematic is a derived artifact:
-   never hand-edit it, never pair it with a `.kicad_pro`, and never use
-   "Update PCB from Schematic" — Atopile owns the board.
+   never hand-edit or save it from KiCad, never use "Update PCB from
+   Schematic" or "Update Schematic from PCB" — Atopile owns the board and
+   the gates refuse a board carrying schematic links.
 2. Run `pcbforge check-circuit-review --stage proposal --write`, then
    `pcbforge status review circuit --stage proposal`. Present the review
    schematic, narrative, exact model summary, and fingerprint, then stop.

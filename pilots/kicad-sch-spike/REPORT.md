@@ -63,3 +63,19 @@ connector matches; the box carries named, two-row pins).
   rasterizers draw over the stroke glyphs; the preview strips them.
 - `pcbforge status` reopens CIRCUIT after migration (contract, pin and
   evidence bytes changed). Re-approval is the expected cost.
+
+## v1.5 — project-resident sheet for cross-probing
+
+Schema 3: `schematic: blinky.kicad_sch` beside `blinky.kicad_pro`; labels and
+power symbols carry compiler names (`VBAT`, `+3V0`, `GND`, `BUTTON`…); the
+root sheet UUID is registered in the project's `sheets`. Re-render: 0
+warnings, both gates pass, `.kicad_pro` net classes untouched.
+
+Negative checks (done): a footprint given a `(path …)` property makes
+`check-circuit-review` fail with "footprints R2 carry schematic links…";
+appending a byte to the sheet fails with "modified outside
+`pcbforge render-circuit`"; re-rendering clears both.
+
+Manual check (user): open `blinky.kicad_pro` in KiCad 9 → eeschema + pcbnew;
+select R1 in pcbnew → R1 symbol highlights; Highlight Net `+3V0` → both
+editors; click U1 pin 16 → pad highlights.

@@ -25,16 +25,19 @@ from pcbforge.build_test import (
     ato_source_semantic_bytes,
     board_topology_bytes,
     read_board_evidence,
+    schematic_tamper_message,
 )
 from pcbforge.initialize import InitInputError, read_spec
 
-CIRCUIT_REVIEW_SCHEMA = 2
+CIRCUIT_REVIEW_SCHEMA = 3
 CIRCUIT_MODEL_SCHEMA = 1
 PROJECT_PIN_SCHEMA = 1
 CONTRACT_FILENAME = "circuit-review.yaml"
 BASELINE_PATH = Path("review/circuit/source-baseline.json")
 STAGES = {"proposal", "final"}
-SCHEMATIC_AUDIT_SCHEMA = 2
+SCHEMATIC_AUDIT_SCHEMA = 3
+SCHEMATIC_SCRIPT = Path("review/circuit/circuit_schematic.py")
+SCHEMATIC_AUDIT_PATH = Path("review/circuit/schematic.audit.json")
 SCH_FORMAT_VERSION = "20250114"
 REVIEW_MARKER_TEXT = "PCBForge review-only"
 CommandRunner = Callable[..., subprocess.CompletedProcess]
@@ -338,12 +341,13 @@ def read_circuit_review_contract(project_dir: Path) -> CircuitReviewContract:
         "proposal_narrative",
         "final_narrative",
     }
-    if data.get("circuit_review_schema") == 1 and "diagram" in data:
+    if data.get("circuit_review_schema") in (1, 2):
         raise CircuitReviewInputError(
-            "circuit-review.yaml schema 1 (SVG diagram) is no longer supported; "
-            "set circuit_review_schema: 2, replace `diagram:` with "
-            "`schematic: review/circuit/circuit.kicad_sch`, and author "
-            "review/circuit/circuit_schematic.py per agent/circuit-kicad.md"
+            f"circuit-review.yaml schema {data.get('circuit_review_schema')} is no "
+            "longer supported; set circuit_review_schema: 3, point `schematic:` at "
+            "`<project>.kicad_sch` in the project root (beside the .kicad_pro so "
+            "KiCad cross-probes it), and render it with `pcbforge render-circuit` "
+            "from review/circuit/circuit_schematic.py per agent/circuit-kicad.md"
         )
     _strict_keys(data, allowed=keys, required=keys, field=CONTRACT_FILENAME)
     if type(data.get("circuit_review_schema")) is not int or data.get(
@@ -361,8 +365,17 @@ def read_circuit_review_contract(project_dir: Path) -> CircuitReviewContract:
         data.get("schematic"),
         "schematic",
         suffix=".kicad_sch",
-        prefix=Path("review/circuit"),
+        prefix=Path("."),
     )
+    try:
+        spec_name = read_spec(project_dir / "spec.md").name
+    except InitInputError as exc:
+        raise CircuitReviewInputError(str(exc)) from exc
+    if schematic != Path(f"{spec_name}.kicad_sch"):
+        raise CircuitReviewInputError(
+            f"schematic: expected {spec_name}.kicad_sch in the project root "
+            "(next to the .kicad_pro, so KiCad cross-probes it with the board)"
+        )
     proposal_narrative = _safe_path(
         data.get("proposal_narrative"),
         "proposal_narrative",
@@ -643,10 +656,9 @@ def circuit_model_fingerprint(model: CircuitModel) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def audit_path_for(schematic_path: Path) -> Path:
-    """Sidecar audit record next to the schematic (``circuit.audit.json``)."""
-    schematic_path = Path(schematic_path)
-    return schematic_path.with_name(schematic_path.stem + ".audit.json")
+def audit_path_for(project_dir: Path) -> Path:
+    """The schematic audit record, kept under review/ with the script."""
+    return Path(project_dir) / SCHEMATIC_AUDIT_PATH
 
 
 def _read_audit(path: Path, model: CircuitModel) -> dict[str, Any]:
@@ -659,7 +671,15 @@ def _read_audit(path: Path, model: CircuitModel) -> dict[str, Any]:
         ) from exc
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise CircuitReviewInputError(f"{label}: invalid JSON: {exc}") from exc
-    required = {"schema", "model_sha256", "bound_component_refs", "symbol_choices", "nets", "warnings"}
+    required = {
+        "schema",
+        "model_sha256",
+        "schematic_sha256",
+        "bound_component_refs",
+        "symbol_choices",
+        "nets",
+        "warnings",
+    }
     if not isinstance(payload, dict) or set(payload) != required:
         raise CircuitReviewInputError(f"{label}: invalid audit fields")
     if payload.get("schema") != SCHEMATIC_AUDIT_SCHEMA:
@@ -703,6 +723,7 @@ def _read_audit(path: Path, model: CircuitModel) -> dict[str, Any]:
         )
     return {
         "schema": SCHEMATIC_AUDIT_SCHEMA,
+        "schematic_sha256": str(payload.get("schematic_sha256", "")),
         "bound_component_refs": sorted(bound_value),
         "symbol_choices": {key: choices[key] for key in sorted(choices)},
         "warnings": warnings,
@@ -805,6 +826,8 @@ def validate_circuit_schematic(
     path: Path,
     model: CircuitModel,
     *,
+    audit_path: Path,
+    project_name: str | None = None,
     tool_root: Path | None = None,
     runner: CommandRunner | None = None,
 ) -> dict[str, Any]:
@@ -896,11 +919,31 @@ def validate_circuit_schematic(
     if errors:
         raise CircuitReviewError(f"{label}: structural checks failed:\n  - " + "\n  - ".join(errors))
 
-    audit = _read_audit(audit_path_for(path), model)
+    if project_name is not None:
+        projects = {
+            sexpr.atom(project)
+            for symbol in sexpr.children(root, "symbol")
+            for instances in sexpr.children(symbol, "instances")
+            for project in sexpr.children(instances, "project")
+        }
+        if projects - {project_name}:
+            raise CircuitReviewInputError(
+                f"{label}: symbol instances belong to project(s) "
+                f"{sorted(projects - {project_name})}, expected {project_name!r}; "
+                "rerun `pcbforge render-circuit`"
+            )
+    audit = _read_audit(audit_path, model)
     placed = set(audit["bound_component_refs"])
     if placed != set(components):
         raise CircuitReviewInputError(
-            f"{audit_path_for(path).name}: bound_component_refs do not match the model"
+            f"{audit_path.name}: bound_component_refs do not match the model"
+        )
+    actual_sha = hashlib.sha256(path.read_bytes()).hexdigest()
+    if audit["schematic_sha256"] != actual_sha:
+        raise CircuitReviewInputError(
+            f"{label} was modified outside `pcbforge render-circuit` (saved from "
+            "KiCad or back-annotated?); the review sheet is generated — rerun "
+            "`pcbforge render-circuit`"
         )
 
     kicad = _kicad_cli(tool_root)
@@ -950,9 +993,10 @@ def validate_circuit_schematic(
         actual = schematic_nets[endpoints]
         if len(endpoints) < 2:
             continue
-        if actual != net.display_name and not actual.startswith("Net-("):
+        expected_name = net.compiler_name or net.display_name
+        if actual != expected_name and not actual.startswith("Net-("):
             parity.append(
-                f"{net.identifier}: schematic net is named {actual!r}, expected {net.display_name!r}"
+                f"{net.identifier}: schematic net is named {actual!r}, expected {expected_name!r}"
             )
     if parity:
         raise CircuitReviewError(f"{label}: netlist parity failed:\n  - " + "\n  - ".join(parity))
@@ -1161,7 +1205,7 @@ def circuit_review_inputs(project_dir: Path, stage: str) -> tuple[Path, ...]:
         project_dir / BASELINE_PATH,
         project_dir / contract.model,
         project_dir / contract.schematic,
-        audit_path_for(project_dir / contract.schematic),
+        audit_path_for(project_dir),
         project_dir / narrative,
     }
     if stage == "final":
@@ -1269,8 +1313,21 @@ def check_circuit_review(
         )
 
     model = read_circuit_model(model_path)
+    try:
+        spec = read_spec(project_dir / "spec.md")
+        board = read_board_evidence(project_dir / f"{spec.name}.kicad_pcb")
+    except (InitInputError, BuildTestError) as exc:
+        raise CircuitReviewInputError(str(exc)) from exc
+    tamper = schematic_tamper_message(board, f"{spec.name}.kicad_pcb")
+    if tamper:
+        raise CircuitReviewInputError(tamper)
     schematic_audit = validate_circuit_schematic(
-        schematic_path, model, tool_root=tool_root, runner=runner
+        schematic_path,
+        model,
+        audit_path=audit_path_for(project_dir),
+        project_name=spec.name,
+        tool_root=tool_root,
+        runner=runner,
     )
     model_fingerprint = circuit_model_fingerprint(model)
     if stage == "proposal":
@@ -1304,11 +1361,6 @@ def check_circuit_review(
                 "compiled circuit parity failed:\n  - " + "\n  - ".join(errors)
             )
 
-    try:
-        spec = read_spec(project_dir / "spec.md")
-        board = read_board_evidence(project_dir / f"{spec.name}.kicad_pcb")
-    except (InitInputError, BuildTestError) as exc:
-        raise CircuitReviewInputError(str(exc)) from exc
     board_hash = hashlib.sha256(board_topology_bytes(board)).hexdigest()
     payload = {
         "circuit_review_schema": CIRCUIT_REVIEW_SCHEMA,

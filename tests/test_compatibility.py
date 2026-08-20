@@ -33,7 +33,7 @@ def _pins() -> dict[str, object]:
             "build_test_schema": 1,
             "layout_handoff_schema": 1,
             "approval_schema": 1,
-            "circuit_review_schema": 2,
+            "circuit_review_schema": 3,
             "policy_schema": 1,
             "status_schema": 1,
         },
@@ -73,7 +73,7 @@ class CompatibilityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             project = self._project(Path(temporary))
             pins = _pins()
-            pins["guidance"]["circuit_review_schema"] = 3  # type: ignore[index]
+            pins["guidance"]["circuit_review_schema"] = 4  # type: ignore[index]
             (project / ".pcbforge").write_text(
                 yaml.safe_dump(pins, sort_keys=False),
                 encoding="utf-8",
@@ -106,7 +106,7 @@ class CompatibilityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             project = self._project(Path(temporary))
             (project / "circuit-review.yaml").write_text(
-                "circuit_review_schema: 3\n",
+                "circuit_review_schema: 4\n",
                 encoding="utf-8",
             )
             before = _tree_hash(project)

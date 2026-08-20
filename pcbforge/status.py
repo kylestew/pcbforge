@@ -32,6 +32,7 @@ from pcbforge.build_test import (
 )
 from pcbforge.circuit_review import (
     BASELINE_PATH,
+    SCHEMATIC_AUDIT_PATH,
     CONTRACT_FILENAME as CIRCUIT_REVIEW_FILENAME,
     CircuitReviewError,
     CircuitReviewInputError,
@@ -982,8 +983,8 @@ def _approval_payload(
                         project_dir / ".pcbforge",
                         project_dir / CIRCUIT_REVIEW_FILENAME,
                         project_dir / "review" / "circuit" / "circuit.yaml",
-                        project_dir / "review" / "circuit" / "circuit.kicad_sch",
-                        project_dir / "review" / "circuit" / "circuit.audit.json",
+                        *project_dir.glob("*.kicad_sch"),
+                        project_dir / SCHEMATIC_AUDIT_PATH,
                         project_dir / "docs" / "circuit-proposal.md",
                         project_dir / BASELINE_PATH,
                     )
@@ -3541,8 +3542,8 @@ def _prepare_proposal_review(
                     project_dir / ".pcbforge",
                     project_dir / CIRCUIT_REVIEW_FILENAME,
                     project_dir / "review" / "circuit" / "circuit.yaml",
-                    project_dir / "review" / "circuit" / "circuit.kicad_sch",
-                    project_dir / "review" / "circuit" / "circuit.audit.json",
+                    *project_dir.glob("*.kicad_sch"),
+                    project_dir / SCHEMATIC_AUDIT_PATH,
                     project_dir / "docs" / "circuit-proposal.md",
                     project_dir / BASELINE_PATH,
                 )

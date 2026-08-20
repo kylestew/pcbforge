@@ -188,6 +188,14 @@ exception approval reopens the profile-mapped completed phase.
   no "Update PCB from Schematic" clobber), flat sheet with one region per
   model group (hierarchical sheets per group deferred). `circuit-review.yaml`
   is schema 2 (`schematic:` key); schema-1 projects restart per doctrine.
+  **v1.5 (same day):** the sheet moved into the project as
+  `<project>.kicad_sch` (schema 3) because the point is KiCad cross-probing
+  during hand layout, which needs one project and board net names; labels
+  carry `compiler_name`. Isolation is replaced by detection: the audit
+  records the sheet hash (any KiCad save fails the gate) and every gate,
+  the layout handoff, and fab-out refuse a board whose footprints carry
+  `path`/`Sheetfile` links (Atopile never writes them; only Update PCB from
+  Schematic does).
 - **2026-07-31 — v1 clean break.** PCBForge supports freshly initialized
   projects only. All artifact and guidance schemas reset to integer `1` with
   one accepted value. Unsupported versions fail with “unsupported version —
