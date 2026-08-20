@@ -796,6 +796,13 @@ def main(argv: list[str] | None = None) -> int:
         if isinstance(result, RenderResult):
             for warning in result.warnings:
                 print(f"pcbforge: diagram warning [{warning.code}] {warning.message}")
+        else:
+            print(
+                "pcbforge render-circuit: the script kept no RenderResult in "
+                "`result`, so readability warnings stay unreported; end it "
+                "with `result = diagram.save()`",
+                file=sys.stderr,
+            )
         print("pcbforge: rendered and validated the circuit review diagram")
         return 0
 

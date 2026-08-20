@@ -45,9 +45,9 @@ with the same `validate_circuit_svg` gate `check-circuit-review` uses and
 raises on any failure, so a script that exits cleanly has already passed the
 SVG side of the proposal check. It also returns:
 
-- `collision_warnings` — estimated label-overlap pairs. Drive this to zero
-  by moving labels or symbols; do not ignore warnings without looking at a
-  rendering.
+- `collision_warnings` — estimated label-overlap pairs only. Drive this to
+  zero by moving labels or symbols. `warnings` below carries every other
+  readability finding; do not ignore either without looking at a rendering.
 - `missing_component_labels` — references never visible in the drawing
   itself. The generated register keeps machine coverage complete either way;
   treat entries here as a prompt to ask whether the part should be drawn.
