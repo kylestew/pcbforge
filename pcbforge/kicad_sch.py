@@ -36,7 +36,11 @@ from pcbforge.sexpr import Quoted
 
 SCH_VERSION = "20250114"
 GENERATOR = "pcbforge"
-REVIEW_MARKER = "PCBForge review-only — not PCB input"
+REVIEW_MARKER = "PCBForge review-only schematic — generated from the approved circuit model"
+REVIEW_MARKER_DETAIL = (
+    "Read and cross-probe it with pcbnew. Do not edit or save it in KiCad and never "
+    "run Update PCB from Schematic: Atopile owns the board; pcbforge render-circuit owns this sheet."
+)
 FONT = 1.27
 _PATH_PALETTE = (
     (200, 30, 30),
@@ -850,9 +854,10 @@ class ReviewSchematic:
         texts: list[_Text] = []
         content = self._content_box(group_boxes)
         x0 = content.x1
-        texts.append(_Text(REVIEW_MARKER, (x0, content.y1 - 7.62), 2.54, (200, 0, 0), bold=True, furniture=True))
-        texts.append(_Text(self.title, (x0, content.y1 - 12.7), 2.0, None, bold=True, furniture=True))
-        texts.append(_Text(f"model sha256 {self.fingerprint}", (x0, content.y1 - 4.445), 1.0, (90, 90, 90), furniture=True))
+        texts.append(_Text(self.title, (x0, content.y1 - 16.51), 2.0, None, bold=True, furniture=True))
+        texts.append(_Text(REVIEW_MARKER, (x0, content.y1 - 11.43), 2.54, (200, 0, 0), bold=True, furniture=True))
+        texts.append(_Text(REVIEW_MARKER_DETAIL, (x0, content.y1 - 8.255), 1.27, (200, 0, 0), furniture=True))
+        texts.append(_Text(f"model sha256 {self.fingerprint}", (x0, content.y1 - 5.08), 1.0, (90, 90, 90), furniture=True))
         for group_id, box in group_boxes.items():
             group = self._groups[group_id]
             texts.append(_Text(group.title, (box.x1 + 1.27, box.y1 + 2.794), 1.5, (60, 60, 120), bold=True))
@@ -982,6 +987,7 @@ class ReviewSchematic:
             f"\t\t(title {sexpr.quote(self.title)})",
             f"\t\t(rev {sexpr.quote(self.fingerprint[:12])})",
             f"\t\t(comment 1 {sexpr.quote(REVIEW_MARKER)})",
+            f"\t\t(comment 3 {sexpr.quote(REVIEW_MARKER_DETAIL)})",
             f"\t\t(comment 2 {sexpr.quote('pcbforge_model_sha256=' + self.fingerprint)})",
             "\t)",
             "\t(lib_symbols",

@@ -105,7 +105,9 @@ must:
 6. Keep all readability warnings at zero before review.
 7. Give every passive a visible purpose note. The generated component
    register satisfies this requirement.
-8. Carry the prominent `PCBForge review-only — not PCB input` marker and the
+8. Carry the prominent `PCBForge review-only schematic — generated from the
+   approved circuit model` marker (with its do-not-edit / do-not-Update-PCB
+   instruction) and the
    canonical model fingerprint in the title block and on the sheet.
 9. Bind every symbol to its model component (`Reference`, `Value`,
    `Footprint`, hidden `pcbforge_group`/`pcbforge_purpose`), colour every

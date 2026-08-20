@@ -82,7 +82,7 @@ def schematic_text(
 ) -> str:
     """A hand-minimal schematic that satisfies the structural gate for MODEL."""
     marker_text = (
-        '(text "PCBForge review-only — not PCB input" (exclude_from_sim no) (at 20 20 0) '
+        '(text "PCBForge review-only schematic — generated from the approved circuit model" (exclude_from_sim no) (at 20 20 0) '
         '(effects (font (size 2.54 2.54))) (uuid "t1"))'
         if marker
         else ""
