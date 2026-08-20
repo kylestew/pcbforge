@@ -102,12 +102,12 @@ def _direction_loc(direction: str) -> str:
         raise DiagramError(f"unknown flag direction {direction!r}") from exc
 
 
-def _boxes_overlap(a, b, clearance: float = 0.0) -> bool:
+def _boxes_overlap(a, b) -> bool:
     return (
-        a.xmin - clearance < b.xmax
-        and b.xmin - clearance < a.xmax
-        and a.ymin - clearance < b.ymax
-        and b.ymin - clearance < a.ymax
+        a.xmin < b.xmax
+        and b.xmin < a.xmax
+        and a.ymin < b.ymax
+        and b.ymin < a.ymax
     )
 
 
@@ -480,7 +480,7 @@ class ReviewDiagram:
         collision_warnings = [
             warning.message
             for warning in audit_warnings
-            if warning.code != "missing-component-symbol"
+            if warning.code == "text-text-overlap"
         ]
         return RenderResult(
             path=self.output_path,

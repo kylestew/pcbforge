@@ -110,7 +110,7 @@ hand-write the SVG. The finished diagram must open directly in a browser and:
 
 `pcbforge.diagram.ReviewDiagram.save()` produces items 7–11 mechanically and
 runs the same SVG validation as `check-circuit-review`. Items 1–6 are the
-authored drawing itself. The script is review support, not a design source.
+authored drawing itself. The script is review support, not a design source;
 the model stays the approval contract.
 
 If the root model fingerprint is absent or stale, `check-circuit-review`

@@ -457,6 +457,19 @@ class DiagramTests(DiagramFixture):
         result = diagram.save()
         self.assertTrue(result.collision_warnings)
 
+    def test_collision_warnings_cover_labels_only(self) -> None:
+        diagram = self.make_diagram()
+        self.draw_minimal(diagram)
+        elm = diagram.elm
+        diagram.drawing += elm.Line().at((6, 0)).right().length(4)
+        diagram.drawing += elm.Line().at((8, 1)).down().length(2)
+        result = diagram.save()
+        self.assertIn(
+            "ambiguous-wire-crossing",
+            {warning.code for warning in result.warnings},
+        )
+        self.assertEqual(result.collision_warnings, [])
+
     def test_generated_svg_stays_browser_safe(self) -> None:
         diagram = self.make_diagram()
         self.draw_minimal(diagram)
@@ -551,6 +564,23 @@ class RenderCircuitCliTests(unittest.TestCase):
             code = main(["render-circuit", str(self.project)])
         self.assertEqual(code, 0)
         self.assertIn("diagram warning [text-wire-overlap]", output.getvalue())
+
+    def test_render_circuit_reports_an_unbound_result(self) -> None:
+        from pcbforge.cli import main
+
+        unbound = SCRIPT.replace(
+            'result = diagram.save()\nprint("fingerprint:", result.fingerprint)',
+            "diagram.save()",
+        )
+        self.assertNotIn("result", unbound)
+        self.script.write_text(unbound, encoding="utf-8")
+        errors = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(
+            errors
+        ):
+            code = main(["render-circuit", str(self.project)])
+        self.assertEqual(code, 0)
+        self.assertIn("result = diagram.save()", errors.getvalue())
 
     def test_render_circuit_requires_script(self) -> None:
         from pcbforge.cli import main
