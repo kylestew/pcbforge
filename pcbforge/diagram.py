@@ -45,6 +45,8 @@ _FURNITURE_COLOR = "#333333"
 _CHAR_WIDTH = 0.58
 _GEOMETRY_EPSILON = 0.05
 _TEXT_CLEARANCE = 0.08
+_CURVE_SAMPLES = 16
+_CURVE_STEP = 2 * math.pi / _CURVE_SAMPLES
 _AUDIT_ID = "pcbforge-diagram-audit"
 _AUDIT_SCHEMA = 1
 
@@ -129,33 +131,124 @@ def _subtract(a, b) -> tuple[float, float]:
 
 
 def _segment_intersection(a, b, c, d):
-    """Return (kind, point) for a point or collinear segment intersection."""
+    """Return (kind, point) for a point or collinear segment intersection.
+
+    Every tolerance scales with segment length. A raw epsilon on a cross
+    product reads as "parallel" for the short half-segments Schemdraw emits
+    for ordinary stubs, which invents intersections that are not there.
+    """
     r = _subtract(b, a)
     s = _subtract(d, c)
+    r_length = math.hypot(r[0], r[1])
+    s_length = math.hypot(s[0], s[1])
+    # NaN-safe: gap sentinels in Schemdraw paths fail this test and drop out
+    if not (r_length > _GEOMETRY_EPSILON and s_length > _GEOMETRY_EPSILON):
+        return None
     denominator = _cross(r, s)
     offset = _subtract(c, a)
-    if abs(denominator) <= _GEOMETRY_EPSILON:
-        if abs(_cross(offset, r)) > _GEOMETRY_EPSILON:
+    if abs(denominator) <= _GEOMETRY_EPSILON * r_length * s_length:
+        if abs(_cross(offset, r)) > _GEOMETRY_EPSILON * r_length:
             return None
-        length_squared = r[0] * r[0] + r[1] * r[1]
-        if length_squared <= _GEOMETRY_EPSILON**2:
-            return None
+        length_squared = r_length * r_length
+        span_epsilon = _GEOMETRY_EPSILON / r_length
         t0 = (offset[0] * r[0] + offset[1] * r[1]) / length_squared
         t1 = t0 + (s[0] * r[0] + s[1] * r[1]) / length_squared
         low, high = max(0.0, min(t0, t1)), min(1.0, max(t0, t1))
-        if high < low - _GEOMETRY_EPSILON:
+        if high < low - span_epsilon:
             return None
-        if high - low <= _GEOMETRY_EPSILON:
+        if high - low <= span_epsilon:
             return ("point", (a[0] + low * r[0], a[1] + low * r[1]))
         return ("overlap", None)
     t = _cross(offset, s) / denominator
     u = _cross(offset, r) / denominator
+    t_epsilon = _GEOMETRY_EPSILON / r_length
+    u_epsilon = _GEOMETRY_EPSILON / s_length
     if (
-        -_GEOMETRY_EPSILON <= t <= 1.0 + _GEOMETRY_EPSILON
-        and -_GEOMETRY_EPSILON <= u <= 1.0 + _GEOMETRY_EPSILON
+        -t_epsilon <= t <= 1.0 + t_epsilon
+        and -u_epsilon <= u <= 1.0 + u_epsilon
     ):
         return ("point", (a[0] + t * r[0], a[1] + t * r[1]))
     return None
+
+
+def _segment_polyline(segment, transform) -> list:
+    """Flatten one Schemdraw segment into absolute (start, end) line pairs.
+
+    ``Segment.path`` only exists on plain path segments, so polygon, circle,
+    arc, and bezier bodies are invisible without this. ``xform`` bakes in
+    position, rotation, and zoom, so the flattened points are already global.
+    """
+    from schemdraw.segments import (
+        Segment,
+        SegmentArc,
+        SegmentBezier,
+        SegmentCircle,
+        SegmentPoly,
+    )
+
+    placed = segment.xform(transform)
+    if isinstance(placed, SegmentPoly):
+        points = list(placed.verts)
+        if getattr(placed, "closed", True) and len(points) > 2:
+            points.append(points[0])
+    elif isinstance(placed, SegmentCircle):
+        cx, cy = placed.center
+        points = [
+            (
+                cx + placed.radius * math.cos(_CURVE_STEP * index),
+                cy + placed.radius * math.sin(_CURVE_STEP * index),
+            )
+            for index in range(_CURVE_SAMPLES + 1)
+        ]
+    elif isinstance(placed, SegmentArc):
+        points = _arc_points(placed)
+    elif isinstance(placed, SegmentBezier):
+        points = _bezier_points(placed.p)
+    elif isinstance(placed, Segment):
+        points = list(placed.path)
+    else:
+        # SegmentText and anything else carries no outline to cross
+        return []
+    return [
+        (start, end)
+        for start, end in zip(points, points[1:])
+        if not _point_near(start, end)
+    ]
+
+
+def _arc_points(arc) -> list:
+    cx, cy = arc.center
+    rx, ry = arc.width / 2, arc.height / 2
+    theta = math.radians(arc.angle)
+    cos_t, sin_t = math.cos(theta), math.sin(theta)
+    start = math.radians(arc.theta1)
+    sweep = math.radians(arc.theta2) - start
+    points = []
+    for index in range(_CURVE_SAMPLES + 1):
+        phi = start + sweep * index / _CURVE_SAMPLES
+        x, y = rx * math.cos(phi), ry * math.sin(phi)
+        points.append((cx + x * cos_t - y * sin_t, cy + x * sin_t + y * cos_t))
+    return points
+
+
+def _bezier_points(control) -> list:
+    points = []
+    order = len(control) - 1
+    if order < 1:
+        return []
+    for index in range(_CURVE_SAMPLES + 1):
+        t = index / _CURVE_SAMPLES
+        x = y = 0.0
+        for power, (px, py) in enumerate(control):
+            weight = (
+                math.comb(order, power)
+                * (t**power)
+                * ((1 - t) ** (order - power))
+            )
+            x += weight * px
+            y += weight * py
+        points.append((x, y))
+    return points
 
 
 def _segment_intersects_box(a, b, box, inset: float = 0.0) -> bool:
@@ -594,18 +687,23 @@ class ReviewDiagram:
         for owner in self.drawing.elements:
             if isinstance(owner, Dot) and not owner.params.get("open", False):
                 dots.append(owner.absanchors["center"])
+            # fluent junctions: Line.dot()/Wire.dot() draw the dot on the line
+            # itself, so they never appear as a standalone Dot element
+            for param, anchor in (("dot", "end"), ("idot", "start")):
+                marker = owner.params.get(param, False)
+                if marker and marker != "open" and anchor in owner.absanchors:
+                    dots.append(owner.absanchors[anchor])
             if isinstance(owner, (Line, Wire)):
                 wire_endpoints[id(owner)] = (
                     owner.absanchors["start"],
                     owner.absanchors["end"],
                 )
                 for segment in owner.segments:
-                    path = getattr(segment, "path", ())
-                    points = [owner.transform.transform(point) for point in path]
                     wires.extend(
                         (owner, start, end)
-                        for start, end in zip(points, points[1:])
-                        if not _point_near(start, end)
+                        for start, end in _segment_polyline(
+                            segment, owner.transform
+                        )
                     )
             for segment in owner.segments:
                 if not isinstance(segment, SegmentText):
@@ -624,9 +722,9 @@ class ReviewDiagram:
                 if all(math.isfinite(value) for value in values):
                     geometry = []
                     for segment in element.segments:
-                        path = getattr(segment, "path", ())
-                        points = [element.transform.transform(point) for point in path]
-                        geometry.extend(zip(points, points[1:]))
+                        geometry.extend(
+                            _segment_polyline(segment, element.transform)
+                        )
                     symbols.append(
                         (
                             reference,
@@ -639,6 +737,10 @@ class ReviewDiagram:
 
         for owner, text, box in texts:
             for wire_owner, start, end in wires:
+                # a label belongs to its own wire; Schemdraw anchors the text
+                # box on the baseline, so it always grazes the line it names
+                if owner is wire_owner:
+                    continue
                 if _segment_intersects_box(start, end, box, inset=-_TEXT_CLEARANCE):
                     midpoint = ((start[0] + end[0]) / 2, (start[1] + end[1]) / 2)
                     warnings.append(
