@@ -111,9 +111,9 @@ gates that depend on it.
 ## 1. SPEC
 
 Follow `agent/spec-interview.md`. Resolve purpose, power, rails, MCU family,
-peripherals, connectors, board dimensions, 2/4-layer choice, fabrication
-policy, risks, and material alternatives. SPEC produces `spec.md`,
-`policy.yaml`, and a pre-project `STATUS.md`.
+peripherals, connectors, board dimensions, design priorities, BOM bias,
+2/4-layer choice, fabrication policy, risks, and material alternatives. SPEC
+produces `spec.md`, `policy.yaml`, and a pre-project `STATUS.md`.
 
 Review and approve the exact SPEC fingerprint. The dashboard then shows the
 initialization transition as ready. Later implementation evidence in

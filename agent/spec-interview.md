@@ -37,20 +37,22 @@ Vendor-neutral: any agent with file read/write follows this document.
 1. Ask the first question: **"What's your initial idea for the board? A rough
    brain-dump of what you'd like it to do is perfect."** If the trigger already
    included the idea, treat that as the answer and do not ask again.
-2. Walk the dimensions below; fill gaps, flag conflicts.
-3. Propose: STM32 family, rail plan, layer count, module candidates (only if
+2. After the user gives the initial idea, present the three baseline
+   design-bias questions below. Present all three in one turn.
+3. Walk the dimensions below; fill gaps, flag conflicts.
+4. Propose: STM32 family, rail plan, layer count, module candidates (only if
    the module library has entries — it may be empty; say so plainly),
    rough BOM feasibility vs ceiling.
-4. Draft `spec.md` and `policy.yaml` (formats below). Show both. Resolve the
+5. Draft `spec.md` and `policy.yaml` (formats below). Show both. Resolve the
    policy applicability questions, but leave later implementation evidence
    empty.
-5. Once the draft validates, you run `pcbforge status --write`; refresh the
+6. Once the draft validates, you run `pcbforge status --write`; refresh the
    dashboard after material revisions. Do not ask the user to run this command.
-6. Once technically ready, follow the
+7. Once technically ready, follow the
    [standard review and approval protocol](operating-manual.md#review-and-approval-protocol)
    for the final SPEC gate. Present the exact packet and stop; record it only
    after the user explicitly approves it in conversation.
-7. Remind: `spec.md` and `policy.yaml` are **living contracts**. Later
+8. Remind: `spec.md` and `policy.yaml` are **living contracts**. Later
    requirement changes go to the spec first; technology declarations,
    sourcing evidence, and requested exceptions go to policy. Keep each file
    internally consistent. The exact `## Decisions log` section may collect
@@ -58,11 +60,42 @@ Vendor-neutral: any agent with file read/write follows this document.
    normative. Policy assurance evidence and exceptions are CIRCUIT-bound,
    sourcing is ORDER-bound, and status/rationale changes remain SPEC-bound.
 
+## Baseline design-bias questions
+
+Ask these questions after the initial idea. The user can select more than one
+option. Ask for an order when two selected goals can conflict.
+
+1. **When goals conflict, which one or two goals have priority?** Offer these
+   examples: first-spin success, fast delivery, low BOM cost, low assembled
+   cost, small board area, low power, high performance, and easy repair.
+2. **Do you want a BOM bias?** Distinguish these targets: fewer total
+   components, fewer unique BOM lines, fewer JLC extended parts, and lower
+   component cost. Do not treat these targets as equivalent.
+3. **How much optimization risk do you accept?** Offer conservative, balanced,
+   and aggressive. Explain that aggressive optimization can reduce margin,
+   sourcing flexibility, test access, or repair access.
+
+If the user has no preference, propose these defaults:
+
+- Put first-spin success and easy debug before cost and size.
+- Use a balanced optimization bias.
+- Prefer JLC basic parts when the technical result stays good.
+- Consolidate commodity values when the change has no material electrical
+  effect.
+- Keep necessary protection, decoupling, design margin, and test access.
+
+If the user asks for the cheapest design, ask which cost measure matters.
+Separate component cost from the full assembled-order cost.
+
+Record the answers in `## Design priorities` in `spec.md`. Use these priorities
+to compare material alternatives during ARCHITECT and CIRCUIT.
+
 ## Dimensions
 
 | Dimension | Probe | Default if unstated |
 |---|---|---|
 | Purpose | one sentence, what the board does | — (must have) |
+| Design bias | ordered goals, BOM target, optimization risk | first-spin success, easy debug, balanced |
 | Power in | USB-C? battery? barrel? voltage range? | usb-c |
 | Rails | 3V3 only? 5V needed? analog rail? | [+3V3] |
 | MCU class | flash/RAM/pin needs → family (table below) | G0 |
@@ -144,6 +177,9 @@ spec↔`init` coupling.
 
 ## Purpose
 One paragraph. What it does, for whom, success criterion.
+
+## Design priorities
+Ordered design goals, BOM bias, and accepted optimization risk.
 
 ## Function
 Signal chain / behavior prose. Peripheral-by-peripheral intent.

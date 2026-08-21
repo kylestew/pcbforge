@@ -765,6 +765,24 @@ class CliTests(unittest.TestCase):
 
 
 class GuidanceTests(unittest.TestCase):
+    def test_spec_interview_presents_baseline_design_bias_questions(self) -> None:
+        playbook = " ".join(
+            (TOOL_ROOT / "agent" / "spec-interview.md")
+            .read_text(encoding="utf-8")
+            .split()
+        )
+        for required in (
+            "present the three baseline",
+            "When goals conflict",
+            "Do you want a BOM bias?",
+            "How much optimization risk do you accept?",
+            "fewer total components",
+            "fewer unique BOM lines",
+            "fewer JLC extended parts",
+            "## Design priorities",
+        ):
+            self.assertIn(required, playbook)
+
     def test_architect_playbook_and_empty_catalog_are_explicit(self) -> None:
         playbook = (TOOL_ROOT / "agent" / "architect.md").read_text(encoding="utf-8")
         for required in (
