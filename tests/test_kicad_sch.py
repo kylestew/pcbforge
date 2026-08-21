@@ -14,6 +14,7 @@ from pcbforge.kicad_sch import (
     RenderResult,
     ReviewSchematic,
     SchematicError,
+    probe_text,
 )
 from pcbforge.sch_lint import Box, SheetGeometry, TextBox, lint
 from tests.kicad_fake import FIXTURE_SYMBOLS, FakeKicad
@@ -386,6 +387,79 @@ class WriterTests(SchematicFixture):
         with self.assertRaisesRegex(SchematicError, "missing proposed endpoint sets: led-anode"):
             sch.save()
 
+    def test_wire_through_a_pin_fails_at_the_call(self) -> None:
+        sch = self.schematic()
+        j1 = sch.place("J1", (40.64, 63.5), mirror="y")           # pins on the right, pin 1 top
+        with self.assertRaisesRegex(SchematicError, r"runs through pin J1\.2"):
+            sch.power("J1", 1, "vbus", direction="down", length=5.08)
+        sch.wire((80.01, 50.8), (80.01, 71.12))
+        with self.assertRaisesRegex(SchematicError, r"pin R1\.\d lands on the wire"):
+            sch.place("R1", (80.01, 60.96))                           # both pins on the wire
+        self.assertEqual(j1.pin_side(1), "right")
+        self.assertEqual(Placed("R1", sch.symbol_for("R1").symbol, (0.0, 0.0), 0, None, 1).pin_side(1), "up")
+
+    def test_preflight_names_the_element_that_joins_two_nets(self) -> None:
+        sch = self.schematic()
+        draw_ldo(sch)
+        # a GND power symbol dropped onto the LED_A label point joins the nets
+        point = (sch.pin("R1", 2)[0], (sch.pin("R1", 2)[1] + sch.pin("D1", 2)[1]) / 2)
+        sch.power_at(point, "ground", direction="right")
+        with self.assertRaisesRegex(SchematicError, r"short: model nets ground, led-anode are joined — first joined by power symbol GND"):
+            sch.save()
+
+    def test_open_net_is_reported_as_a_warning(self) -> None:
+        self.kicad.nets = dict(LDO_NETS, LED_A=["R1.2"], **{"unconnected-(D1-A-Pad2)": ["D1.2"]})
+        sch = self.schematic()
+        draw_ldo(sch)
+        # remove the R1->D1 wire by rebuilding without it is heavy; instead mark D1.2 via a
+        # label on another point so the nets stay separate pieces on the sheet
+        sch = self.schematic()
+        j1 = sch.place("J1", (40.64, 63.5))
+        q1 = sch.place("Q1", (63.5, 58.42), rotation=90)
+        u1 = sch.place("U1", (101.6, 55.88))
+        sch.place("C1", (81.28, 66.04))
+        sch.place("C2", (127.0, 66.04))
+        r1 = sch.place("R1", (160.02, 49.53))
+        sch.place("D1", below=r1, gap=10.16, rotation=90)
+        p = sch.pin
+        vin_y = u1.pin(3)[1]
+        sch.wire(p("J1", 1), (p("J1", 1)[0], vin_y), path="supply")
+        sch.connect((p("J1", 1)[0], vin_y), p("Q1", 3), path="supply")
+        sch.label_at((p("J1", 1)[0], vin_y), "vbus", direction="up")
+        sch.connect(p("Q1", 2), p("U1", 3), path="supply")
+        sch.drop("C1", 1, vin_y)
+        sch.power_at((p("C1", 1)[0], vin_y), "vin", flag=True)
+        sch.label("U1", 2, "rail-3v3", length=0)
+        sch.label("R1", 1, "rail-3v3", direction="up")
+        sch.drop("C2", 1, u1.pin(2)[1])
+        sch.power_at((p("C2", 1)[0], u1.pin(2)[1]), "rail-3v3")
+        for ref, pin in (("J1", 2), ("C1", 2), ("U1", 1), ("C2", 2)):
+            sch.drop(ref, pin, 81.28)
+        sch.label("Q1", 1, "ground")
+        sch.wire((p("J1", 2)[0], 81.28), (p("C2", 2)[0], 81.28))
+        sch.power_at((p("U1", 1)[0], 81.28), "ground", direction="down", flag=True)
+        sch.power("D1", 1, "ground", direction="down")
+        sch.label("R1", 2, "led-anode", direction="down")   # D1.2 left unconnected: open net
+        self.kicad.nets = dict(LDO_NETS, LED_A=["R1.2"], **{"unconnected-(D1-A-Pad2)": ["D1.2"]})
+        with self.assertRaisesRegex(SchematicError, "missing proposed endpoint sets: led-anode"):
+            result = sch.save()
+        # the pre-flight warning is visible in the failure text
+        try:
+            sch.save()
+        except SchematicError as exc:
+            self.assertIn("[open-net] net led-anode is drawn as 2 disconnected pieces", str(exc))
+
+    def test_probe_lists_rotations_and_sides(self) -> None:
+        sch = self.schematic()
+        text = probe_text(sch, ["R1", "J1"])
+        self.assertIn("R1: Device:R (stock", text)
+        self.assertIn("rail-3v3", text)
+        self.assertIn("rot0 +miry", text)
+        lines = [l for l in text.splitlines() if l.strip().startswith("1 ")]
+        self.assertTrue(any("up    (+0.00,-3.81)" in l and "left  (-3.81,+0.00)" in l for l in lines))
+        with self.assertRaisesRegex(SchematicError, "unknown component reference"):
+            probe_text(sch, ["R9"])
+
     def test_generic_box_when_pads_do_not_match(self) -> None:
         sch = self.schematic(board_pads={"D1": {"A", "K"}})
         sch.pin_names("D1", {"A": "anode", "K": "cathode"})
@@ -475,6 +549,9 @@ result = sch.save()
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))
             self.assertEqual(main(["render-circuit", str(project)]), 2)
+            with mock.patch("builtins.print") as printed:
+                self.assertEqual(main(["render-circuit", "--probe", "all", str(project)]), 0)
+            self.assertIn("R1: Device:R", printed.call_args_list[0].args[0])
             script = project / "review" / "circuit" / "circuit_schematic.py"
             script.write_text(self.SCRIPT, encoding="utf-8")
             with mock.patch("builtins.print") as printed:

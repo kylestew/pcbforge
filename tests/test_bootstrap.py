@@ -45,6 +45,7 @@ class BootstrapArgumentTests(unittest.TestCase):
             ("init", "board"): cwd / "board",
             ("check-circuit-review", "--stage", "final", "board"): cwd / "board",
             ("render-circuit", "--svg", "board"): cwd / "board",
+            ("render-circuit", "--probe", "U1,R2", "board"): cwd / "board",
             ("render-circuit",): cwd,
             (
                 "policy",

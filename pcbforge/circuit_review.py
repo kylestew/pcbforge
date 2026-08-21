@@ -979,10 +979,16 @@ def validate_circuit_schematic(
     missing_topology = sorted(
         model_nets[endpoints].identifier for endpoints in set(model_nets) - set(schematic_nets)
     )
-    extra_topology = sorted(
-        schematic_nets[endpoints] + " {" + ", ".join(sorted(endpoints)) + "}"
-        for endpoints in set(schematic_nets) - set(model_nets)
-    )
+    node_net = {node: net.identifier for net in model.nets for node in net.nodes}
+    extra_topology = []
+    for endpoints in sorted(set(schematic_nets) - set(model_nets), key=lambda e: schematic_nets[e]):
+        merged = sorted({node_net[node] for node in endpoints if node in node_net})
+        detail = f" — merges model nets: {', '.join(merged)}" if len(merged) > 1 else (
+            f" — partial drawing of model net {merged[0]}" if merged else ""
+        )
+        extra_topology.append(
+            schematic_nets[endpoints] + " {" + ", ".join(sorted(endpoints)) + "}" + detail
+        )
     parity: list[str] = []
     if missing_topology:
         parity.append("schematic is missing proposed endpoint sets: " + ", ".join(missing_topology))

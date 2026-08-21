@@ -69,6 +69,31 @@ proposal check. `--svg` exports `review/circuit/preview/circuit.svg` (and
 Output is deterministic for a given model and script; re-rendering without
 changes leaves the approved bytes alone.
 
+## Before you place: probe
+
+Never guess which end pin 1 is. Run
+
+```sh
+pcbforge render-circuit --probe all      # or --probe U1,D2,J1
+```
+
+It prints, per component, the resolved symbol (stock or generated box), every
+pin with its model net, and the pin-tip offset and side for rotations
+0/90/180/270 (plus `mirror="y"` for connectors). Copy the conventions you
+rely on into a comment at the top of the script. Verified defaults:
+
+| Part family | rotation 0 | 90 | 180 | 270 |
+|---|---|---|---|---|
+| vertical two-pin (R, C, L, fuse) | pin 1 up | pin 1 left | pin 1 down | pin 1 right |
+| horizontal two-pin (diode, LED, crystal, solder jumper, TVS) | pin 1 left | pin 1 down | pin 1 right | pin 1 up |
+| connector `Conn_01xN` | pins left, pin 1 top | — | pins right, pin 1 bottom | — |
+| connector `Conn_01xN`, `mirror="y"` | pins right, pin 1 top | | | |
+| test pad | pad up | pad left | pad down | pad right |
+
+Pin 1 of a diode is the cathode, of an LED the cathode, of a polarised
+capacitor the positive plate — but the *model nets* in the probe table are
+what you wire to, so read the table, not the datasheet.
+
 ## Helper API
 
 | Call | Meaning |
@@ -151,10 +176,74 @@ which the gate proves equal to the board.
 8. Mechanical parts (mounting holes) still get a symbol; the stock
    `Mechanical:MountingHole` has no pins and no wires.
 
+## When the tool says nets are joined
+
+Three messages, in the order you will meet them:
+
+1. `wire … runs through pin X.n` / `pin X.n lands on the wire …` — raised
+   at the offending call with its script line. A stub dropped past a
+   connector's neighbouring pins, or a part rotated so its far pin sits on
+   the wire meant for its near pin. Fix: end the wire at the pin, use a
+   label along the pin row, or fix the rotation (check the probe table).
+2. `short: model nets A, B are joined — first joined by <element>` — the
+   pre-flight connectivity check, before KiCad runs. The named element is
+   the bug: a label or power symbol placed on a point that belongs to
+   another net, two labels with different nets at one point, or a power
+   symbol whose name equals a local label of another net.
+3. `schematic has unproposed endpoint sets: NAME {…} — merges model nets:
+   …` — KiCad's own netlist disagrees with the model (the authoritative
+   check). Rare once 1 and 2 pass; if it happens, export the netlist
+   (`kicad-cli sch export netlist --format kicadsexpr`) and bisect by
+   deleting one element class at a time.
+
+Fix order: pin orientation first, then stubs through pins, then label /
+power-symbol placement. An `open-net` warning means a model net is drawn
+as disconnected pieces with no shared label — add the label or the wire.
+
+## When lint lists collisions
+
+Work through them in this order; each step removes whole families:
+
+1. **Group separation** — `group-boxes-overlap`, `symbol-outside-group`,
+   `wire-crosses-group-box`: move whole groups apart (≥ 10 mm) before
+   touching parts. Boxes include the group's wires, labels and text.
+2. **Big-part text** — set `ref_pos`/`value_pos` for ICs and connectors
+   (above the body when the top has no pins, bottom-right otherwise); the
+   default right-of-body position collides with right-side pin labels.
+3. **Fan-out around dense boxes** — parts hanging from a pin row cross the
+   rows below. Use a staircase (top rows reach furthest out, parts hang
+   down past rows that never reach their column) or give each pin its own
+   column and build the RC chain below the box. Use `pitch=5.08` on
+   generated boxes. Keep ≥ 20 mm between hanging parts when values show.
+4. **Decoupling rows** — caps along a rail need ≥ 20 mm pitch with values
+   (≈ 0.9 mm per character); values like `100nF 50V X7R` are 15 mm wide.
+5. **Labels** — a label's text sits above its anchor and extends in its
+   direction; place labels on long runs, at run ends, or mid-wire, never at
+   a pin tip pointing into the body. Long net names (`MOTOR_CURRENT_U_RAW`)
+   need ~20 mm of clear run.
+6. **Last resort** — `hide_value=True` on flying/charge-pump caps and test
+   pads; the component register keeps the value visible.
+
+A realistic budget is 5–8 renders for 20 parts and 10–15 for 80+; that is
+the normal loop, not failure.
+
+## Generated-box recipe (no stock symbol)
+
+```python
+sch.pin_names("U2", NAMES, sides={**{n: "left" for n in LEFT}, **{n: "right" for n in RIGHT},
+                                  **{n: "bottom" for n in GND_PINS}}, pitch=5.08)
+```
+
+Name pins from the model nets, order each side deliberately (`sides`
+insertion order is the pin order), put all ground pins on the bottom and
+drop them to one rail with a single ground symbol, supplies and straps on
+the left, signals and outputs on the right.
+
 ## Iterate until proven
 
 1. Run `pcbforge render-circuit --svg`. Fix every `SchematicError`
-   (unknown IDs, unplaced parts, undrawn paths).
+   (unknown IDs, unplaced parts, undrawn paths, wires through pins, joined
+   nets) — each names its script line.
 2. Read the ERC list when the gate fails: `pin_not_connected` means a wire
    end is off the pin tip — use `sch.pin()` instead of arithmetic;
    `power_pin_not_driven` means a missing `flag=True`; `label_dangling`

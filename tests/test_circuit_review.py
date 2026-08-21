@@ -302,6 +302,9 @@ class CircuitReviewTests(CircuitReviewFixture):
             self.kicad.nets = {"+3V3": ["R1.1"], "GND": ["R1.2"], "EXTRA": ["R1.3"]}
             with self.assertRaisesRegex(CircuitReviewError, "unproposed endpoint sets: EXTRA"):
                 check_circuit_review(project, "proposal", write=True)
+            self.kicad.nets = {"+3V3": ["R1.1", "R1.2"]}
+            with self.assertRaisesRegex(CircuitReviewError, r"merges model nets: ground, supply"):
+                check_circuit_review(project, "proposal", write=True)
             self.kicad.nets = {"+3V3": ["R1.1"], "GND": ["R1.2"]}
             self.kicad.fail = True
             with self.assertRaisesRegex(CircuitReviewInputError, "could not run ERC"):

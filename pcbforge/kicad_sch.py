@@ -157,6 +157,13 @@ class Placed:
             if pin.unit in (0, self.unit)
         }
 
+    def pin_side(self, number: str | int) -> str:
+        """Which side of the body the pin leaves from, in sheet terms."""
+        vx, vy = self.pin_outward(number)
+        if abs(vx) >= abs(vy):
+            return "right" if vx > 0 else "left"
+        return "down" if vy > 0 else "up"
+
     @property
     def bbox(self) -> Box:
         x1, y1, x2, y2 = self.symbol.bbox(self.unit)
@@ -419,6 +426,14 @@ class ReviewSchematic:
             hide_value,
             hide_reference,
         )
+        if len(lib.pins) > 1:
+            for number, tip in placed.pins.items():
+                for wire in self._wires:
+                    if _strictly_inside(tip, wire.start, wire.end):
+                        raise SchematicError(
+                            f"pin {reference}.{number} lands on the wire {wire.start}->{wire.end} "
+                            f"at {tip}; KiCad would connect it — move the part or end the wire there"
+                        )
         self.placed[reference] = placed
         self._lib_symbols[lib.lib_id] = lib
         return placed
@@ -448,8 +463,23 @@ class ReviewSchematic:
                 continue
             if a[0] != b[0] and a[1] != b[1]:
                 raise SchematicError(f"wire segment {a}->{b} is not orthogonal")
+            self._refuse_pass_through(a, b)
             self._wires.append(_Wire(a, b, path))
         return pts
+
+    def _refuse_pass_through(self, a: Point, b: Point) -> None:
+        """A wire that runs over a multi-pin part's pin tip connects to it in KiCad."""
+        for ref, placed in self.placed.items():
+            if len(placed.symbol.pins) < 2:
+                continue
+            for number, tip in placed.pins.items():
+                if _strictly_inside(tip, a, b):
+                    raise SchematicError(
+                        f"wire {a}->{b} runs through pin {ref}.{number} at {tip}; KiCad would "
+                        "connect it — end the wire at the pin, or route around it "
+                        "(stubs through a connector's neighbouring pins are the usual cause: "
+                        "use a label along the pin row instead)"
+                    )
 
     def connect(
         self,
@@ -617,10 +647,17 @@ class ReviewSchematic:
         self._auto_no_connects()
         junctions = self._junctions()
         self._split_wires(junctions)
+        shorts, opens = self._preflight_connectivity()
+        if shorts:
+            raise SchematicError(
+                "drawn connectivity joins model nets that must stay separate:\n  - "
+                + "\n  - ".join(shorts)
+            )
         group_boxes = self._group_boxes()
         furniture = self._furniture(group_boxes)
         geometry = self._geometry(junctions, group_boxes, furniture)
         warnings = list(lint(geometry))
+        warnings += [SchematicWarning("open-net", message) for message in opens]
         tips_by_ref = {ref: set(p.pins.values()) for ref, p in self.placed.items()}
         for point in getattr(self, "_pass_pin_points", ()):
             owners = sorted(ref for ref, tips in tips_by_ref.items() if point in tips)
@@ -743,6 +780,83 @@ class ReviewSchematic:
             if tip in wire_points or tip in self._no_connects:
                 continue
             self._no_connects.append(tip)
+
+    def _preflight_connectivity(self) -> tuple[list[str], list[str]]:
+        """Connectivity from our own geometry, checked against the model.
+
+        Returns (shorts, opens). A short names the element that first joined
+        two model nets; an open is a model net drawn in disconnected pieces.
+        KiCad's netlist is still the proof — this exists to point at the cause.
+        """
+        parent: dict[object, object] = {}
+        nets_of: dict[object, set[str]] = {}
+        joined_by: dict[object, str] = {}
+
+        def find(key):
+            parent.setdefault(key, key)
+            while parent[key] != key:
+                parent[key] = parent[parent[key]]
+                key = parent[key]
+            return key
+
+        def union(a, b, element: str) -> None:
+            ra, rb = find(a), find(b)
+            if ra == rb:
+                return
+            na, nb = nets_of.get(ra, set()), nets_of.get(rb, set())
+            parent[ra] = rb
+            merged = na | nb
+            nets_of[rb] = merged
+            if na and nb and na != nb and len(merged) > 1:
+                # remember the first element that joined two model nets
+                joined_by.setdefault(frozenset(merged), element)
+
+        def fmt(point: Point) -> str:
+            return f"({point[0]:.2f}, {point[1]:.2f})"
+
+        # model pins seed the islands with their nets
+        for ref, placed in self.placed.items():
+            for number, tip in placed.pins.items():
+                net = self._net_of_node.get(f"{ref}.{number}")
+                if net is not None:
+                    nets_of.setdefault(find(tip), set()).add(net)
+        for wire in self._wires:
+            union(wire.start, wire.end, f"wire {fmt(wire.start)}->{fmt(wire.end)}")
+        for label in self._labels:
+            union(label.at, ("name", label.text), f"label {label.text!r} at {fmt(label.at)}")
+        for power in self._powers:
+            if power.hide_value:
+                continue  # PWR_FLAG carries no net name
+            union(power.at, ("name", _power_value(power)), f"power symbol {_power_value(power)} at {fmt(power.at)}")
+
+        shorts: list[str] = []
+        seen: set[frozenset[str]] = set()
+        for key in list(parent):
+            root = find(key)
+            nets = nets_of.get(root, set())
+            if len(nets) > 1 and frozenset(nets) not in seen:
+                seen.add(frozenset(nets))
+                cause = next(
+                    (element for group, element in joined_by.items() if group <= frozenset(nets)),
+                    "(joined through several elements)",
+                )
+                shorts.append(
+                    f"short: model nets {', '.join(sorted(nets))} are joined — first joined by {cause}"
+                )
+
+        opens: list[str] = []
+        by_net: dict[str, dict[object, list[str]]] = {}
+        for ref, placed in self.placed.items():
+            for number, tip in placed.pins.items():
+                net = self._net_of_node.get(f"{ref}.{number}")
+                if net is None:
+                    continue
+                by_net.setdefault(net, {}).setdefault(find(tip), []).append(f"{ref}.{number}")
+        for net, islands in sorted(by_net.items()):
+            if len(islands) > 1:
+                pieces = "; ".join("{" + ", ".join(sorted(p)) + "}" for p in islands.values())
+                opens.append(f"net {net} is drawn as {len(islands)} disconnected pieces: {pieces}")
+        return shorts, opens
 
     def _junctions(self) -> list[Point]:
         ends: dict[Point, int] = {}
@@ -1297,6 +1411,46 @@ def _text_sexpr(text: _Text, uid: str) -> str:
     )
 
 
+def probe_text(sch: "ReviewSchematic", references: Sequence[str] | None = None) -> str:
+    """Describe resolved symbols: pins, model nets, and tip offsets per rotation.
+
+    Read this before choosing rotations; it replaces guessing which end pin 1 is.
+    """
+    refs = list(references) if references else [c.reference for c in sch.model.components]
+    lines: list[str] = []
+    for ref in refs:
+        if ref not in sch._components:
+            raise SchematicError(f"unknown component reference {ref!r}")
+        choice = sch.symbol_for(ref)
+        lib = choice.symbol
+        kind = "generic box" if choice.generic else "stock"
+        lines.append(f"{ref}: {lib.lib_id} ({kind}; {choice.reason})")
+        variants = [(0, None), (90, None), (180, None), (270, None)]
+        if sch._components[ref].kind == "connector":
+            variants.append((0, "y"))
+        header = "  pin  name        type          model net            " + "  ".join(
+            f"rot{rot}{'+mir' + mirror if mirror else '':>6}".ljust(22) for rot, mirror in variants
+        )
+        lines.append(header)
+        pins = sorted(lib.pins, key=lambda p: (len(p.number), p.number))
+        for pin in pins:
+            if pin.unit not in (0, 1):
+                continue
+            net = sch._net_of_node.get(f"{ref}.{pin.number}", "-")
+            cells = []
+            for rot, mirror in variants:
+                placed = Placed(ref, lib, (0.0, 0.0), rot, mirror, 1)
+                x, y = placed.pin(pin.number)
+                cells.append(f"{placed.pin_side(pin.number):<5} ({x:+.2f},{y:+.2f})".ljust(22))
+            lines.append(
+                f"  {pin.number:<4} {pin.name[:11]:<11} {pin.electrical[:13]:<13} {net[:20]:<20} "
+                + "  ".join(cells)
+            )
+        lines.append("  offsets are the pin tip relative to place(at=...); 'up' means the pin leaves the body upward")
+        lines.append("")
+    return "\n".join(lines)
+
+
 def export_preview(
     project_dir: Path,
     *,
@@ -1368,5 +1522,6 @@ __all__ = [
     "SchematicWarning",
     "REVIEW_MARKER",
     "export_preview",
+    "probe_text",
     "snap",
 ]

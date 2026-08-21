@@ -17,7 +17,7 @@ from pcbforge.circuit_review import (
     CircuitReviewInputError,
     check_circuit_review,
 )
-from pcbforge.kicad_sch import RenderResult, SchematicError, export_preview
+from pcbforge.kicad_sch import RenderResult, ReviewSchematic, SchematicError, export_preview, probe_text
 from pcbforge.fab import (
     FabError,
     FabInputError,
@@ -198,6 +198,14 @@ def _parser() -> argparse.ArgumentParser:
         "--svg",
         action="store_true",
         help="also export review/circuit/preview/circuit.svg (and .png when a rasterizer exists)",
+    )
+    render_circuit_parser.add_argument(
+        "--probe",
+        metavar="REFS",
+        help=(
+            "do not render; print the resolved symbol, pins, model nets and pin-tip "
+            "offsets per rotation for REFS (comma separated) or 'all'"
+        ),
     )
 
     check_build_test_parser = subcommands.add_parser(
@@ -782,6 +790,15 @@ def main(argv: list[str] | None = None) -> int:
         import runpy
 
         project_dir = Path(args.project_dir).expanduser().resolve()
+        if args.probe:
+            try:
+                sch = ReviewSchematic(project_dir, title="probe", desc="probe")
+                refs = None if args.probe.strip() == "all" else [r.strip() for r in args.probe.split(",") if r.strip()]
+                print(probe_text(sch, refs))
+            except (SchematicError, CircuitReviewError) as exc:
+                print(f"pcbforge render-circuit: {exc}", file=sys.stderr)
+                return 2
+            return 0
         script = project_dir / "review" / "circuit" / "circuit_schematic.py"
         if not script.is_file():
             print(
@@ -793,7 +810,14 @@ def main(argv: list[str] | None = None) -> int:
         try:
             namespace = runpy.run_path(str(script), run_name="__main__")
         except (SchematicError, CircuitReviewError) as exc:
-            print(f"pcbforge render-circuit: {exc}", file=sys.stderr)
+            import traceback
+
+            where = ""
+            for frame in reversed(traceback.extract_tb(exc.__traceback__)):
+                if Path(frame.filename).name == script.name:
+                    where = f" (at {script.name}:{frame.lineno}: {frame.line})"
+                    break
+            print(f"pcbforge render-circuit: {exc}{where}", file=sys.stderr)
             return 1
         result = namespace.get("result")
         if isinstance(result, RenderResult):
