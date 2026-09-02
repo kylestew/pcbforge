@@ -1825,6 +1825,25 @@ def _layout_handoff_payload(
     }
 
 
+def layout_assist_is_authorized(project_dir: Path) -> bool:
+    """Whether an explicit spatial-edit request may proceed right now.
+
+    True only inside an open LAYOUT whose handoff approval is still current --
+    the same condition that gates `status mark layout ai-assisted`. The spatial
+    edit commands call this rather than re-deriving it, so a change to what
+    "current" means can never leave them out of step.
+    """
+    try:
+        project_dir = _project_dir(Path(project_dir))
+        document = read_status_document(project_dir)
+        report = inspect_status(project_dir, document=document)
+    except (StatusError, InitInputError, OSError):
+        return False
+    if report.current is None or report.current.phase.key != "layout":
+        return False
+    return _current_layout_handoff(project_dir, document) is not None
+
+
 def _current_layout_handoff(
     project_dir: Path,
     document: StatusDocument,

@@ -170,8 +170,11 @@ The schema rules are:
 8. At least one PCBForge net class, one board rule, and one checklist item are
    required. Constraints may be empty only when the reviewed circuit genuinely
    has no typed spatial relationship.
-9. Keepouts remain written instructions in the LAYOUT handoff; the tool never draws
-   geometry or changes the board.
+9. Keepouts remain written instructions in the LAYOUT handoff; the tool never
+   draws geometry. Two commands move footprints, and only when the user asks
+   for them by name: `pcbforge apply-pattern` and `pcbforge apply-floorplan`,
+   both inside an open LAYOUT with a current handoff approval. Nothing else in
+   the toolchain writes the board, and neither of them draws copper.
 10. `order` directions are the enumerated axes `west-to-east`, `east-to-west`,
    `north-to-south`, and `south-to-north`, because the check projects subject
    centres onto that axis and requires them strictly in the listed order.

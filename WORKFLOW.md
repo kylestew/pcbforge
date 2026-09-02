@@ -246,6 +246,14 @@ request authorizes spatial edits for that task only, inside an open LAYOUT
 whose handoff approval is current. It expires with the task; the agent returns
 to spotting afterwards and never assumes a standing grant.
 
+Two commands exist for the common cases: `pcbforge apply-pattern` places the
+footprints a vendor reference layout calls for around an anchor the user placed,
+and `pcbforge apply-floorplan` does a coarse first pass from an adopted
+floorplan. They are the only tools that write the board, they run only inside an
+open LAYOUT with a current handoff approval, and each takes its own backup,
+verifies the result, and restores it if the verification fails. Neither records
+the assist event; that note remains the agent's.
+
 Before touching the board the agent copies it into `layout-backups/`, states
 the exact intended edits, and stops for the user on any material choice. It
 edits only spatial objects; circuit-owned identity, footprints, fields, and

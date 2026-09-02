@@ -169,10 +169,25 @@ Preconditions: LAYOUT is open and its handoff approval is current; the user has
 KiCad closed for that board; the material-choice rule still applies, so present
 options and stop when the ask hides a material decision.
 
+Prefer a tool over freehand editing. Where the requested work is exactly what a
+command already does, run that command:
+
+| Request | Command |
+|---|---|
+| place the parts a vendor reference layout calls for | `pcbforge apply-pattern --group <id>` |
+| coarse first-pass placement from an adopted floorplan | `pcbforge apply-floorplan --groups <id>` |
+
+Both take the `layout-backups/` copy themselves, refuse to run without a current
+handoff approval, verify the result and restore the backup if it does not check
+out, and print the delta. They do not record the `ai-assisted` event: that note
+is yours to write, because only you know what the user actually asked for. Run
+either with `--dry-run` first and show the user the moves.
+
 Procedure:
 
 1. Copy `<project>.kicad_pcb` into `layout-backups/` (git-ignored) with a
-   UTC-stamped name, and say where it is.
+   UTC-stamped name, and say where it is. Skip this step when you are using
+   `apply-pattern` or `apply-floorplan`; they do it, and say where.
 2. State the exact intended edits — which references move where, which nets get
    routed, layer and width choices from `placement.yaml` net classes.
 3. Edit spatial objects only: positions, sides, rotations, tracks, vias, zones,

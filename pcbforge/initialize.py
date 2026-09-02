@@ -920,8 +920,13 @@ After CIRCUIT completes, follow `{tool_root}/agent/layout-handoff.md`:
   it never blocks a phase, gates an approval, or changes project health.
 - When the user explicitly asks the agent to attempt placement or routing, that
   request authorizes spatial edits for that task only and expires with it.
-  Before editing, copy `{spec.name}.kicad_pcb` into `layout-backups/`, state
-  the exact intended edits, and stop for the user on any material choice.
+  Where a command already does the requested work, run it rather than editing
+  by hand: `{tool_root}/scripts/pcbforge apply-pattern --group <id>` places the
+  footprints a vendor reference layout binds around an anchor the user placed.
+  It backs the board up, verifies the result, restores it on any doubt, and
+  refuses a sketch-fidelity pattern. Use `--dry-run` first and show the moves.
+  Before editing by hand, copy `{spec.name}.kicad_pcb` into `layout-backups/`,
+  state the exact intended edits, and stop for the user on any material choice.
   Afterwards report the delta and run
   `{tool_root}/scripts/pcbforge status mark layout ai-assisted --note "<request; changes>"`.
   That event is history, never approval. See

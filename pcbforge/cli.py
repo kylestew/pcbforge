@@ -43,6 +43,11 @@ from pcbforge.policy import (
     check_policy,
     render_policy_result,
 )
+from pcbforge.apply_pattern import (
+    ApplyPatternError,
+    ApplyPatternInputError,
+    apply_pattern,
+)
 from pcbforge.placement_check import (
     PlacementCheckError,
     PlacementCheckInputError,
@@ -261,6 +266,36 @@ def _parser() -> argparse.ArgumentParser:
         default=".",
         metavar="PROJECT_DIR",
         help="initialized pcbforge project (default: current directory)",
+    )
+
+    apply_pattern_parser = subcommands.add_parser(
+        "apply-pattern",
+        help="place a group's bound pattern satellites around its anchor",
+        description=(
+            "Move the footprints an exact reference layout pattern binds into "
+            "their vendor positions around the anchor you placed. Requested "
+            "spatial work: run it only when the user asks. It backs the board "
+            "up first, refuses a sketch-fidelity pattern, and never moves the "
+            "anchor. Record the work afterwards with "
+            "`pcbforge status mark layout ai-assisted`."
+        ),
+    )
+    apply_pattern_parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+        help="initialized pcbforge project (default: current directory)",
+    )
+    apply_pattern_parser.add_argument(
+        "--group",
+        required=True,
+        help="the placement.yaml group whose pattern to apply",
+    )
+    apply_pattern_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print the moves and change nothing",
     )
 
     check_placement_parser = subcommands.add_parser(
@@ -939,6 +974,38 @@ def main(argv: list[str] | None = None) -> int:
         if args.write_report:
             state = "updated" if result.wrote_report else "unchanged"
             print(f"pcbforge: {state} {result.report_path.as_posix()}")
+        return 0
+
+    if args.command == "apply-pattern":
+        try:
+            result = apply_pattern(
+                Path(args.project_dir),
+                args.group,
+                dry_run=args.dry_run,
+            )
+        except ApplyPatternInputError as exc:
+            print(f"pcbforge apply-pattern: {exc}", file=sys.stderr)
+            return 2
+        except ApplyPatternError as exc:
+            print(f"pcbforge apply-pattern: {exc}", file=sys.stderr)
+            return 1
+
+        for warning in result.warnings:
+            print(f"  WARNING    {warning}")
+        print(f"pcbforge: apply-pattern — {result.summary}")
+        for move in result.moves:
+            before = "({:g}, {:g}, {:g}\u00b0)".format(*move.before)
+            after = "({:g}, {:g}, {:g}\u00b0)".format(*move.after)
+            print(
+                f"  {move.reference:6} {move.role:16} {before} -> {after}  "
+                f"{move.distance_mm:.2f} mm"
+            )
+        if result.applied and result.backup is not None:
+            print(f"pcbforge: backed up to {result.backup.name}")
+            print(
+                "pcbforge: record the request with `pcbforge status mark layout "
+                'ai-assisted --note "<request; changes>"`'
+            )
         return 0
 
     if args.command == "check-placement":

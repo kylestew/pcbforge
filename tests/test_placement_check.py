@@ -947,8 +947,8 @@ def vias(count: int, *, net: int = 1) -> str:
     )
 
 
-class PatternTests(CheckFixture):
-    """PA4: the board measured against a bound vendor reference layout."""
+class PatternFixture(CheckFixture):
+    """Scaffolds a project whose one group declares a reference pattern."""
 
     def build_pattern(
         self,
@@ -999,6 +999,10 @@ fingerprint: {fingerprint_inputs(project)}
             encoding="utf-8",
         )
         return project
+
+
+class PatternTests(PatternFixture):
+    """PA4: the board measured against a bound vendor reference layout."""
 
     def sketch(self, body: str, references: str = "U2, C3, C4"):
         with tempfile.TemporaryDirectory() as temporary:
@@ -1168,7 +1172,7 @@ fingerprint: {fingerprint_inputs(project)}
         self.assertIn("everything/vm-bypass-1", result.report)
 
 
-class PatternContractTests(PatternTests):
+class PatternContractTests(PatternFixture):
     """PA4 contract behaviour: binding, the brief, warnings, the fingerprint.
 
     Lives beside the check tests rather than in `test_placement.py` because

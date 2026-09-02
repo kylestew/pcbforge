@@ -3,3 +3,4 @@ toolchain/.venv/
 toolchain/.uv-cache/
 __pycache__/
 *.log
+layout-backups/
