@@ -48,6 +48,11 @@ from pcbforge.apply_pattern import (
     ApplyPatternInputError,
     apply_pattern,
 )
+from pcbforge.sketch_placement import (
+    SketchError,
+    SketchInputError,
+    sketch_placement,
+)
 from pcbforge.placement_check import (
     PlacementCheckError,
     PlacementCheckInputError,
@@ -266,6 +271,37 @@ def _parser() -> argparse.ArgumentParser:
         default=".",
         metavar="PROJECT_DIR",
         help="initialized pcbforge project (default: current directory)",
+    )
+
+    sketch_parser = subcommands.add_parser(
+        "sketch-placement",
+        help="propose coarse floorplan variants for the groups in placement.yaml",
+        description=(
+            "Pack one rectangle per placement group and anneal them against the "
+            "contract's own constraints, then write two or three arrangements "
+            "with their costs priced out term by term. It never changes the "
+            "board or placement.yaml: adopt a variant by pasting its floorplan: "
+            "block into the contract."
+        ),
+    )
+    sketch_parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+        help="initialized pcbforge project (default: current directory)",
+    )
+    sketch_parser.add_argument(
+        "--variants",
+        type=int,
+        default=3,
+        help="how many distinct arrangements to propose (default: 3)",
+    )
+    sketch_parser.add_argument(
+        "--seed",
+        type=int,
+        default=1,
+        help="solver seed; the same seed always gives the same variants",
     )
 
     apply_pattern_parser = subcommands.add_parser(
@@ -974,6 +1010,35 @@ def main(argv: list[str] | None = None) -> int:
         if args.write_report:
             state = "updated" if result.wrote_report else "unchanged"
             print(f"pcbforge: {state} {result.report_path.as_posix()}")
+        return 0
+
+    if args.command == "sketch-placement":
+        try:
+            sketch = sketch_placement(
+                Path(args.project_dir),
+                variants=args.variants,
+                seed=args.seed,
+            )
+        except SketchInputError as exc:
+            print(f"pcbforge sketch-placement: {exc}", file=sys.stderr)
+            return 2
+        except SketchError as exc:
+            print(f"pcbforge sketch-placement: {exc}", file=sys.stderr)
+            return 1
+
+        print(f"pcbforge: placement sketch — {sketch.summary}")
+        for variant in sketch.variants:
+            tight = len(variant.tight)
+            noun = "constraint" if tight == 1 else "constraints"
+            print(
+                f"  {variant.label}  cost {variant.total:8.1f}  "
+                f"seed {variant.seed}  {tight} tight {noun}"
+            )
+        state = "updated" if sketch.wrote else "unchanged"
+        print(
+            f"pcbforge: {state} {sketch.report_path.as_posix()}; "
+            "PCB and placement.yaml unchanged"
+        )
         return 0
 
     if args.command == "apply-pattern":

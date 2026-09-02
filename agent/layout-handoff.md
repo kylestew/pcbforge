@@ -186,12 +186,32 @@ The schema rules are:
    `patterns/<id>.yaml` in the project first and the tool catalog second. The
    bytes of every pattern a contract uses join the handoff fingerprint, so
    editing one reopens the handoff.
-12. Every constraint may carry an optional `source`, and every group an optional
+12. The optional top-level `floorplan` block is pasted from
+   `pcbforge sketch-placement`, never hand-written. It lists every group exactly
+   once with a board-relative `rect_mm: [x, y, w, h]`, y downward, inside
+   `board_mm`.
+13. Every constraint may carry an optional `source`, and every group an optional
    `guidance` list of short imperative notes. Both cite research — a datasheet
    section, a figure, an EVM revision, or a `docs/layout-research.md` heading.
    `prepare-layout` and `check-layout-handoff` warn about any `proximity`,
    `keepout`, or `loop` constraint with no `source`. The warning never fails the
    check; an uncited constraint is still valid and still measured.
+
+## Floorplan sketching
+
+Before writing detailed constraints on a board over roughly 20 footprints, run:
+
+```text
+pcbforge sketch-placement --variants 3
+```
+
+It packs one rectangle per group, anneals them against the constraints already
+in `placement.yaml`, and writes `docs/placement-sketch.md` with two or three
+arrangements, each priced out term by term and drawn as an SVG. It changes
+nothing. Present the variants and their tradeoffs, let the user pick one, then
+paste that variant's `floorplan:` block into `placement.yaml`. From then on
+`check-placement` measures the real placement against the adopted plan, one
+finding per group. Skipping this step is fine on a small board.
 
 ## Reference layout patterns
 

@@ -72,6 +72,8 @@ CONSTRAINT_TYPES = {
     "loop",
 }
 EDGES = {"any", "north", "east", "south", "west"}
+#: Rounding room for a pasted floorplan rectangle against its stated board size.
+_FLOORPLAN_SLACK_MM = 0.5
 #: ``order`` directions are an enum because the check projects centres onto an
 #: axis. ``orientation`` and ``airflow`` directions stay free prose because they
 #: describe intent a human judges, not an axis a tool measures.
@@ -152,6 +154,25 @@ class PlacementNetClass:
 
 
 @dataclass(frozen=True)
+class FloorplanRect:
+    identifier: str
+    x: float
+    y: float
+    width: float
+    height: float
+
+
+@dataclass(frozen=True)
+class Floorplan:
+    """An adopted coarse floorplan: one board-relative rectangle per group."""
+
+    variant: str
+    seed: int
+    board_mm: tuple[float, float]
+    rects: tuple[FloorplanRect, ...]
+
+
+@dataclass(frozen=True)
 class PlacementContract:
     strategy: str
     board_rules: tuple[str, ...]
@@ -162,6 +183,7 @@ class PlacementContract:
     checklist: tuple[str, ...]
     warnings: tuple[str, ...] = ()
     patterns: tuple[tuple[str, PatternBinding], ...] = ()
+    floorplan: Floorplan | None = None
 
 
 @dataclass(frozen=True)
@@ -626,6 +648,94 @@ def _parse_constraints(
     return tuple(constraints)
 
 
+def _parse_floorplan(
+    raw: Any,
+    groups: tuple[PlacementGroup, ...],
+    errors: list[str],
+) -> Floorplan | None:
+    """Parse an adopted `sketch-placement` variant.
+
+    Rectangles are board-relative with y downward, exactly as the sketch report
+    prints them, so a pasted block needs no arithmetic to be correct.
+    """
+    prefix = "floorplan"
+    if not isinstance(raw, dict):
+        errors.append(f"{prefix}: expected a mapping")
+        return None
+    _unknown(raw, {"variant", "seed", "board_mm", "groups"}, prefix, errors)
+    variant = _text(raw, "variant", prefix, errors)
+    seed = raw.get("seed")
+    if type(seed) is not int:
+        errors.append(f"{prefix}.seed: expected an integer")
+        seed = 0
+    board_raw = raw.get("board_mm")
+    board = (0.0, 0.0)
+    if (
+        not isinstance(board_raw, list)
+        or len(board_raw) != 2
+        or any(
+            not isinstance(item, (int, float))
+            or isinstance(item, bool)
+            or item <= 0
+            for item in board_raw
+        )
+    ):
+        errors.append(f"{prefix}.board_mm: expected [width, height] in millimetres")
+    else:
+        board = (float(board_raw[0]), float(board_raw[1]))
+
+    rects: list[FloorplanRect] = []
+    listed: list[str] = []
+    groups_raw = raw.get("groups")
+    if not isinstance(groups_raw, list) or not groups_raw:
+        errors.append(f"{prefix}.groups: expected a non-empty list")
+    else:
+        for index, item in enumerate(groups_raw):
+            item_prefix = f"{prefix}.groups[{index}]"
+            if not isinstance(item, dict):
+                errors.append(f"{item_prefix}: expected a mapping")
+                continue
+            _unknown(item, {"id", "rect_mm"}, item_prefix, errors)
+            identifier = _text(item, "id", item_prefix, errors)
+            if identifier:
+                listed.append(identifier)
+            rect_raw = item.get("rect_mm")
+            if (
+                not isinstance(rect_raw, list)
+                or len(rect_raw) != 4
+                or any(
+                    not isinstance(value, (int, float)) or isinstance(value, bool)
+                    for value in rect_raw
+                )
+            ):
+                errors.append(f"{item_prefix}.rect_mm: expected [x, y, w, h]")
+                continue
+            x, y, width, height = (float(value) for value in rect_raw)
+            if width <= 0 or height <= 0:
+                errors.append(f"{item_prefix}.rect_mm: expected a positive size")
+                continue
+            if board != (0.0, 0.0) and (
+                x < 0
+                or y < 0
+                or x + width > board[0] + _FLOORPLAN_SLACK_MM
+                or y + height > board[1] + _FLOORPLAN_SLACK_MM
+            ):
+                errors.append(f"{item_prefix}.rect_mm: lies outside board_mm")
+                continue
+            if identifier:
+                rects.append(FloorplanRect(identifier, x, y, width, height))
+
+    expected = sorted(group.identifier for group in groups)
+    if sorted(listed) != expected:
+        errors.append(
+            f"{prefix}.groups: expected every group exactly once: "
+            + ", ".join(expected)
+        )
+    if not variant:
+        return None
+    return Floorplan(variant, seed, board, tuple(rects))
+
+
 def _uncited_warnings(
     constraints: tuple[PlacementConstraint, ...],
 ) -> tuple[str, ...]:
@@ -904,6 +1014,7 @@ def read_placement_contract(
             "constraints",
             "net_classes",
             "checklist",
+            "floorplan",
         },
         PLACEMENT_FILENAME,
         errors,
@@ -930,6 +1041,9 @@ def read_placement_contract(
     constraints = _parse_constraints(data.get("constraints"), errors)
     net_classes = _parse_net_classes(data.get("net_classes"), errors)
     checklist = _string_list(data.get("checklist"), "checklist", errors)
+    floorplan = None
+    if "floorplan" in data:
+        floorplan = _parse_floorplan(data.get("floorplan"), groups, errors)
     contract = PlacementContract(
         strategy,
         board_rules,
@@ -939,6 +1053,8 @@ def read_placement_contract(
         net_classes,
         checklist,
         _uncited_warnings(constraints),
+        (),
+        floorplan,
     )
     if board is None:
         try:

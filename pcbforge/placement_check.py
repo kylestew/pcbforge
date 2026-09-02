@@ -67,7 +67,15 @@ STATUSES = ("fail", "unmeasured", "manual", "pass")
 #: Summary ordering, which reads naturally rather than worst-first.
 SUMMARY_STATUSES = ("pass", "fail", "manual", "unmeasured")
 _STATUS_ORDER = {status: index for index, status in enumerate(STATUSES)}
-_KIND_ORDER = {"constraint": 0, "pattern": 1, "overlap": 2, "outline": 3}
+_KIND_ORDER = {
+    "constraint": 0,
+    "pattern": 1,
+    "floorplan": 2,
+    "overlap": 3,
+    "outline": 4,
+}
+#: How far the drawn outline may differ from an adopted floorplan's board size.
+FLOORPLAN_SIZE_TOLERANCE_MM = 0.5
 #: How far a satellite's rotation may drift from the pattern before it is a
 #: different placement rather than a placed one.
 ROTATION_TOLERANCE_DEG = 1.0
@@ -578,6 +586,109 @@ def _pattern_findings(
     return findings
 
 
+def _floorplan_findings(
+    contract: PlacementContract,
+    geometry: BoardGeometry,
+) -> list[Finding]:
+    """Measure the real placement against the adopted coarse floorplan.
+
+    Floorplan rectangles are board-relative, so every footprint centre is taken
+    relative to the outline's own corner before it is compared.
+    """
+    floorplan = contract.floorplan
+    if floorplan is None:
+        return []
+    findings: list[Finding] = []
+    outline = geometry.outline
+    if outline is None:
+        return [
+            Finding(
+                "floorplan",
+                "outline-matches-floorplan",
+                "unmeasured",
+                "not measured",
+                "",
+                "the board has no Edge.Cuts outline",
+            )
+        ]
+
+    width_error = abs(outline.width - floorplan.board_mm[0])
+    height_error = abs(outline.height - floorplan.board_mm[1])
+    worst = max(width_error, height_error)
+    findings.append(
+        Finding(
+            "floorplan",
+            "outline-matches-floorplan",
+            "pass" if worst <= FLOORPLAN_SIZE_TOLERANCE_MM else "fail",
+            f"{outline.width:.2f} x {outline.height:.2f} mm",
+            f"{floorplan.board_mm[0]:g} x {floorplan.board_mm[1]:g} mm "
+            f"+/- {FLOORPLAN_SIZE_TOLERANCE_MM:g} mm",
+            f"variant {floorplan.variant}",
+        )
+    )
+
+    references = {
+        group.identifier: group.references for group in contract.groups
+    }
+    for rect in floorplan.rects:
+        box = Box(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height)
+        placed = []
+        for reference in references.get(rect.identifier, ()):
+            try:
+                placed.append(geometry.footprint(reference))
+            except KeyError:
+                continue
+        if not placed:
+            findings.append(
+                Finding(
+                    "floorplan",
+                    rect.identifier,
+                    "unmeasured",
+                    "not measured",
+                    "",
+                    "no footprint of this group is on the board",
+                )
+            )
+            continue
+        centres = [
+            (item.box.centre[0] - outline.min_x, item.box.centre[1] - outline.min_y)
+            for item in placed
+        ]
+        inside = [box.contains(centre) for centre in centres]
+        centroid = (
+            sum(centre[0] for centre in centres) / len(centres),
+            sum(centre[1] for centre in centres) / len(centres),
+        )
+        overhang = max(
+            0.0,
+            box.min_x - centroid[0],
+            centroid[0] - box.max_x,
+            box.min_y - centroid[1],
+            centroid[1] - box.max_y,
+        )
+        strays = [
+            item.reference
+            for item, is_inside in zip(placed, inside)
+            if not is_inside
+        ]
+        findings.append(
+            Finding(
+                "floorplan",
+                rect.identifier,
+                "pass" if all(inside) else "fail",
+                f"{sum(inside)} of {len(inside)} inside, "
+                f"centroid {_millimetres(overhang)} outside",
+                "every footprint centre inside",
+                ""
+                if not strays
+                else "outside: "
+                + ", ".join(strays[:WORST_LISTED])
+                + (f" (+{len(strays) - WORST_LISTED} more)" if len(strays) > WORST_LISTED else ""),
+            )
+        )
+    return findings
+
+
 def _overlap_findings(geometry: BoardGeometry) -> list[Finding]:
     findings = []
     placed = [
@@ -794,7 +905,7 @@ def _render_report(
     ordered = sorted(result_findings, key=lambda item: item.sort_key)
     by_kind = {
         kind: [item for item in ordered if item.kind == kind]
-        for kind in ("constraint", "pattern", "overlap", "outline")
+        for kind in ("constraint", "pattern", "floorplan", "overlap", "outline")
     }
     summary = ", ".join(f"{counts[status]} {status}" for status in SUMMARY_STATUSES)
     verdict = "FAIL" if counts["fail"] else "PASS"
@@ -821,6 +932,10 @@ Measured against board sha256 `{board_sha256}`.
 ## Reference patterns
 
 {_table(by_kind["pattern"])}
+
+## Adopted floorplan
+
+{_table(by_kind["floorplan"])}
 
 ## Courtyard overlaps
 
@@ -889,6 +1004,7 @@ def check_placement(
         else:
             findings.append(_evaluate_constraint(constraint, geometry))
     findings.extend(_pattern_findings(contract, geometry))
+    findings.extend(_floorplan_findings(contract, geometry))
     findings.extend(_overlap_findings(geometry))
     findings.extend(_outline_findings(geometry, spec))
     findings.sort(key=lambda item: item.sort_key)

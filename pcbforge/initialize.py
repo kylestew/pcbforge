@@ -914,6 +914,10 @@ After CIRCUIT completes, follow `{tool_root}/agent/layout-handoff.md`:
 - Placement and routing remain distinct user tasks, both performed in KiCad 9.
   The agent spots and audits by default and never edits spatial board data on
   its own initiative.
+- Before detailed placement on a board over roughly 20 footprints, run
+  `{tool_root}/scripts/pcbforge sketch-placement`. It proposes coarse floorplan
+  variants in `docs/placement-sketch.md` and changes nothing; present them, and
+  paste the chosen `floorplan:` block into `placement.yaml`.
 - Measure placement against the contract at any time with
   `{tool_root}/scripts/pcbforge check-placement --write-report`. It writes
   `docs/placement-check.md` and never touches the board. The result is advisory:
