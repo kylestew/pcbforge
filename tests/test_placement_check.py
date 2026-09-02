@@ -16,18 +16,26 @@ from unittest import mock
 
 import yaml
 
+from pcbforge.build_test import fingerprint_inputs
 from pcbforge.cli import main
 from pcbforge.compatibility import EXPECTED_GUIDANCE
 from pcbforge.markdown_metadata import metadata_yaml
-from pcbforge.placement import brief_inputs
+from pcbforge.placement import (
+    BRIEF_FILENAME,
+    PlacementInputError,
+    brief_inputs,
+    generate_brief,
+    read_placement_contract,
+)
 from pcbforge.placement_check import (
     PLACEMENT_CHECK_SCHEMA,
     REPORT_FILENAME,
     PlacementCheckError,
     PlacementCheckInputError,
     check_placement,
+    placement_check_inputs,
 )
-from tests.test_placement import PlacementFixture
+from tests.test_placement import TOOL_ROOT, PlacementFixture
 
 BOARD_HEADER = """(kicad_pcb
   (version 20241229)
@@ -829,3 +837,481 @@ class CliTests(CheckFixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+ANCHOR_PATTERN = """pattern_schema: 1
+id: testdriver
+part:
+  partnumber_match: "^TEST8316[CR]T"
+  footprint_match: "VQFN-40"
+fidelity: sketch
+source:
+  document: "TEST8316 datasheet, Layout Example figure"
+  layers: 2
+  captured: 2026-09-02
+frame: >-
+  Offsets are in the anchor footprint's local frame with anchor rotation 0.
+roles:
+  - id: vm-bypass-1
+    anchor_pads: ["9"]
+    footprint_match: "^Capacitor_SMD"
+    near_side: west
+    max_mm: 2.5
+    rationale: First high-frequency VM bypass at pin 9.
+  - id: vm-bypass-2
+    anchor_pads: ["10"]
+    footprint_match: "^Capacitor_SMD"
+    near_side: east
+    max_mm: 2.5
+    rationale: Second VM bypass at pin 10.
+rules:
+  - id: ep-thermal-vias
+    type: vias-under-pad
+    anchor_pad: "41"
+    min_count: 9
+    rationale: Exposed-pad heat path to the back copper.
+  - id: gnd-pour-back
+    type: note
+    text: Solid GND pour under the package on the opposite layer.
+    rationale: Heat spreading.
+"""
+
+EXACT_PATTERN = """pattern_schema: 1
+id: testdriver
+part:
+  partnumber_match: "^TEST8316[CR]T"
+  footprint_match: "VQFN-40"
+fidelity: exact
+source:
+  document: "TEST8316EVM design files, revision B"
+  layers: 2
+  captured: 2026-09-02
+frame: >-
+  Offsets are in the anchor footprint's local frame with anchor rotation 0.
+roles:
+  - id: vm-bypass-1
+    anchor_pads: ["9"]
+    footprint_match: "^Capacitor_SMD"
+    offset_mm: [-4.5, 0]
+    rotation_deg: 0
+    tolerance_mm: 0.5
+    rationale: First high-frequency VM bypass at pin 9.
+"""
+
+
+def anchor(x: float, y: float, *, rotation: float = 0.0, partnumber="TEST8316CT") -> str:
+    """A VQFN-40 with VM pads at local (-3, 0) and (+3, 0) and an exposed pad."""
+    return f"""  (footprint "Package_DFN_QFN:VQFN-40-1EP_6x6mm"
+    (layer "F.Cu")
+    (at {x} {y} {rotation})
+    (property "Reference" "U2")
+    (property "Partnumber" "{partnumber}")
+    (fp_rect (start -3.2 -3.2) (end 3.2 3.2) (layer "F.CrtYd"))
+    (pad "9" smd rect (at -3 0) (size 0.4 0.4) (net 3 "VM_A"))
+    (pad "10" smd rect (at 3 0) (size 0.4 0.4) (net 4 "VM_B"))
+    (pad "41" smd rect (at 0 0) (size 4 4) (net 1 "GND"))
+  )
+"""
+
+
+def capacitor(
+    reference: str,
+    x: float,
+    y: float,
+    net_index: int,
+    net: str,
+    *,
+    rotation: float = 0.0,
+    side: str = "F.Cu",
+) -> str:
+    crtyd = "B.CrtYd" if side == "B.Cu" else "F.CrtYd"
+    return f"""  (footprint "Capacitor_SMD:C_0402_1005Metric"
+    (layer "{side}")
+    (at {x} {y} {rotation})
+    (property "Reference" "{reference}")
+    (property "Partnumber" "CAP")
+    (fp_rect (start -0.6 -0.4) (end 0.6 0.4) (layer "{crtyd}"))
+    (pad "1" smd rect (at -0.5 0) (size 0.3 0.3) (net {net_index} "{net}"))
+    (pad "2" smd rect (at 0.5 0) (size 0.3 0.3) (net 1 "GND"))
+  )
+"""
+
+
+def vias(count: int, *, net: int = 1) -> str:
+    """`count` vias spread inside the 4 x 4 exposed pad at (120, 120)."""
+    offsets = [(-1, -1), (0, -1), (1, -1), (-1, 0), (0, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
+    return "".join(
+        f'  (via (at {120 + dx} {120 + dy}) (size 0.6) (drill 0.3)'
+        f' (layers "F.Cu" "B.Cu") (net {net}))\n'
+        for dx, dy in offsets[:count]
+    )
+
+
+class PatternTests(CheckFixture):
+    """PA4: the board measured against a bound vendor reference layout."""
+
+    def build_pattern(
+        self,
+        root: Path,
+        board_body: str,
+        references: str,
+        *,
+        pattern: str = ANCHOR_PATTERN,
+        bind: str = "",
+    ) -> Path:
+        project = self.project(root)
+        (project / "garden-logger.kicad_pcb").write_text(
+            BOARD_HEADER + OUTLINE + board_body + ")\n",
+            encoding="utf-8",
+        )
+        group = f"""  - id: everything
+    priority: 1
+    region: anywhere
+    rationale: Test group.
+    references: [{references}]
+    pattern:
+      id: testdriver
+      anchor: U2{bind}"""
+        (project / "placement.yaml").write_text(
+            contract("", group), encoding="utf-8"
+        )
+        (project / "patterns").mkdir(exist_ok=True)
+        (project / "patterns" / "testdriver.yaml").write_text(
+            pattern, encoding="utf-8"
+        )
+        pins = yaml.safe_load((project / ".pcbforge").read_text(encoding="utf-8"))
+        pins["pcbforge"] = {"revision": "0" * 40, "dirty": False}
+        pins["guidance"] = dict(EXPECTED_GUIDANCE)
+        (project / ".pcbforge").write_text(
+            yaml.safe_dump(pins, sort_keys=False), encoding="utf-8"
+        )
+        # The scaffold fingerprints the board it wrote; this one replaced it, and
+        # `generate_brief` refuses a stale CIRCUIT acceptance.
+        (project / "docs" / "build-test.md").write_text(
+            f"""---
+pcbforge_build_test_report_schema: 1
+result: pass
+build: default
+fingerprint: {fingerprint_inputs(project)}
+---
+# Pass
+""",
+            encoding="utf-8",
+        )
+        return project
+
+    def sketch(self, body: str, references: str = "U2, C3, C4"):
+        with tempfile.TemporaryDirectory() as temporary:
+            return check_placement(self.build_pattern(Path(temporary), body, references))
+
+    def test_sketch_roles_measure_distance_and_side(self) -> None:
+        # Pad 9 lands at (117, 120) and C3's pad 1 at (115, 120): 2 mm, west.
+        result = self.sketch(
+            anchor(120, 120)
+            + capacitor("C3", 115.5, 120, 3, "VM_A")
+            + capacitor("C4", 124.5, 120, 4, "VM_B")
+            + vias(9)
+        )
+        found = self.findings(result)
+        self.assertEqual(
+            found["everything/vm-bypass-1"],
+            ("pass", "2.00 mm, west of U2"),
+        )
+        self.assertEqual(
+            found["everything/vm-bypass-2"],
+            ("pass", "1.00 mm, east of U2"),
+        )
+
+    def test_a_satellite_on_the_wrong_side_of_the_anchor_fails(self) -> None:
+        # C3 is within 2.5 mm of pad 9 but sits north of the anchor, not west.
+        result = self.sketch(
+            anchor(120, 120)
+            + capacitor("C3", 120, 117, 3, "VM_A")
+            + capacitor("C4", 124.5, 120, 4, "VM_B")
+            + vias(9)
+        )
+        status, measured = self.findings(result)["everything/vm-bypass-1"]
+        self.assertEqual(status, "fail")
+        self.assertIn("north of U2", measured)
+
+    def test_a_distant_satellite_fails(self) -> None:
+        result = self.sketch(
+            anchor(120, 120)
+            + capacitor("C3", 110, 120, 3, "VM_A")
+            + capacitor("C4", 124.5, 120, 4, "VM_B")
+            + vias(9)
+        )
+        status, measured = self.findings(result)["everything/vm-bypass-1"]
+        self.assertEqual(status, "fail")
+        # C3 sits at 110; its pad 1 at 109.5 is 7.5 mm from pad 9 at 117.
+        self.assertEqual(measured, "7.50 mm, west of U2")
+
+    def test_a_rotated_anchor_rotates_the_expected_sides(self) -> None:
+        # At 90 degrees the anchor's local west points south on the board, so a
+        # capacitor below the part is still "west" in the anchor's own frame.
+        result = self.sketch(
+            anchor(120, 120, rotation=90)
+            + capacitor("C3", 120, 124.5, 3, "VM_A")
+            + capacitor("C4", 120, 115.5, 4, "VM_B")
+            + vias(9)
+        )
+        found = self.findings(result)
+        self.assertEqual(found["everything/vm-bypass-1"][0], "pass")
+        self.assertEqual(found["everything/vm-bypass-2"][0], "pass")
+
+    def test_counts_only_vias_inside_the_pad_on_its_net(self) -> None:
+        found = self.findings(
+            self.sketch(
+                anchor(120, 120)
+                + capacitor("C3", 115.5, 120, 3, "VM_A")
+                + capacitor("C4", 124.5, 120, 4, "VM_B")
+                + vias(9)
+            )
+        )
+        self.assertEqual(found["everything/ep-thermal-vias"], ("pass", "9 vias"))
+
+        found = self.findings(
+            self.sketch(
+                anchor(120, 120)
+                + capacitor("C3", 115.5, 120, 3, "VM_A")
+                + capacitor("C4", 124.5, 120, 4, "VM_B")
+                + vias(4)
+                + vias(9, net=2)  # +3V3 vias in the same place never count
+            )
+        )
+        self.assertEqual(found["everything/ep-thermal-vias"], ("fail", "4 vias"))
+
+    def test_note_rules_are_manual(self) -> None:
+        found = self.findings(
+            self.sketch(
+                anchor(120, 120)
+                + capacitor("C3", 115.5, 120, 3, "VM_A")
+                + capacitor("C4", 124.5, 120, 4, "VM_B")
+                + vias(9)
+            )
+        )
+        status, measured = found["everything/gnd-pour-back"]
+        self.assertEqual(status, "manual")
+        self.assertIn("Solid GND pour", measured)
+
+    def test_an_unbound_role_is_unmeasured_not_a_failure(self) -> None:
+        result = self.sketch(
+            anchor(120, 120) + capacitor("C3", 115.5, 120, 3, "VM_A") + vias(9),
+            references="U2, C3",
+        )
+        self.assertEqual(
+            self.findings(result)["everything/vm-bypass-2"],
+            ("unmeasured", "not measured"),
+        )
+
+    def exact(self, body: str, references: str = "U2, C3"):
+        with tempfile.TemporaryDirectory() as temporary:
+            return check_placement(
+                self.build_pattern(
+                    Path(temporary), body, references, pattern=EXACT_PATTERN
+                )
+            )
+
+    def test_exact_roles_measure_offset_rotation_and_side(self) -> None:
+        result = self.exact(
+            anchor(120, 120) + capacitor("C3", 115.5, 120, 3, "VM_A") + vias(9)
+        )
+        status, measured = self.findings(result)["everything/vm-bypass-1"]
+        self.assertEqual(status, "pass")
+        self.assertEqual(measured, "0.00 mm off, rotation 0°, front")
+
+    def test_exact_roles_fail_outside_the_tolerance(self) -> None:
+        result = self.exact(
+            anchor(120, 120) + capacitor("C3", 114.0, 120, 3, "VM_A") + vias(9)
+        )
+        status, measured = self.findings(result)["everything/vm-bypass-1"]
+        self.assertEqual(status, "fail")
+        self.assertEqual(measured, "1.50 mm off, rotation 0°, front")
+
+    def test_exact_roles_fail_on_rotation_alone(self) -> None:
+        result = self.exact(
+            anchor(120, 120)
+            + capacitor("C3", 115.5, 120, 3, "VM_A", rotation=90)
+            + vias(9)
+        )
+        status, measured = self.findings(result)["everything/vm-bypass-1"]
+        self.assertEqual(status, "fail")
+        self.assertEqual(measured, "0.00 mm off, rotation 90°, front")
+
+    def test_a_rotated_anchor_moves_the_expected_position(self) -> None:
+        # Local (-4.5, 0) under a 90 degree anchor lands 4.5 mm south of it.
+        result = self.exact(
+            anchor(120, 120, rotation=90)
+            + capacitor("C3", 120, 124.5, 3, "VM_A", rotation=90)
+            + vias(9)
+        )
+        self.assertEqual(self.findings(result)["everything/vm-bypass-1"][0], "pass")
+
+    def test_a_satellite_on_the_wrong_board_side_fails(self) -> None:
+        result = self.exact(
+            anchor(120, 120)
+            + capacitor("C3", 115.5, 120, 3, "VM_A", side="B.Cu")
+            + vias(9)
+        )
+        status, measured = self.findings(result)["everything/vm-bypass-1"]
+        self.assertEqual(status, "fail")
+        self.assertIn("back", measured)
+
+    def test_pattern_findings_reach_the_report(self) -> None:
+        result = self.sketch(
+            anchor(120, 120)
+            + capacitor("C3", 115.5, 120, 3, "VM_A")
+            + capacitor("C4", 124.5, 120, 4, "VM_B")
+            + vias(9)
+        )
+        self.assertIn("## Reference patterns", result.report)
+        self.assertIn("everything/vm-bypass-1", result.report)
+
+
+class PatternContractTests(PatternTests):
+    """PA4 contract behaviour: binding, the brief, warnings, the fingerprint.
+
+    Lives beside the check tests rather than in `test_placement.py` because
+    binding needs a board carrying a `Partnumber` property and real pad nets,
+    which is exactly the fixture `PatternTests` already builds.
+    """
+
+    BOARD = (
+        anchor(120, 120)
+        + capacitor("C3", 115.5, 120, 3, "VM_A")
+        + capacitor("C4", 124.5, 120, 4, "VM_B")
+        + vias(9)
+    )
+
+    def contract_for(self, project: Path):
+        return read_placement_contract(project, tool_root=TOOL_ROOT)
+
+    def test_binding_resolves_each_role_to_a_real_reference(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.build_pattern(Path(temporary), self.BOARD, "U2, C3, C4")
+            contract = self.contract_for(project)
+
+        (group, binding) = contract.patterns[0]
+        self.assertEqual(group, "everything")
+        self.assertEqual(binding.anchor, "U2")
+        self.assertEqual(
+            binding.roles, (("vm-bypass-1", "C3"), ("vm-bypass-2", "C4"))
+        )
+
+    def test_an_explicit_bind_overrides_the_net_match(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.build_pattern(
+                Path(temporary),
+                self.BOARD,
+                "U2, C3, C4",
+                bind="\n      bind:\n        vm-bypass-1: C4",
+            )
+            with self.assertRaisesRegex(PlacementInputError, "shares no net"):
+                self.contract_for(project)
+
+    def test_an_anchor_outside_the_group_is_rejected_at_parse_time(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.build_pattern(Path(temporary), self.BOARD, "U2, C3, C4")
+            placement = project / "placement.yaml"
+            placement.write_text(
+                placement.read_text(encoding="utf-8").replace("anchor: U2", "anchor: U9"),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                PlacementInputError, "U9 is not a reference in this group"
+            ):
+                self.contract_for(project)
+
+    def test_an_unknown_pattern_id_is_an_input_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.build_pattern(Path(temporary), self.BOARD, "U2, C3, C4")
+            (project / "patterns" / "testdriver.yaml").unlink()
+            with self.assertRaisesRegex(PlacementInputError, "unknown pattern"):
+                self.contract_for(project)
+
+    def test_warnings_cover_fidelity_layers_and_unbound_roles(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.build_pattern(
+                Path(temporary),
+                anchor(120, 120) + capacitor("C3", 115.5, 120, 3, "VM_A") + vias(9),
+                "U2, C3",
+                pattern=ANCHOR_PATTERN.replace("layers: 2", "layers: 4"),
+            )
+            contract = self.contract_for(project)
+
+        self.assertEqual(
+            contract.warnings,
+            (
+                "pattern testdriver role vm-bypass-2 is unbound in group "
+                "everything: name it under bind: or drop it",
+                "pattern testdriver was captured on 4 layers; this board has 2",
+                "pattern testdriver is sketch fidelity: it is measured but "
+                "cannot be applied",
+            ),
+        )
+
+    def test_the_brief_shows_the_binding(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.build_pattern(Path(temporary), self.BOARD, "U2, C3, C4")
+            generate_brief(project, tool_root=TOOL_ROOT)
+            brief = (project / BRIEF_FILENAME).read_text(encoding="utf-8")
+
+        self.assertIn("- Pattern: testdriver (sketch fidelity, anchor U2)", brief)
+        self.assertIn("| Role | Reference |", brief)
+        self.assertIn("| vm-bypass-1 | C3 |", brief)
+        self.assertIn("| vm-bypass-2 | C4 |", brief)
+
+    def brief_fingerprint(self, project: Path) -> str:
+        generate_brief(project, tool_root=TOOL_ROOT)
+        brief = (project / BRIEF_FILENAME).read_text(encoding="utf-8")
+        return yaml.safe_load(metadata_yaml(brief))["fingerprint"]
+
+    def test_editing_a_bound_pattern_changes_the_handoff_fingerprint(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.build_pattern(Path(temporary), self.BOARD, "U2, C3, C4")
+            before = self.brief_fingerprint(project)
+            pattern = project / "patterns" / "testdriver.yaml"
+            pattern.write_text(
+                pattern.read_text(encoding="utf-8").replace("max_mm: 2.5", "max_mm: 1.5"),
+                encoding="utf-8",
+            )
+            after = self.brief_fingerprint(project)
+
+        self.assertNotEqual(before, after)
+
+    def test_an_undeclared_pattern_file_never_touches_the_fingerprint(self) -> None:
+        """The `patterns` segment is conditional on purpose.
+
+        An unconditional segment would change `_contract_fingerprint` for every
+        project that does not use the feature, staling handoff approvals that
+        nothing about the design had invalidated.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.build_pattern(Path(temporary), self.BOARD, "U2, C3, C4")
+            placement = project / "placement.yaml"
+            placement.write_text(
+                placement.read_text(encoding="utf-8").replace(
+                    "\n    pattern:\n      id: testdriver\n      anchor: U2", ""
+                ),
+                encoding="utf-8",
+            )
+            before = self.brief_fingerprint(project)
+            pattern = project / "patterns" / "testdriver.yaml"
+            pattern.write_text(
+                pattern.read_text(encoding="utf-8").replace("max_mm: 2.5", "max_mm: 1.5"),
+                encoding="utf-8",
+            )
+            after = self.brief_fingerprint(project)
+
+        self.assertEqual(before, after)
+
+    def test_a_project_pattern_is_a_visible_handoff_input(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.build_pattern(Path(temporary), self.BOARD, "U2, C3, C4")
+            inputs = brief_inputs(project)
+            checked = placement_check_inputs(project)
+
+        self.assertIn("patterns/testdriver.yaml", [
+            path.relative_to(path.parents[1]).as_posix() for path in inputs
+        ])
+        self.assertTrue(any(path.name == "testdriver.yaml" for path in checked))

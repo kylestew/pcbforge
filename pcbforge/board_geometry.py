@@ -259,6 +259,23 @@ def _transform(fx: float, fy: float, rotation: float, point: Point) -> Point:
     return (fx + dx * cos + dy * sin, fy - dx * sin + dy * cos)
 
 
+def to_board(footprint: FootprintGeometry, point: Point) -> Point:
+    """Map a point in a footprint's local frame into board coordinates."""
+    return _transform(footprint.x, footprint.y, footprint.rotation, point)
+
+
+def to_local(footprint: FootprintGeometry, point: Point) -> Point:
+    """Map a board point into a footprint's local frame -- the inverse of
+    `to_board`, which is what tells you which side of a part something sits on.
+    """
+    radians = math.radians(footprint.rotation)
+    cos = math.cos(radians)
+    sin = math.sin(radians)
+    dx = point[0] - footprint.x
+    dy = point[1] - footprint.y
+    return (dx * cos - dy * sin, dx * sin + dy * cos)
+
+
 def _read_root(path: Path) -> Node:
     try:
         text = path.read_text(encoding="utf-8")
@@ -632,5 +649,7 @@ __all__ = [
     "ViaGeometry",
     "ZoneGeometry",
     "read_board_geometry",
+    "to_board",
+    "to_local",
     "union",
 ]

@@ -58,6 +58,12 @@ groups:
     guidance:
       - Keep the bulk capacitor outside the high-frequency loop
         (DRV8316 datasheet, Layout Example figure).
+    pattern:
+      id: drv8316ct
+      anchor: U2
+      bind:                 # only where the net match is ambiguous
+        vm-bypass-1: C3
+        vm-bypass-2: C4
 
 placement_order: [power-entry, controller]
 
@@ -170,12 +176,31 @@ The schema rules are:
    `north-to-south`, and `south-to-north`, because the check projects subject
    centres onto that axis and requires them strictly in the listed order.
    `orientation` and `airflow` directions stay free prose: a human judges them.
-11. Every constraint may carry an optional `source`, and every group an optional
+11. A group may name one reference layout `pattern` and the anchor part it
+   applies to. Each pattern role binds to exactly one other reference in the
+   same group by shared net; two equally good candidates are an error, not a
+   guess, and `bind:` names the right one. Patterns are looked up as
+   `patterns/<id>.yaml` in the project first and the tool catalog second. The
+   bytes of every pattern a contract uses join the handoff fingerprint, so
+   editing one reopens the handoff.
+12. Every constraint may carry an optional `source`, and every group an optional
    `guidance` list of short imperative notes. Both cite research — a datasheet
    section, a figure, an EVM revision, or a `docs/layout-research.md` heading.
    `prepare-layout` and `check-layout-handoff` warn about any `proximity`,
    `keepout`, or `loop` constraint with no `source`. The warning never fails the
    check; an uncited constraint is still valid and still measured.
+
+## Reference layout patterns
+
+A pattern is a vendor layout figure transcribed into a file the tool can measure
+against: role by role, "this capacitor belongs on this side of that pin, within
+this distance". It is written once per part and reused on every board carrying
+it. See `patterns/index.md` for the catalog and the file schema.
+
+Fidelity matters. `exact` offsets come from vendor design files or a dimensioned
+drawing and can be stamped onto a board. `sketch` offsets are read off a figure
+by eye: measured like any other, never applied. `check-layout-handoff` warns on
+every sketch pattern for that reason, and on any role it could not bind.
 
 ## Procedure
 

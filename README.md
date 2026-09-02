@@ -87,6 +87,7 @@ with `pcbforge status --check --write` and reports the recorded next action.
 | `rules/` | versioned conservative JLC/KiCad rule profiles |
 | `policies/` | versioned manufacturing and technology policy profiles |
 | `modules/` | indexed circuit module library |
+| `patterns/` | indexed vendor reference layout patterns |
 | `pilots/` | pilot evidence, reports, scripts, and machine-readable results |
 
 PCBForge v1 supports freshly initialized projects only. Projects created with

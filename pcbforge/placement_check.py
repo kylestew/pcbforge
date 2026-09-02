@@ -31,12 +31,16 @@ from pcbforge.board_geometry import (
     BoardGeometry,
     BoardGeometryError,
     Box,
+    FootprintGeometry,
     read_board_geometry,
+    to_board,
+    to_local,
 )
 from pcbforge.build_test import BuildTestError, BuildTestInputError
 from pcbforge.fsutil import AtomicWriteError, commit_outputs
 from pcbforge.initialize import InitInputError, ProjectSpec, read_spec
 from pcbforge.markdown_metadata import metadata_trailer
+from pcbforge.patterns import PATTERNS_DIRNAME
 from pcbforge.placement import (
     PLACEMENT_FILENAME,
     PlacementConstraint,
@@ -63,7 +67,10 @@ STATUSES = ("fail", "unmeasured", "manual", "pass")
 #: Summary ordering, which reads naturally rather than worst-first.
 SUMMARY_STATUSES = ("pass", "fail", "manual", "unmeasured")
 _STATUS_ORDER = {status: index for index, status in enumerate(STATUSES)}
-_KIND_ORDER = {"constraint": 0, "overlap": 1, "outline": 2}
+_KIND_ORDER = {"constraint": 0, "pattern": 1, "overlap": 2, "outline": 3}
+#: How far a satellite's rotation may drift from the pattern before it is a
+#: different placement rather than a placed one.
+ROTATION_TOLERANCE_DEG = 1.0
 
 
 class PlacementCheckError(RuntimeError):
@@ -366,6 +373,211 @@ def _keepout_findings(
     return findings
 
 
+def _rotation_delta(first: float, second: float) -> float:
+    """Smallest angle between two rotations, in degrees."""
+    delta = abs(first - second) % 360.0
+    return min(delta, 360.0 - delta)
+
+
+def _anchor_frame_side(local: tuple[float, float]) -> str:
+    """Which side of the anchor a local point lies on. y grows downward."""
+    x, y = local
+    if abs(x) >= abs(y):
+        return "east" if x >= 0 else "west"
+    return "south" if y >= 0 else "north"
+
+
+def _pattern_finding(
+    identifier: str,
+    status: str,
+    measured: str,
+    limit: str,
+    detail: str,
+) -> Finding:
+    return Finding("pattern", identifier, status, measured, limit, detail)
+
+
+def _exact_role_finding(
+    identifier: str,
+    role,
+    anchor: FootprintGeometry,
+    satellite: FootprintGeometry,
+) -> Finding:
+    expected_x, expected_y = to_board(anchor, role.offset_mm)
+    offset = (
+        (satellite.x - expected_x) ** 2 + (satellite.y - expected_y) ** 2
+    ) ** 0.5
+    expected_rotation = (anchor.rotation + role.rotation_deg) % 360.0
+    rotation_delta = _rotation_delta(satellite.rotation, expected_rotation)
+    expected_side = (
+        anchor.side
+        if role.side == "same"
+        else ("back" if anchor.side == "front" else "front")
+    )
+    ok = (
+        offset <= role.tolerance_mm
+        and rotation_delta <= ROTATION_TOLERANCE_DEG
+        and satellite.side == expected_side
+    )
+    return _pattern_finding(
+        identifier,
+        "pass" if ok else "fail",
+        f"{_millimetres(offset)} off, rotation {rotation_delta:g}\u00b0, "
+        f"{satellite.side}",
+        f"<= {role.tolerance_mm:g} mm, {ROTATION_TOLERANCE_DEG:g}\u00b0, "
+        f"{expected_side}",
+        f"{satellite.reference} against {anchor.reference} "
+        f"({expected_x:.2f}, {expected_y:.2f})",
+    )
+
+
+def _sketch_role_finding(
+    identifier: str,
+    role,
+    anchor: FootprintGeometry,
+    satellite: FootprintGeometry,
+) -> Finding:
+    anchor_pad_number = role.anchor_pads[0]
+    try:
+        anchor_pad = anchor.pad(anchor_pad_number)
+    except KeyError:
+        return _pattern_finding(
+            identifier,
+            "unmeasured",
+            "not measured",
+            "",
+            f"{anchor.reference} has no pad {anchor_pad_number}",
+        )
+    shared = [pad for pad in satellite.pads if pad.net and pad.net == anchor_pad.net]
+    if not shared:
+        return _pattern_finding(
+            identifier,
+            "unmeasured",
+            "not measured",
+            "",
+            f"{satellite.reference} has no pad on {anchor_pad.net}",
+        )
+    distance = min(
+        ((pad.x - anchor_pad.x) ** 2 + (pad.y - anchor_pad.y) ** 2) ** 0.5
+        for pad in shared
+    )
+    side = _anchor_frame_side(to_local(anchor, satellite.centre))
+    ok = distance <= role.max_mm and side == role.near_side
+    return _pattern_finding(
+        identifier,
+        "pass" if ok else "fail",
+        f"{_millimetres(distance)}, {side} of {anchor.reference}",
+        f"<= {role.max_mm:g} mm, {role.near_side}",
+        f"{anchor.reference}.{anchor_pad_number} to the nearest "
+        f"{satellite.reference} pad on {anchor_pad.net}",
+    )
+
+
+def _rule_finding(
+    identifier: str,
+    rule,
+    anchor: FootprintGeometry,
+    geometry: BoardGeometry,
+) -> Finding:
+    if rule.kind == "note":
+        return _pattern_finding(
+            identifier,
+            "manual",
+            rule.text or "",
+            "judge by eye",
+            f"around {anchor.reference}",
+        )
+    try:
+        pad = anchor.pad(rule.anchor_pad)
+    except KeyError:
+        return _pattern_finding(
+            identifier,
+            "unmeasured",
+            "not measured",
+            "",
+            f"{anchor.reference} has no pad {rule.anchor_pad}",
+        )
+    count = sum(
+        1
+        for via in geometry.vias
+        if via.net == pad.net and pad.box.contains((via.x, via.y))
+    )
+    return _pattern_finding(
+        identifier,
+        "pass" if count >= rule.min_count else "fail",
+        f"{count} vias",
+        f">= {rule.min_count} vias",
+        f"in {anchor.reference}.{rule.anchor_pad} on {pad.net or 'no net'}",
+    )
+
+
+def _pattern_findings(
+    contract: PlacementContract,
+    geometry: BoardGeometry,
+) -> list[Finding]:
+    """One finding per bound role and per rule of every declared pattern.
+
+    Identifiers carry the group so two groups using the same pattern, and so
+    the same role ids, stay distinguishable in the report.
+    """
+    findings: list[Finding] = []
+    for group, binding in contract.patterns:
+        pattern = binding.pattern
+        try:
+            anchor = geometry.footprint(binding.anchor)
+        except KeyError:
+            findings.append(
+                _pattern_finding(
+                    f"{group}/{pattern.identifier}",
+                    "unmeasured",
+                    "not measured",
+                    "",
+                    f"anchor {binding.anchor} is not on the board",
+                )
+            )
+            continue
+        for role_id, reference in binding.roles:
+            identifier = f"{group}/{role_id}"
+            role = pattern.role(role_id)
+            if reference is None:
+                findings.append(
+                    _pattern_finding(
+                        identifier,
+                        "unmeasured",
+                        "not measured",
+                        "",
+                        "role is unbound",
+                    )
+                )
+                continue
+            try:
+                satellite = geometry.footprint(reference)
+            except KeyError:
+                findings.append(
+                    _pattern_finding(
+                        identifier,
+                        "unmeasured",
+                        "not measured",
+                        "",
+                        f"{reference} is not on the board",
+                    )
+                )
+                continue
+            if pattern.fidelity == "exact":
+                findings.append(
+                    _exact_role_finding(identifier, role, anchor, satellite)
+                )
+            else:
+                findings.append(
+                    _sketch_role_finding(identifier, role, anchor, satellite)
+                )
+        for rule in pattern.rules:
+            findings.append(
+                _rule_finding(f"{group}/{rule.identifier}", rule, anchor, geometry)
+            )
+    return findings
+
+
 def _overlap_findings(geometry: BoardGeometry) -> list[Finding]:
     findings = []
     placed = [
@@ -582,7 +794,7 @@ def _render_report(
     ordered = sorted(result_findings, key=lambda item: item.sort_key)
     by_kind = {
         kind: [item for item in ordered if item.kind == kind]
-        for kind in ("constraint", "overlap", "outline")
+        for kind in ("constraint", "pattern", "overlap", "outline")
     }
     summary = ", ".join(f"{counts[status]} {status}" for status in SUMMARY_STATUSES)
     verdict = "FAIL" if counts["fail"] else "PASS"
@@ -605,6 +817,10 @@ Measured against board sha256 `{board_sha256}`.
 ## Contract constraints
 
 {_table(by_kind["constraint"])}
+
+## Reference patterns
+
+{_table(by_kind["pattern"])}
 
 ## Courtyard overlaps
 
@@ -672,6 +888,7 @@ def check_placement(
             findings.extend(_keepout_findings(constraint, geometry))
         else:
             findings.append(_evaluate_constraint(constraint, geometry))
+    findings.extend(_pattern_findings(contract, geometry))
     findings.extend(_overlap_findings(geometry))
     findings.extend(_outline_findings(geometry, spec))
     findings.sort(key=lambda item: item.sort_key)
@@ -723,6 +940,9 @@ def placement_check_inputs(project_dir: Path) -> tuple[Path, ...]:
     paths: Iterable[Path] = (
         project_dir / PLACEMENT_FILENAME,
         *sorted(project_dir.glob("*.kicad_pcb")),
+        # A project-local pattern changes what the check measures, so editing
+        # one must re-run it rather than reuse the recorded result.
+        *sorted((project_dir / PATTERNS_DIRNAME).glob("*.yaml")),
     )
     return tuple(path for path in paths if path.is_file())
 

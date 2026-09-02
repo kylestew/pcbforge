@@ -8,7 +8,7 @@ import hashlib
 import json
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -23,9 +23,19 @@ from pcbforge.build_test import (
     schematic_tamper_message,
     require_current_acceptance,
 )
+from pcbforge.board_geometry import BoardGeometryError, read_board_geometry
 from pcbforge.fsutil import AtomicWriteError, commit_outputs
-from pcbforge.initialize import InitInputError, read_spec
+from pcbforge.initialize import InitInputError, ProjectSpec, read_spec
 from pcbforge.markdown_metadata import metadata_trailer
+from pcbforge.patterns import (
+    PATTERNS_DIRNAME,
+    PatternBinding,
+    PatternInputError,
+    bind as bind_pattern,
+    board_facts,
+    read_pattern,
+    resolve_pattern_path,
+)
 
 PLACEMENT_SCHEMA = 1
 BRIEF_SCHEMA = 1
@@ -85,6 +95,15 @@ class PlacementInputError(PlacementError):
 
 
 @dataclass(frozen=True)
+class GroupPattern:
+    """A group's claim that a vendor reference layout applies to it."""
+
+    identifier: str
+    anchor: str
+    bind: tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
 class PlacementGroup:
     identifier: str
     priority: int
@@ -92,6 +111,7 @@ class PlacementGroup:
     rationale: str
     references: tuple[str, ...]
     guidance: tuple[str, ...] = ()
+    pattern: GroupPattern | None = None
 
 
 @dataclass(frozen=True)
@@ -141,6 +161,7 @@ class PlacementContract:
     net_classes: tuple[PlacementNetClass, ...]
     checklist: tuple[str, ...]
     warnings: tuple[str, ...] = ()
+    patterns: tuple[tuple[str, PatternBinding], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -344,6 +365,43 @@ def _read_project_pins(project_dir: Path) -> Mapping[str, Any]:
     return data
 
 
+def _parse_group_pattern(
+    raw: Any,
+    prefix: str,
+    references: tuple[str, ...],
+    errors: list[str],
+) -> GroupPattern | None:
+    if not isinstance(raw, dict):
+        errors.append(f"{prefix}: expected a mapping")
+        return None
+    _unknown(raw, {"id", "anchor", "bind"}, prefix, errors)
+    identifier = _text(raw, "id", prefix, errors)
+    if identifier and ID_RE.fullmatch(identifier) is None:
+        errors.append(f"{prefix}.id: expected a kebab-case ID")
+    anchor = _text(raw, "anchor", prefix, errors)
+    if anchor and anchor not in references:
+        errors.append(f"{prefix}.anchor: {anchor} is not a reference in this group")
+    overrides: list[tuple[str, str]] = []
+    bind_raw = raw.get("bind")
+    if bind_raw is not None:
+        if not isinstance(bind_raw, dict) or not bind_raw:
+            errors.append(f"{prefix}.bind: expected a non-empty role-to-reference map")
+        else:
+            for role, reference in bind_raw.items():
+                if not isinstance(role, str) or not isinstance(reference, str):
+                    errors.append(f"{prefix}.bind: expected string role and reference")
+                    continue
+                if reference not in references:
+                    errors.append(
+                        f"{prefix}.bind.{role}: {reference} is not a reference "
+                        "in this group"
+                    )
+                overrides.append((role, reference))
+    if not identifier or not anchor:
+        return None
+    return GroupPattern(identifier, anchor, tuple(sorted(overrides)))
+
+
 def _parse_groups(raw: Any, errors: list[str]) -> tuple[PlacementGroup, ...]:
     if not isinstance(raw, list) or not raw:
         errors.append("groups: expected a non-empty list")
@@ -356,7 +414,15 @@ def _parse_groups(raw: Any, errors: list[str]) -> tuple[PlacementGroup, ...]:
             continue
         _unknown(
             item,
-            {"id", "priority", "region", "rationale", "references", "guidance"},
+            {
+                "id",
+                "priority",
+                "region",
+                "rationale",
+                "references",
+                "guidance",
+                "pattern",
+            },
             prefix,
             errors,
         )
@@ -384,6 +450,14 @@ def _parse_groups(raw: Any, errors: list[str]) -> tuple[PlacementGroup, ...]:
                 f"{prefix}.guidance",
                 errors,
             )
+        pattern = None
+        if "pattern" in item:
+            pattern = _parse_group_pattern(
+                item.get("pattern"),
+                f"{prefix}.pattern",
+                references,
+                errors,
+            )
         groups.append(
             PlacementGroup(
                 identifier,
@@ -392,6 +466,7 @@ def _parse_groups(raw: Any, errors: list[str]) -> tuple[PlacementGroup, ...]:
                 rationale,
                 references,
                 guidance,
+                pattern,
             )
         )
     identifiers = [group.identifier for group in groups if group.identifier]
@@ -876,7 +951,74 @@ def read_placement_contract(
         raise PlacementInputError(
             f"invalid {PLACEMENT_FILENAME}:\n  - " + "\n  - ".join(errors)
         )
-    return contract
+    bindings, pattern_warnings = _bind_patterns(project_dir, tool_root, spec, contract)
+    if not bindings:
+        return contract
+    return replace(
+        contract,
+        patterns=bindings,
+        warnings=contract.warnings + pattern_warnings,
+    )
+
+
+def _bind_patterns(
+    project_dir: Path,
+    tool_root: Path,
+    spec: ProjectSpec,
+    contract: PlacementContract,
+) -> tuple[tuple[tuple[str, PatternBinding], ...], tuple[str, ...]]:
+    """Resolve every declared pattern against the board, in group order.
+
+    Reads the board a second time -- as geometry rather than topology -- because
+    matching an anchor needs its `Partnumber` property, which board evidence
+    does not carry. Only projects that declare a pattern pay for that read.
+    """
+    declared = [group for group in contract.groups if group.pattern is not None]
+    if not declared:
+        return (), ()
+    try:
+        geometry = read_board_geometry(project_dir / f"{spec.name}.kicad_pcb")
+    except BoardGeometryError as exc:
+        raise PlacementInputError(str(exc)) from exc
+    facts = board_facts(geometry)
+
+    bindings: list[tuple[str, PatternBinding]] = []
+    warnings: list[str] = []
+    for group in declared:
+        declaration = group.pattern
+        assert declaration is not None
+        try:
+            pattern = read_pattern(
+                resolve_pattern_path(declaration.identifier, project_dir, tool_root)
+            )
+            binding = bind_pattern(
+                pattern,
+                declaration.anchor,
+                group.references,
+                facts,
+                dict(declaration.bind),
+            )
+        except PatternInputError as exc:
+            raise PlacementInputError(
+                f"groups.{group.identifier}.pattern: {exc}"
+            ) from exc
+        bindings.append((group.identifier, binding))
+        for role in binding.unbound:
+            warnings.append(
+                f"pattern {pattern.identifier} role {role} is unbound in group "
+                f"{group.identifier}: name it under bind: or drop it"
+            )
+        if pattern.source.layers != spec.layers:
+            warnings.append(
+                f"pattern {pattern.identifier} was captured on "
+                f"{pattern.source.layers} layers; this board has {spec.layers}"
+            )
+        if pattern.fidelity == "sketch":
+            warnings.append(
+                f"pattern {pattern.identifier} is sketch fidelity: it is measured "
+                "but cannot be applied"
+            )
+    return tuple(bindings), tuple(warnings)
 
 
 def _read_project(path: Path) -> dict[str, Any]:
@@ -1093,6 +1235,7 @@ def _contract_fingerprint(
     project_dir: Path,
     board: BoardEvidence,
     merged_project: Mapping[str, Any],
+    patterns: Sequence[tuple[str, PatternBinding]] = (),
 ) -> str:
     digest = hashlib.sha256()
     digest.update((project_dir / PLACEMENT_FILENAME).read_bytes())
@@ -1114,6 +1257,21 @@ def _contract_fingerprint(
             sort_keys=True,
         ).encode()
     )
+    # Only a contract that declares a pattern carries this segment. An
+    # unconditional one would change every existing project's fingerprint and
+    # stale its handoff approval for a feature it does not use.
+    if patterns:
+        digest.update(b"\0patterns\0")
+        for group, binding in sorted(patterns):
+            digest.update(group.encode())
+            digest.update(binding.pattern.path.read_bytes())
+            digest.update(
+                json.dumps(
+                    binding.payload(),
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ).encode()
+            )
     return digest.hexdigest()
 
 
@@ -1193,6 +1351,10 @@ def brief_inputs(project_dir: Path) -> tuple[Path, ...]:
         brief_document_path(project_dir),
         *sorted(project_dir.glob("*.kicad_pcb")),
         *sorted(project_dir.glob("*.kicad_pro")),
+        # Project-local patterns only: a tool-catalog pattern is part of the
+        # pinned tool revision, and its content still reaches the brief through
+        # the contract fingerprint either way.
+        *sorted((project_dir / PATTERNS_DIRNAME).glob("*.yaml")),
     ]
     return tuple(path for path in paths if path.is_file())
 
@@ -1233,6 +1395,23 @@ def _constraint_instruction(constraint: PlacementConstraint) -> str:
     return detail[constraint.kind]
 
 
+def _pattern_section(binding: PatternBinding | None) -> str:
+    """The role-to-reference table under a group that declares a pattern."""
+    if binding is None:
+        return ""
+    pattern = binding.pattern
+    rows = "\n".join(
+        f"| {role} | {reference or '**unbound**'} |" for role, reference in binding.roles
+    )
+    return (
+        f"\n- Pattern: {pattern.identifier} ({pattern.fidelity} fidelity, "
+        f"anchor {binding.anchor})\n"
+        f"- Pattern source: {pattern.source.document}\n\n"
+        "| Role | Reference |\n|---|---|\n"
+        f"{rows}"
+    )
+
+
 def _render_brief(
     project_name: str,
     contract: PlacementContract,
@@ -1247,6 +1426,7 @@ def _render_brief(
         sort_keys=False,
     ).rstrip()
     groups_by_id = {group.identifier: group for group in contract.groups}
+    bindings_by_group = dict(contract.patterns)
     group_sections = []
     for index, identifier in enumerate(contract.placement_order, start=1):
         group = groups_by_id[identifier]
@@ -1260,6 +1440,7 @@ def _render_brief(
             f"- References: {', '.join(group.references)}\n"
             f"- Why: {group.rationale}"
             f"{guidance}"
+            f"{_pattern_section(bindings_by_group.get(identifier))}"
         )
     constraint_rows = "\n".join(
         "| "
@@ -1415,7 +1596,7 @@ def generate_brief(
     except OSError as exc:
         raise PlacementError(f"cannot read {board_path}: {exc}") from exc
     merged = _merged_project(project, contract)
-    fingerprint = _contract_fingerprint(project_dir, board, merged)
+    fingerprint = _contract_fingerprint(project_dir, board, merged, contract.patterns)
     brief_text = _render_brief(spec.name, contract, fingerprint)
     project_text = _json_text(merged)
     brief_path = brief_document_path(project_dir)
@@ -1467,7 +1648,12 @@ def check_brief(
             f"{project_path.name}: PCBForge-owned net classes are missing or stale; "
             "run `pcbforge prepare-layout`"
         )
-    fingerprint = _contract_fingerprint(project_dir, board, expected_project)
+    fingerprint = _contract_fingerprint(
+        project_dir,
+        board,
+        expected_project,
+        contract.patterns,
+    )
     expected_brief = _render_brief(spec.name, contract, fingerprint)
     brief_path = brief_document_path(project_dir)
     try:
