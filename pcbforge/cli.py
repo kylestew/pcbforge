@@ -987,6 +987,8 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
         print(f"pcbforge: placement brief passed — {result.summary}")
+        for warning in result.warnings:
+            print(f"  WARNING    {warning}")
         if args.command == "prepare-layout":
             brief_state = "updated" if result.wrote_brief else "unchanged"
             project_state = "updated" if result.wrote_project else "unchanged"

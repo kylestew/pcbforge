@@ -409,6 +409,95 @@ class UnmeasurableTests(CheckFixture):
         self.assertEqual(status, "unmeasured")
 
 
+class OrderTests(CheckFixture):
+    """PA3 `order`: subject centres projected onto one axis, strictly monotonic."""
+
+    def measure(self, direction: str, positions: list[tuple[float, float]]):
+        references = ["U1", "C1", "R1"][: len(positions)]
+        body = "".join(
+            footprint(reference, x, y)
+            for reference, (x, y) in zip(references, positions)
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.build(
+                Path(temporary),
+                body,
+                f"""  - id: flow
+    type: order
+    subjects: [{", ".join(references)}]
+    direction: {direction}
+    rationale: Signal flows one way.""",
+                ", ".join(references),
+            )
+            return check_placement(project)
+
+    def test_west_to_east_passes_when_x_increases(self) -> None:
+        result = self.measure("west-to-east", [(110, 120), (120, 125), (130, 118)])
+        status, measured = self.findings(result)["flow"]
+        self.assertEqual(status, "pass")
+        self.assertEqual(measured, "U1 110.00, C1 120.00, R1 130.00")
+
+    def test_west_to_east_fails_and_names_the_offending_pair(self) -> None:
+        result = self.measure("west-to-east", [(110, 120), (130, 125), (120, 118)])
+        finding = next(item for item in result.findings if item.identifier == "flow")
+        self.assertEqual(finding.status, "fail")
+        self.assertEqual(finding.detail, "C1 is not before R1")
+
+    def test_north_to_south_increases_because_y_grows_downward(self) -> None:
+        status, _ = self.findings(
+            self.measure("north-to-south", [(110, 110), (120, 120), (130, 130)])
+        )["flow"]
+        self.assertEqual(status, "pass")
+
+    def test_south_to_north_is_the_reverse(self) -> None:
+        status, _ = self.findings(
+            self.measure("south-to-north", [(110, 130), (120, 120), (130, 110)])
+        )["flow"]
+        self.assertEqual(status, "pass")
+
+    def test_east_to_west_fails_when_x_increases(self) -> None:
+        status, _ = self.findings(
+            self.measure("east-to-west", [(110, 120), (120, 120)])
+        )["flow"]
+        self.assertEqual(status, "fail")
+
+    def test_equal_coordinates_are_not_an_order(self) -> None:
+        status, _ = self.findings(
+            self.measure("west-to-east", [(115, 120), (115, 125)])
+        )["flow"]
+        self.assertEqual(status, "fail")
+
+
+class LoopTests(CheckFixture):
+    """PA3 `loop`: the closed perimeter through the listed pads, in order."""
+
+    def measure(self, limit: float, gap: float = 10.0):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.build(
+                Path(temporary),
+                footprint("U1", 110, 120) + footprint("C1", 110 + gap, 120),
+                f"""  - id: return-path
+    type: loop
+    subjects: [U1.1, U1.2, C1.1]
+    max_mm: {limit}
+    rationale: Keep the return path tight.""",
+                "U1, C1",
+            )
+            return check_placement(project)
+
+    def test_measures_the_closed_perimeter(self) -> None:
+        # U1.1 at (109.5, 120), U1.2 at (110.5, 120), C1.1 at (119.5, 120):
+        # 1 + 9 + 10 = 20, all three collinear.
+        status, measured = self.findings(self.measure(25.0))["return-path"]
+        self.assertEqual(status, "pass")
+        self.assertEqual(measured, "20.00 mm")
+
+    def test_fails_beyond_the_limit(self) -> None:
+        status, measured = self.findings(self.measure(15.0))["return-path"]
+        self.assertEqual(status, "fail")
+        self.assertEqual(measured, "20.00 mm")
+
+
 class OverlapTests(CheckFixture):
     def board_with(self, *footprints: str) -> str:
         return "".join(footprints)

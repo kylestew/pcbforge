@@ -55,6 +55,9 @@ groups:
     region: center
     rationale: Central fan-out with short local support paths.
     references: [U2, C3, C4, C5]
+    guidance:
+      - Keep the bulk capacitor outside the high-frequency loop
+        (DRV8316 datasheet, Layout Example figure).
 
 placement_order: [power-entry, controller]
 
@@ -64,6 +67,7 @@ constraints:
     subjects: [U2.4, C3.1]
     max_mm: 2
     rationale: Minimize the high-frequency supply loop.
+    source: docs/layout-research.md#u2--drv8316ct
   - id: noisy-power-separation
     type: separation
     subjects: [U1, U2]
@@ -96,6 +100,17 @@ constraints:
     subjects: [U1, U4]
     direction: south to north
     rationale: Do not place heat-sensitive parts downstream of the regulator.
+  - id: supply-chain-order
+    type: order
+    subjects: [J1, F1, U1]
+    direction: west-to-east
+    rationale: Power flows inward from the entry connector.
+  - id: switching-loop
+    type: loop
+    subjects: [U1.1, L1.1, C1.1]
+    max_mm: 20
+    rationale: The switching current loop area sets radiated emissions.
+    source: docs/layout-research.md#u1--tlv75533
 
 net_classes:
   - name: power
@@ -132,12 +147,15 @@ The schema rules are:
    exactly once.
 3. Constraint endpoints are exact `REF` or `REF.PAD` values from the current
    PCB. `proximity` and `separation` take two endpoints. `board-edge`,
-   `orientation`, and `accessibility` take one. `airflow` takes at least two.
-4. `proximity` and `board-edge` require `max_mm`; `separation` and `keepout`
-   require `min_mm`. A keepout also names what is excluded. Board-edge and
-   accessibility edges are `north`, `east`, `south`, `west`, or `any`.
-5. Orientation, accessibility, and airflow subjects are whole references,
-   never pads.
+   `orientation`, and `accessibility` take one. `airflow` and `order` take at
+   least two. `loop` takes at least three.
+4. `proximity`, `board-edge`, and `loop` require `max_mm`; `separation` and
+   `keepout` require `min_mm`. A keepout also names what is excluded.
+   Board-edge and accessibility edges are `north`, `east`, `south`, `west`, or
+   `any`.
+5. Orientation, accessibility, airflow, and order subjects are whole
+   references, never pads. `loop` subjects are the reverse: every one is a
+   `REF.PAD` endpoint, because a loop perimeter is measured pad to pad.
 6. Every net is an exact existing resolved PCB net. Wildcards are not
    interpreted. A net may appear in only one PCBForge class.
 7. Track, clearance, via, drill, annular-ring, and differential-pair values
@@ -148,12 +166,24 @@ The schema rules are:
    has no typed spatial relationship.
 9. Keepouts remain written instructions in the LAYOUT handoff; the tool never draws
    geometry or changes the board.
+10. `order` directions are the enumerated axes `west-to-east`, `east-to-west`,
+   `north-to-south`, and `south-to-north`, because the check projects subject
+   centres onto that axis and requires them strictly in the listed order.
+   `orientation` and `airflow` directions stay free prose: a human judges them.
+11. Every constraint may carry an optional `source`, and every group an optional
+   `guidance` list of short imperative notes. Both cite research — a datasheet
+   section, a figure, an EVM revision, or a `docs/layout-research.md` heading.
+   `prepare-layout` and `check-layout-handoff` warn about any `proximity`,
+   `keepout`, or `loop` constraint with no `source`. The warning never fails the
+   check; an uncited constraint is still valid and still measured.
 
 ## Procedure
 
-1. Read `spec.md`, `docs/build-test.md`, the exact BOM/designators, resolved
-   PCB nets and pads, datasheets, connector mechanics, and all thermal/RF/power
-   requirements already recorded in project documentation.
+1. Read `docs/layout-research.md` — written during CIRCUIT, it already holds
+   the per-part layout guidance, its citations, and the mechanical facts. Read
+   `spec.md`, `docs/build-test.md`, the exact BOM/designators, and the resolved
+   PCB nets and pads alongside it. Return to the datasheets only for a part the
+   research file does not cover, and add what you find to that file.
 2. Write `placement.yaml` from intent. Do not infer it by merely copying the
    current PCB arrangement.
 3. Run:

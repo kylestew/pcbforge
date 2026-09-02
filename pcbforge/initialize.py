@@ -862,22 +862,28 @@ Before adding physical parts, follow `{tool_root}/agent/circuit.md`:
    nets `NC_<REF>_<PIN>`. Never rename nets only in the KiCad PCB.
 6. Run `{tool_root}/scripts/pcbforge check-parts` during part selection and
    before presenting CIRCUIT for completion.
-7. Complete protection/testability evidence and sourcing entries in
+7. After part selection, write `docs/layout-research.md`: one `## REF — MPN`
+   section per IC, regulator, connector, crystal, antenna, and power inductor,
+   each carrying `### Sources`, `### Guidance`, `### Pattern`, and
+   `### Mechanical`. Cite the datasheet sections you actually read and never
+   invent one. The LAYOUT handoff reads this file instead of re-reading
+   datasheets.
+8. Complete protection/testability evidence and sourcing entries in
    `policy.yaml`; run `{tool_root}/scripts/pcbforge check-policy` and stop for
    explicit user approval of every required exception.
-8. Write `docs/circuit-review.md`, then run
+9. Write `docs/circuit-review.md`, then run
    `pcbforge check-circuit-review --stage final --write`. Exact part identity,
    physical pins, and endpoint topology must match both the approved model and
    compiled Atopile design. Electrical differences return to proposal approval.
-9. Create the exact, tracked `build-test.yaml` acceptance contract.
-10. Give every required atopile assertion a unique `pcbforge-test` marker and
-   list the same IDs in the contract.
-11. Run
-   `{tool_root}/scripts/pcbforge status --check --write`.
-12. Inspect the generated `docs/build-test.md` evidence report. CIRCUIT cannot
+10. Create the exact, tracked `build-test.yaml` acceptance contract.
+11. Give every required atopile assertion a unique `pcbforge-test` marker and
+    list the same IDs in the contract.
+12. Run
+    `{tool_root}/scripts/pcbforge status --check --write`.
+13. Inspect the generated `docs/build-test.md` evidence report. CIRCUIT cannot
     become ready while build, IOC, parts, policy, circuit parity, assertions,
     exact BOM/PCB, or spatial-preservation evidence is failed or stale.
-13. Present one final `pcbforge status review circuit` packet and stop. Record
+14. Present one final `pcbforge status review circuit` packet and stop. Record
     `status approve circuit` only after the user explicitly accepts that exact
     implementation-and-test fingerprint.
 
@@ -885,7 +891,9 @@ Before adding physical parts, follow `{tool_root}/agent/circuit.md`:
 
 After CIRCUIT completes, follow `{tool_root}/agent/layout-handoff.md`:
 
-1. Write the exact qualitative placement contract in `placement.yaml`.
+1. Read `docs/layout-research.md` and write the exact qualitative placement
+   contract in `placement.yaml`. Cite research with `source:` on each measurable
+   constraint and `guidance:` notes on each group.
 2. Assign every PCB footprint to exactly one group and reference only current
    PCB references, pads, and exact net names.
 3. Run `{tool_root}/scripts/pcbforge prepare-layout`; it generates

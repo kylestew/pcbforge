@@ -102,7 +102,9 @@ to compare material alternatives during ARCHITECT and CIRCUIT.
 | Peripherals | usb-fs, i2c, spi, uart, adc, dac, pwm, can | from purpose |
 | Connectors | what physically plugs in | from peripherals |
 | I/O budget | GPIO count → package size | count + 20% slack |
-| Size / form | dims, mounting holes, enclosure? | 50×40 mm, 4×M3 |
+| Size / form | dims, mounting holes | 50×40 mm, 4×M3 |
+| Mechanical | enclosure, which edges connectors must reach, max component height, keepouts, which side is user-facing | unconstrained |
+| Cabling | what plugs in, from which direction, strain relief | unconstrained |
 | **Layers** | density, analog/RF, USB routing comfort | 2 (heuristic below) |
 | Special | analog precision, RF, high current, thermal, low power | none |
 | Cost / qty | BOM ceiling per board; board count | qty 5 (JLC min) |
@@ -110,6 +112,10 @@ to compare material alternatives during ARCHITECT and CIRCUIT.
 | Construction | standard FR4 1.6 mm / 1 oz? impedance or unusual vias? | standard |
 | Protection | reverse polarity, overcurrent, connector ESD applicability | required when applicable |
 | Marking | polarity and pin-1 marking applicability | required when applicable |
+
+Mechanical and cabling drive placement, so "the user said nothing" and "the user
+said it does not matter" must not look alike three phases later. When either is
+unstated, write `unconstrained` explicitly in `spec.md` rather than omitting it.
 
 ### STM32 family quick guide
 

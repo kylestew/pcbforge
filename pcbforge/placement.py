@@ -58,8 +58,22 @@ CONSTRAINT_TYPES = {
     "orientation",
     "accessibility",
     "airflow",
+    "order",
+    "loop",
 }
 EDGES = {"any", "north", "east", "south", "west"}
+#: ``order`` directions are an enum because the check projects centres onto an
+#: axis. ``orientation`` and ``airflow`` directions stay free prose because they
+#: describe intent a human judges, not an axis a tool measures.
+ORDER_DIRECTIONS = {
+    "west-to-east",
+    "east-to-west",
+    "north-to-south",
+    "south-to-north",
+}
+#: Constraint kinds whose placement rule comes from a document, so an uncited
+#: one is worth a warning at the handoff.
+CITED_KINDS = {"proximity", "keepout", "loop"}
 
 
 class PlacementError(RuntimeError):
@@ -77,6 +91,7 @@ class PlacementGroup:
     region: str
     rationale: str
     references: tuple[str, ...]
+    guidance: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -90,6 +105,7 @@ class PlacementConstraint:
     edge: str | None
     direction: str | None
     keepout: str | None
+    source: str | None = None
 
 
 @dataclass(frozen=True)
@@ -124,6 +140,7 @@ class PlacementContract:
     constraints: tuple[PlacementConstraint, ...]
     net_classes: tuple[PlacementNetClass, ...]
     checklist: tuple[str, ...]
+    warnings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -138,6 +155,7 @@ class BriefResult:
     project_path: Path
     wrote_brief: bool
     wrote_project: bool
+    warnings: tuple[str, ...] = ()
 
     @property
     def summary(self) -> str:
@@ -338,7 +356,7 @@ def _parse_groups(raw: Any, errors: list[str]) -> tuple[PlacementGroup, ...]:
             continue
         _unknown(
             item,
-            {"id", "priority", "region", "rationale", "references"},
+            {"id", "priority", "region", "rationale", "references", "guidance"},
             prefix,
             errors,
         )
@@ -359,6 +377,13 @@ def _parse_groups(raw: Any, errors: list[str]) -> tuple[PlacementGroup, ...]:
         for reference in references:
             if REFERENCE_RE.fullmatch(reference) is None:
                 errors.append(f"{prefix}.references: invalid reference {reference!r}")
+        guidance: tuple[str, ...] = ()
+        if "guidance" in item:
+            guidance = _string_list(
+                item.get("guidance"),
+                f"{prefix}.guidance",
+                errors,
+            )
         groups.append(
             PlacementGroup(
                 identifier,
@@ -366,6 +391,7 @@ def _parse_groups(raw: Any, errors: list[str]) -> tuple[PlacementGroup, ...]:
                 region,
                 rationale,
                 references,
+                guidance,
             )
         )
     identifiers = [group.identifier for group in groups if group.identifier]
@@ -401,6 +427,7 @@ def _parse_constraints(
         "edge",
         "direction",
         "keepout",
+        "source",
     }
     for index, item in enumerate(raw):
         prefix = f"constraints[{index}]"
@@ -432,7 +459,7 @@ def _parse_constraints(
             item.get("max_mm"),
             f"{prefix}.max_mm",
             errors,
-            required=kind in {"proximity", "board-edge"},
+            required=kind in {"proximity", "board-edge", "loop"},
         )
         edge_raw = item.get("edge")
         edge = edge_raw.strip() if isinstance(edge_raw, str) else None
@@ -440,6 +467,7 @@ def _parse_constraints(
         direction = direction_raw.strip() if isinstance(direction_raw, str) else None
         keepout_raw = item.get("keepout")
         keepout = keepout_raw.strip() if isinstance(keepout_raw, str) else None
+        source = _text(item, "source", prefix, errors) if "source" in item else None
 
         if kind in {"proximity", "separation"} and len(subjects) != 2:
             errors.append(f"{prefix}.subjects: {kind} requires exactly two endpoints")
@@ -453,6 +481,12 @@ def _parse_constraints(
             errors.append(
                 f"{prefix}.subjects: airflow requires at least two references"
             )
+        if kind == "order" and len(subjects) < 2:
+            errors.append(f"{prefix}.subjects: order requires at least two references")
+        if kind == "loop" and len(subjects) < 3:
+            errors.append(
+                f"{prefix}.subjects: loop requires at least three pad endpoints"
+            )
         if kind == "keepout" and not keepout:
             errors.append(f"{prefix}.keepout: expected a non-empty description")
         if kind in {"board-edge", "accessibility"}:
@@ -462,23 +496,37 @@ def _parse_constraints(
                 )
         elif edge is not None:
             errors.append(f"{prefix}.edge: not allowed for {kind or 'this type'}")
-        if kind in {"orientation", "airflow"}:
+        if kind == "order":
+            if direction not in ORDER_DIRECTIONS:
+                errors.append(
+                    f"{prefix}.direction: expected one of "
+                    + ", ".join(sorted(ORDER_DIRECTIONS))
+                )
+        elif kind in {"orientation", "airflow"}:
             if not direction:
                 errors.append(f"{prefix}.direction: expected a non-empty direction")
         elif direction is not None:
             errors.append(f"{prefix}.direction: not allowed for {kind or 'this type'}")
         if kind not in {"separation", "keepout"} and min_mm is not None:
             errors.append(f"{prefix}.min_mm: not allowed for {kind or 'this type'}")
-        if kind not in {"proximity", "board-edge"} and max_mm is not None:
+        if kind not in {"proximity", "board-edge", "loop"} and max_mm is not None:
             errors.append(f"{prefix}.max_mm: not allowed for {kind or 'this type'}")
         if kind != "keepout" and keepout is not None:
             errors.append(f"{prefix}.keepout: not allowed for {kind or 'this type'}")
-        if kind in {"orientation", "accessibility", "airflow"}:
+        if kind in {"orientation", "accessibility", "airflow", "order"}:
             for subject in subjects:
                 parsed = split_endpoint(subject)
                 if parsed is not None and parsed[1] is not None:
                     errors.append(
                         f"{prefix}.subjects: {kind} accepts references, not pads"
+                    )
+        if kind == "loop":
+            for subject in subjects:
+                parsed = split_endpoint(subject)
+                if parsed is not None and parsed[1] is None:
+                    errors.append(
+                        f"{prefix}.subjects: loop accepts REF.PAD endpoints, "
+                        "not bare references"
                     )
         constraints.append(
             PlacementConstraint(
@@ -491,6 +539,7 @@ def _parse_constraints(
                 edge,
                 direction,
                 keepout,
+                source,
             )
         )
     identifiers = [
@@ -500,6 +549,24 @@ def _parse_constraints(
     if duplicate_ids:
         errors.append(f"constraints: duplicate IDs: {', '.join(duplicate_ids)}")
     return tuple(constraints)
+
+
+def _uncited_warnings(
+    constraints: tuple[PlacementConstraint, ...],
+) -> tuple[str, ...]:
+    """Warn about measurable constraints that cite no document.
+
+    Advisory only: an uncited constraint is still valid and still checked. The
+    warning exists so the handoff shows which distances came from a datasheet
+    and which came from someone's memory.
+    """
+    warnings = {
+        f"constraint {constraint.identifier} ({constraint.kind}) has no source: "
+        "cite the datasheet section or a docs/layout-research.md heading"
+        for constraint in constraints
+        if constraint.kind in CITED_KINDS and not constraint.source
+    }
+    return tuple(sorted(warnings))
 
 
 def _parse_diff_pair(
@@ -796,6 +863,7 @@ def read_placement_contract(
         constraints,
         net_classes,
         checklist,
+        _uncited_warnings(constraints),
     )
     if board is None:
         try:
@@ -1156,6 +1224,11 @@ def _constraint_instruction(constraint: PlacementConstraint) -> str:
         "orientation": f"Orient toward {constraint.direction}.",
         "accessibility": f"Keep accessible from the {constraint.edge} edge.",
         "airflow": f"Arrange for airflow toward {constraint.direction}.",
+        "order": f"Place subjects {constraint.direction} in the listed order.",
+        "loop": (
+            f"Keep the closed loop through the listed pads within "
+            f"{_distance(constraint)}."
+        ),
     }
     return detail[constraint.kind]
 
@@ -1177,12 +1250,16 @@ def _render_brief(
     group_sections = []
     for index, identifier in enumerate(contract.placement_order, start=1):
         group = groups_by_id[identifier]
+        guidance = "".join(
+            f"\n- Guidance: {note}" for note in group.guidance
+        )
         group_sections.append(
             f"### {index}. {group.identifier}\n\n"
             f"- Priority: {group.priority}\n"
             f"- Suggested region: {group.region}\n"
             f"- References: {', '.join(group.references)}\n"
             f"- Why: {group.rationale}"
+            f"{guidance}"
         )
     constraint_rows = "\n".join(
         "| "
@@ -1192,7 +1269,9 @@ def _render_brief(
                 item.kind,
                 ", ".join(item.subjects),
                 _constraint_instruction(item),
-                item.rationale,
+                item.rationale
+                if item.source is None
+                else f"{item.rationale} (source: {item.source})",
             )
         ).replace("\n", " ")
         + " |"
@@ -1366,6 +1445,7 @@ def generate_brief(
         project_path.relative_to(project_dir),
         wrote_brief,
         wrote_project,
+        contract.warnings,
     )
 
 
@@ -1416,4 +1496,5 @@ def check_brief(
         project_path.relative_to(project_dir),
         False,
         False,
+        contract.warnings,
     )

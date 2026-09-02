@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,6 +16,7 @@ from pcbforge.cli import main
 from pcbforge.policy import load_policy_profile, render_default_policy
 from pcbforge.placement import (
     BRIEF_FILENAME,
+    CONSTRAINT_TYPES,
     BriefResult,
     PlacementError,
     PlacementInputError,
@@ -679,7 +681,247 @@ class StatusAndCliTests(PlacementFixture):
             self.assertEqual(main(["check-layout-handoff", "/tmp/project"]), 1)
 
 
+class ResearchLedgerTests(PlacementFixture):
+    """PA3: `source`, `guidance`, and the `order` and `loop` constraint types.
+
+    Every one of these keys is optional, so the load-bearing test here is
+    `test_a_contract_without_the_new_keys_renders_the_unchanged_brief`:
+    `check_brief` byte-compares the rendered brief, so a renderer change that
+    touched contracts not using the new keys would stale every existing
+    project's handoff approval.
+    """
+
+    ORDER = """  - id: west-to-east-flow
+    type: order
+    subjects: [J1, U1]
+    direction: west-to-east
+    rationale: Signal flows inward from the cable entry.
+"""
+    LOOP = """  - id: usb-return
+    type: loop
+    subjects: [J1.A6, U1.2, U1.3]
+    max_mm: 60
+    rationale: Keep the return path tight.
+"""
+
+    def contract(self, root: Path, placement: str):
+        project = self.project(root)
+        (project / "placement.yaml").write_text(placement, encoding="utf-8")
+        return read_placement_contract(project, tool_root=TOOL_ROOT)
+
+    def rejects(self, placement: str, pattern: str) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            with self.assertRaisesRegex(PlacementInputError, pattern):
+                self.contract(Path(temporary), placement)
+
+    def with_constraints(self, extra: str) -> str:
+        return PLACEMENT.replace("net_classes:", extra + "net_classes:")
+
+    def test_accepts_source_guidance_and_both_new_constraint_types(self) -> None:
+        placement = self.with_constraints(self.ORDER + self.LOOP).replace(
+            "    rationale: Keep USB short.",
+            "    rationale: Keep USB short.\n"
+            "    source: USB 2.0 specification, section 7.1.6",
+        ).replace(
+            "    references: [J1]",
+            "    references: [J1]\n"
+            "    guidance:\n"
+            "      - Tie the shield to GND at the connector (USB-C spec 3.2).",
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            contract = self.contract(Path(temporary), placement)
+
+        by_id = {item.identifier: item for item in contract.constraints}
+        self.assertEqual(
+            by_id["usb-short"].source,
+            "USB 2.0 specification, section 7.1.6",
+        )
+        self.assertIsNone(by_id["connector-edge"].source)
+        self.assertEqual(by_id["west-to-east-flow"].direction, "west-to-east")
+        self.assertEqual(by_id["usb-return"].max_mm, 60)
+        self.assertEqual(
+            contract.groups[0].guidance,
+            ("Tie the shield to GND at the connector (USB-C spec 3.2).",),
+        )
+        self.assertEqual(contract.groups[1].guidance, ())
+
+    def test_rejects_malformed_order_constraints(self) -> None:
+        self.rejects(
+            self.with_constraints(self.ORDER.replace("[J1, U1]", "[J1.A6, U1]")),
+            "order accepts references, not pads",
+        )
+        self.rejects(
+            self.with_constraints(self.ORDER.replace("[J1, U1]", "[J1]")),
+            "order requires at least two references",
+        )
+        self.rejects(
+            self.with_constraints(self.ORDER.replace("west-to-east", "leftwards")),
+            "direction: expected one of east-to-west, north-to-south",
+        )
+        self.rejects(
+            self.with_constraints(
+                self.ORDER.replace(
+                    "    rationale:",
+                    "    max_mm: 4\n    rationale:",
+                )
+            ),
+            "max_mm: not allowed for order",
+        )
+
+    def test_rejects_malformed_loop_constraints(self) -> None:
+        self.rejects(
+            self.with_constraints(
+                self.LOOP.replace("[J1.A6, U1.2, U1.3]", "[J1.A6, U1.2]")
+            ),
+            "loop requires at least three pad endpoints",
+        )
+        self.rejects(
+            self.with_constraints(
+                self.LOOP.replace("[J1.A6, U1.2, U1.3]", "[J1.A6, U1.2, U1]")
+            ),
+            "loop accepts REF.PAD endpoints, not bare references",
+        )
+        self.rejects(
+            self.with_constraints(self.LOOP.replace("    max_mm: 60\n", "")),
+            "max_mm: expected a positive number",
+        )
+        self.rejects(
+            self.with_constraints(
+                self.LOOP.replace("    rationale:", "    min_mm: 1\n    rationale:")
+            ),
+            "min_mm: not allowed for loop",
+        )
+
+    def test_rejects_malformed_guidance_and_source(self) -> None:
+        self.rejects(
+            PLACEMENT.replace(
+                "    references: [J1]",
+                "    references: [J1]\n    guidance: keep it short",
+            ),
+            r"groups\[0\].guidance: expected a non-empty list of strings",
+        )
+        self.rejects(
+            PLACEMENT.replace(
+                "    rationale: Keep USB short.",
+                "    rationale: Keep USB short.\n    source: 12",
+            ),
+            r"constraints\[0\].source: expected a non-empty string",
+        )
+
+    def test_warns_once_per_uncited_measurable_constraint(self) -> None:
+        placement = self.with_constraints(self.ORDER + self.LOOP)
+        with tempfile.TemporaryDirectory() as temporary:
+            contract = self.contract(Path(temporary), placement)
+
+        # proximity and loop are cited kinds; order, board-edge, and the manual
+        # kinds are not, so they never warn.
+        self.assertEqual(
+            contract.warnings,
+            (
+                "constraint usb-return (loop) has no source: cite the datasheet "
+                "section or a docs/layout-research.md heading",
+                "constraint usb-short (proximity) has no source: cite the "
+                "datasheet section or a docs/layout-research.md heading",
+            ),
+        )
+
+    def test_a_cited_constraint_stops_warning(self) -> None:
+        placement = PLACEMENT.replace(
+            "    rationale: Keep USB short.",
+            "    rationale: Keep USB short.\n    source: USB 2.0 spec, 7.1.6",
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            contract = self.contract(Path(temporary), placement)
+
+        self.assertEqual(contract.warnings, ())
+
+    def test_brief_renders_guidance_and_citations(self) -> None:
+        placement = self.with_constraints(self.ORDER + self.LOOP).replace(
+            "    rationale: Keep USB short.",
+            "    rationale: Keep USB short.\n    source: USB 2.0 spec, 7.1.6",
+        ).replace(
+            "    references: [J1]",
+            "    references: [J1]\n"
+            "    guidance:\n"
+            "      - Tie the shield to GND at the connector (USB-C spec 3.2).",
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            (project / "placement.yaml").write_text(placement, encoding="utf-8")
+            result = generate_brief(project, tool_root=TOOL_ROOT)
+            brief = (project / BRIEF_FILENAME).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "- Guidance: Tie the shield to GND at the connector "
+            "(USB-C spec 3.2).",
+            brief,
+        )
+        self.assertIn("Keep USB short. (source: USB 2.0 spec, 7.1.6)", brief)
+        self.assertIn(
+            "| west-to-east-flow | order | J1, U1 | "
+            "Place subjects west-to-east in the listed order. |",
+            brief,
+        )
+        self.assertIn(
+            "| usb-return | loop | J1.A6, U1.2, U1.3 | "
+            "Keep the closed loop through the listed pads within "
+            "maximum 60 mm. |",
+            brief,
+        )
+        # usb-short is cited now; usb-return still is not.
+        self.assertEqual(
+            result.warnings,
+            (
+                "constraint usb-return (loop) has no source: cite the datasheet "
+                "section or a docs/layout-research.md heading",
+            ),
+        )
+
+    def test_a_contract_without_the_new_keys_renders_the_unchanged_brief(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            generate_brief(project, tool_root=TOOL_ROOT)
+            brief = (project / BRIEF_FILENAME).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "### 1. connector\n\n"
+            "- Priority: 1\n"
+            "- Suggested region: west edge\n"
+            "- References: J1\n"
+            "- Why: Cable access.\n",
+            brief,
+        )
+        self.assertIn(
+            "| usb-short | proximity | J1.A6, U1.2 | "
+            "Keep endpoints within maximum 15 mm. | Keep USB short. |",
+            brief,
+        )
+        self.assertNotIn("Guidance", brief)
+        self.assertNotIn("(source:", brief)
+
+
 class ContractFormattingTests(unittest.TestCase):
     def test_example_is_valid_yaml(self) -> None:
         data = yaml.safe_load(PLACEMENT)
         self.assertEqual(data["placement_schema"], 1)
+
+    def test_the_playbook_example_documents_every_constraint_type(self) -> None:
+        """The schema fence in `agent/layout-handoff.md` must not drift.
+
+        Docs move with code, so adding a constraint type without documenting it
+        fails here rather than silently shipping an undocumented type.
+        """
+        playbook = (TOOL_ROOT / "agent" / "layout-handoff.md").read_text(
+            encoding="utf-8"
+        )
+        fences = re.findall(r"```yaml\n(.*?)```", playbook, re.S)
+        self.assertEqual(len(fences), 1)
+        example = yaml.safe_load(fences[0])
+
+        self.assertEqual(example["placement_schema"], 1)
+        self.assertEqual(
+            {item["type"] for item in example["constraints"]},
+            CONSTRAINT_TYPES,
+        )

@@ -257,6 +257,56 @@ def _evaluate_constraint(
             f"{constraint.subjects[0]} to the {edge} edge",
         )
 
+    if constraint.kind == "order":
+        direction = constraint.direction or ""
+        # y grows downward, so north-to-south is also an increasing projection.
+        axis = 1 if direction in {"north-to-south", "south-to-north"} else 0
+        ascending = direction in {"west-to-east", "north-to-south"}
+        values = [centre[axis] for centre in centres]
+        # Strict: two parts at the same coordinate are not in a defined order.
+        out_of_order = next(
+            (
+                index
+                for index, (first, second) in enumerate(zip(values, values[1:]))
+                if not (first < second if ascending else first > second)
+            ),
+            None,
+        )
+        if out_of_order is None:
+            detail = ", ".join(constraint.subjects)
+        else:
+            detail = (
+                f"{constraint.subjects[out_of_order]} is not before "
+                f"{constraint.subjects[out_of_order + 1]}"
+            )
+        return Finding(
+            "constraint",
+            constraint.identifier,
+            "pass" if out_of_order is None else "fail",
+            ", ".join(
+                f"{endpoint} {value:.2f}"
+                for endpoint, value in zip(constraint.subjects, values)
+            ),
+            direction,
+            detail,
+        )
+
+    if constraint.kind == "loop":
+        limit = constraint.max_mm or 0.0
+        closed = centres + centres[:1]
+        measured = sum(
+            ((bx - ax) ** 2 + (by - ay) ** 2) ** 0.5
+            for (ax, ay), (bx, by) in zip(closed, closed[1:])
+        )
+        return Finding(
+            "constraint",
+            constraint.identifier,
+            "pass" if measured <= limit else "fail",
+            _millimetres(measured),
+            f"<= {limit:g} mm",
+            f"closed loop through {', '.join(constraint.subjects)}",
+        )
+
     return _unmeasured(constraint, f"no evaluator for {constraint.kind}")
 
 

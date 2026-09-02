@@ -191,6 +191,40 @@ and package, and retain the selected MPN/LCSC identity as part-selection
 metadata. A small source wrapper for shared constraints is acceptable; local
 `.kicad_sym`, `.kicad_mod`, `.step`, or `.wrl` assets are not.
 
+## Layout research
+
+Placement research happens once, here, while the datasheets are already open —
+not again at the handoff. After part selection in Gate B and before the final
+CIRCUIT review, write `docs/layout-research.md`.
+
+It is an agent-written document. The tool neither generates nor fingerprints it;
+`placement.yaml` cites it, and the handoff playbook reads it instead of
+re-reading datasheets.
+
+Write one `## REF — MPN` section for every IC, regulator, connector, crystal,
+antenna, power inductor, and any other part whose datasheet has a layout
+section. Each section carries exactly these four subsections:
+
+```text
+### Sources
+- <document id, revision, section/figure, URL if any>
+### Guidance
+- <one imperative sentence per rule, each with (source) at the end>
+### Pattern
+- none | sketch: patterns/<id>.yaml | exact: patterns/<id>.yaml
+### Mechanical
+- height, mating direction, keepout, tool access, or "none"
+```
+
+Cite the sections you actually read. Never invent a section or figure number: an
+unverifiable citation is worse than none, because the handoff reviewer cannot
+tell the two apart. When a datasheet has no layout guidance, say so in
+`### Sources` rather than omitting the part.
+
+Every `Guidance` line should end up as either a typed constraint or a group
+`guidance:` note in `placement.yaml`, each carrying a `source:` that points back
+to a heading here.
+
 ## Routing-ready net names
 
 Before final CIRCUIT review, give every resolved PCB net a concise,

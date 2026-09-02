@@ -191,7 +191,9 @@ Final evidence includes current:
 - `build-test.yaml`, marked assertions, and `docs/build-test.md`;
 - concise source-owned KiCad net names matching every proposal-model
   `compiler_name`, with unused single-pad nets named `NC_<REF>_<PIN>`;
-- circuit-owned PCB topology with spatial data preserved.
+- circuit-owned PCB topology with spatial data preserved;
+- `docs/layout-research.md`: per-part layout guidance with its citations,
+  written while the datasheets are open so the handoff does not re-read them.
 
 One final CIRCUIT approval covers the implemented circuit and its acceptance
 evidence. Its policy scope includes assurance evidence and exceptions, but not
