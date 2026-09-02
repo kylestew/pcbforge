@@ -17,6 +17,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 import yaml
 
+from pcbforge.board_geometry import BOARD_FORMAT_VERSION
 from pcbforge.policy import (
     POLICY_PROFILE_ID,
     POLICY_SCHEMA,
@@ -530,7 +531,7 @@ def _render_board(spec: ProjectSpec) -> str:
         ]
     )
     return f"""(kicad_pcb
-\t(version 20241229)
+\t(version {BOARD_FORMAT_VERSION})
 \t(generator "pcbforge")
 \t(generator_version "0.1")
 \t(general
