@@ -354,7 +354,7 @@ class FloorplanFindingTests(CheckFixture):
     def test_a_group_inside_its_rectangle_passes(self) -> None:
         found = self.findings(self.measure(self.PLAN))
         self.assertEqual(
-            found["everything"], ("pass", "2 of 2 inside, centroid 0.00 mm outside")
+            found["everything"], ("pass", "2 of 2 centres inside, centroid 0.00 mm outside")
         )
         self.assertEqual(found["outline-matches-floorplan"][0], "pass")
 
@@ -364,7 +364,7 @@ class FloorplanFindingTests(CheckFixture):
             item for item in result.findings if item.identifier == "everything"
         )
         self.assertEqual(finding.status, "fail")
-        self.assertIn("0 of 2 inside", finding.measured)
+        self.assertIn("0 of 2 centres inside", finding.measured)
         # Listed in the group's own reference order, which is deterministic.
         self.assertIn("outside: U1, C1", finding.detail)
 

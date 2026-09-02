@@ -39,7 +39,7 @@ from pcbforge.board_geometry import (
 from pcbforge.build_test import BuildTestError, BuildTestInputError
 from pcbforge.fsutil import AtomicWriteError, commit_outputs
 from pcbforge.initialize import InitInputError, ProjectSpec, read_spec
-from pcbforge.markdown_metadata import metadata_trailer
+from pcbforge.markdown_metadata import metadata_trailer, metadata_yaml
 from pcbforge.patterns import PATTERNS_DIRNAME
 from pcbforge.placement import (
     PLACEMENT_FILENAME,
@@ -676,7 +676,7 @@ def _floorplan_findings(
                 "floorplan",
                 rect.identifier,
                 "pass" if all(inside) else "fail",
-                f"{sum(inside)} of {len(inside)} inside, "
+                f"{sum(inside)} of {len(inside)} centres inside, "
                 f"centroid {_millimetres(overhang)} outside",
                 "every footprint centre inside",
                 ""
@@ -1045,6 +1045,34 @@ def check_placement(
     )
 
 
+def board_drift_warning(project_dir: Path, board_path: Path) -> str | None:
+    """Warn when the board has moved on since the last recorded check.
+
+    Lives here because it reads this module's own report format. The spatial
+    edit commands call it so they can say "the numbers you are working from are
+    stale" without refusing to run: the user asked for the edit, and a missing
+    or old check is a reason to mention it, not to block.
+    """
+    report = Path(project_dir) / REPORT_FILENAME
+    if not report.is_file():
+        return (
+            "no placement check has been recorded; run `pcbforge check-placement "
+            "--write-report` to see what this changes"
+        )
+    try:
+        metadata = yaml.safe_load(metadata_yaml(report.read_text(encoding="utf-8")))
+        recorded = metadata["board_sha256"]
+        current = hashlib.sha256(Path(board_path).read_bytes()).hexdigest()
+    except (OSError, UnicodeError, KeyError, TypeError, yaml.YAMLError):
+        return f"cannot read the board fingerprint from {REPORT_FILENAME.as_posix()}"
+    if current != recorded:
+        return (
+            f"the board changed since {REPORT_FILENAME.as_posix()} was written; "
+            "its measurements are stale"
+        )
+    return None
+
+
 def placement_check_inputs(project_dir: Path) -> tuple[Path, ...]:
     """Visible inputs for dashboard diagnostics and check fingerprinting.
 
@@ -1064,6 +1092,7 @@ def placement_check_inputs(project_dir: Path) -> tuple[Path, ...]:
 
 
 __all__ = [
+    "board_drift_warning",
     "PLACEMENT_CHECK_SCHEMA",
     "SUMMARY_STATUSES",
     "REPORT_FILENAME",

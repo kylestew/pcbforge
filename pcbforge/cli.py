@@ -43,6 +43,11 @@ from pcbforge.policy import (
     check_policy,
     render_policy_result,
 )
+from pcbforge.apply_floorplan import (
+    ApplyFloorplanError,
+    ApplyFloorplanInputError,
+    apply_floorplan,
+)
 from pcbforge.apply_pattern import (
     ApplyPatternError,
     ApplyPatternInputError,
@@ -329,6 +334,36 @@ def _parser() -> argparse.ArgumentParser:
         help="the placement.yaml group whose pattern to apply",
     )
     apply_pattern_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print the moves and change nothing",
+    )
+
+    apply_floorplan_parser = subcommands.add_parser(
+        "apply-floorplan",
+        help="first-pass placement of whole groups from the adopted floorplan",
+        description=(
+            "Move every footprint of the named groups into that group's "
+            "floorplan rectangle: largest part at the centre, the rest packed "
+            "outward. This MOVES PARTS YOU ALREADY POSITIONED, so it belongs "
+            "before careful placement rather than after. Requested spatial "
+            "work: run it only when the user asks, and run --dry-run first. "
+            "Record the work with `pcbforge status mark layout ai-assisted`."
+        ),
+    )
+    apply_floorplan_parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+        help="initialized pcbforge project (default: current directory)",
+    )
+    apply_floorplan_parser.add_argument(
+        "--groups",
+        required=True,
+        help="comma-separated placement.yaml group IDs to place",
+    )
+    apply_floorplan_parser.add_argument(
         "--dry-run",
         action="store_true",
         help="print the moves and change nothing",
@@ -1067,6 +1102,42 @@ def main(argv: list[str] | None = None) -> int:
             )
         if result.applied and result.backup is not None:
             print(f"pcbforge: backed up to {result.backup.name}")
+            print(
+                "pcbforge: record the request with `pcbforge status mark layout "
+                'ai-assisted --note "<request; changes>"`'
+            )
+        return 0
+
+    if args.command == "apply-floorplan":
+        groups = tuple(
+            item.strip() for item in args.groups.split(",") if item.strip()
+        )
+        try:
+            plan = apply_floorplan(
+                Path(args.project_dir),
+                groups,
+                dry_run=args.dry_run,
+            )
+        except ApplyFloorplanInputError as exc:
+            print(f"pcbforge apply-floorplan: {exc}", file=sys.stderr)
+            return 2
+        except ApplyFloorplanError as exc:
+            print(f"pcbforge apply-floorplan: {exc}", file=sys.stderr)
+            return 1
+
+        for warning in plan.warnings:
+            print(f"  WARNING    {warning}")
+        print(f"pcbforge: apply-floorplan — {plan.summary}")
+        for move in plan.moves:
+            before = "({:g}, {:g})".format(*move.before)
+            after = "({:g}, {:g})".format(*move.after)
+            mark = " SPILLED" if move.spilled else ""
+            print(
+                f"  {move.reference:6} {move.group:20} {before} -> {after}  "
+                f"{move.distance_mm:.2f} mm{mark}"
+            )
+        if plan.applied and plan.backup is not None:
+            print(f"pcbforge: backed up to {plan.backup.name}")
             print(
                 "pcbforge: record the request with `pcbforge status mark layout "
                 'ai-assisted --note "<request; changes>"`'

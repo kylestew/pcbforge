@@ -91,6 +91,34 @@ exception approval reopens the profile-mapped completed phase.
 
 ## Decision record
 
+- **2026-09-02 — placement assistance: the tool measures placement, and moves
+  parts only when asked.**
+  Placement research, closeness tradeoffs, and mechanical reasoning were all
+  happening in the user's head and being re-derived every board. Seven
+  workstreams move them into the tool. `check-placement` measures the board
+  against `placement.yaml` and reports every distance beside its limit; it is
+  advisory and never gates a phase, because placement is the user's art and the
+  tool only supplies numbers. `placement.yaml` gains optional `source` citations,
+  group `guidance`, `order` and `loop` constraints, a `pattern` binding, and an
+  adopted `floorplan`, all of them additive: `placement_schema` stays 1 and an
+  existing valid file stays valid. Vendor reference layouts become reusable
+  `patterns/<id>.yaml` files at two fidelities: `exact` offsets from design
+  files, which can be stamped onto a board, and `sketch` offsets read off a
+  datasheet figure, which are measured but never applied — the distinction is
+  enforced, not advisory, because a transcribed millimetre is not a vendor's.
+  Two commands write the board, `apply-pattern` and `apply-floorplan`, both only
+  on an explicit per-request ask inside an open LAYOUT with a current handoff,
+  inheriting the 2026-08-03 assist doctrine below. They edit the footprint block
+  in place rather than re-serializing, so the diff shows the change and nothing
+  else, and they verify the result against a re-read of the board and restore
+  their own backup if it does not hold. Rejected: gating a phase on the
+  placement check (it would make a judgement call into a blocker); a packing
+  solver dependency for the floorplan sketcher, where a seeded 200-line annealer
+  answers a question a human overrules anyway. Consequence accepted: new
+  optional keys are rendered so that a contract not using them produces a
+  byte-identical brief, because `check_brief` byte-compares and a cosmetic
+  renderer change would otherwise stale every existing handoff approval.
+
 - **2026-08-03 — the pinned tool revision no longer binds human approvals.**
   `.pcbforge` is an input to the circuit-review, build-test, and policy
   evidence sets, so hashing its raw bytes meant that bumping

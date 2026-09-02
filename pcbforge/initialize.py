@@ -929,6 +929,9 @@ After CIRCUIT completes, follow `{tool_root}/agent/layout-handoff.md`:
   footprints a vendor reference layout binds around an anchor the user placed.
   It backs the board up, verifies the result, restores it on any doubt, and
   refuses a sketch-fidelity pattern. Use `--dry-run` first and show the moves.
+  `{tool_root}/scripts/pcbforge apply-floorplan --groups <id>` does a coarse
+  first pass from an adopted floorplan; it moves every footprint of those
+  groups, including ones already positioned, so it belongs before careful work.
   Before editing by hand, copy `{spec.name}.kicad_pcb` into `layout-backups/`,
   state the exact intended edits, and stop for the user on any material choice.
   Afterwards report the delta and run

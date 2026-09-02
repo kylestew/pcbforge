@@ -216,14 +216,22 @@ pcbforge status approve layout --stage handoff \
 `prepare-layout` generates `docs/placement-brief.md` and merges only
 PCBForge-owned net classes. It never moves footprints or edits copper.
 
+On a board over roughly 20 footprints, run `pcbforge sketch-placement` before
+`prepare-layout`. It proposes two or three coarse floorplans in
+`docs/placement-sketch.md`, each priced out against the contract's own
+constraints, and changes nothing. The user picks one and its `floorplan:` block
+is pasted into `placement.yaml`, where `check-placement` then measures the real
+placement against it. Optional on a small board.
+
 Once LAYOUT is open, measure the board against that contract at any time:
 
 ```text
 pcbforge check-placement --write-report
 ```
 
-It reports every constraint, courtyard overlap, and outline result with its
-distance in millimetres, and writes `docs/placement-check.md`. The result is
+It reports every constraint, reference-pattern role, floorplan group, courtyard
+overlap, and outline result with its distance in millimetres, and writes
+`docs/placement-check.md`. The result is
 **advisory**: it is recorded and shown on the dashboard, but it never blocks a
 phase, gates an approval, or changes project health. Placement is the user's
 call; the check only supplies the numbers. It never edits the board.

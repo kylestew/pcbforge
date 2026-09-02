@@ -12,11 +12,8 @@ part by, however good they are for measuring one.
 
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
 from pathlib import Path
-
-import yaml
 
 from pcbforge.board_edit import BoardEditError, Move, apply_moves
 from pcbforge.board_geometry import (
@@ -27,13 +24,12 @@ from pcbforge.board_geometry import (
     to_board,
 )
 from pcbforge.initialize import InitInputError, read_spec
-from pcbforge.markdown_metadata import metadata_yaml
 from pcbforge.placement import (
     PlacementError,
     PlacementGroup,
     read_placement_contract,
 )
-from pcbforge.placement_check import REPORT_FILENAME
+from pcbforge.placement_check import board_drift_warning
 from pcbforge.status import layout_assist_is_authorized
 
 #: How many footprints must share one position before it reads as "unplaced".
@@ -107,28 +103,6 @@ def _anchor_is_unplaced(geometry: BoardGeometry, anchor: FootprintGeometry) -> b
         and abs(item.y - anchor.y) <= STACKED_TOLERANCE_MM
     )
     return stacked > STACKED_LIMIT
-
-
-def _board_drift_warning(project_dir: Path, board_path: Path) -> str | None:
-    """Warn when the board moved since the last recorded placement check."""
-    report = project_dir / REPORT_FILENAME
-    if not report.is_file():
-        return (
-            "no placement check has been recorded; run `pcbforge check-placement "
-            "--write-report` to see what this changes"
-        )
-    try:
-        metadata = yaml.safe_load(metadata_yaml(report.read_text(encoding="utf-8")))
-        recorded = metadata["board_sha256"]
-    except (OSError, UnicodeError, KeyError, TypeError, yaml.YAMLError):
-        return f"cannot read the board fingerprint from {REPORT_FILENAME.as_posix()}"
-    current = hashlib.sha256(board_path.read_bytes()).hexdigest()
-    if current != recorded:
-        return (
-            f"the board changed since {REPORT_FILENAME.as_posix()} was written; "
-            "its measurements are stale"
-        )
-    return None
 
 
 def apply_pattern(
@@ -218,7 +192,7 @@ def apply_pattern(
 
     warnings = [
         warning
-        for warning in (_board_drift_warning(project_dir, board_path),)
+        for warning in (board_drift_warning(project_dir, board_path),)
         if warning is not None
     ]
 
