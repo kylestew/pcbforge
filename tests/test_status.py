@@ -14,8 +14,12 @@ import yaml
 from pcbforge.build_test import fingerprint_inputs
 from pcbforge.cli import main
 from pcbforge.policy import load_policy_profile, render_default_policy
+from pcbforge.initialize import read_spec
 from pcbforge.status import (
+    ADVISORY_CHECKS,
+    APPROVAL_CHECKS,
     CheckRecord,
+    PHASE_EVIDENCE_CHECKS,
     PHASES,
     PhaseResult,
     PhaseReview,
@@ -26,9 +30,11 @@ from pcbforge.status import (
     StatusInputError,
     TransitionEvent,
     _approval_fingerprint,
+    _check_inputs,
     _approval_gate_sequence,
     _approval_payload,
     _content_fingerprint,
+    _fingerprint,
     _derive_transitions,
     _latest_events,
     _layout_handoff_payload,
@@ -2450,6 +2456,85 @@ class CheckTests(StatusFixture):
         self.assertTrue(report.checks_failed)
         self.assertEqual(report.current.phase.key, "architect")
         self.assertEqual(report.current.state, "Blocked")
+
+    def _document_with_failing_placement(self, project: Path) -> StatusDocument:
+        return StatusDocument(
+            updated_at="",
+            events=(
+                StatusEvent(
+                    "2026-07-26T10:00:00+00:00",
+                    "spec",
+                    "complete",
+                    "Approved",
+                    _approval_fingerprint(project, "spec"),
+                ),
+            ),
+            checks={
+                "placement": CheckRecord(
+                    "2026-07-26T10:00:00+00:00",
+                    _fingerprint(project, _check_inputs(project, read_spec(project / "spec.md"), "placement")),
+                    "fail",
+                    "8 pass, 23 fail, 6 manual, 0 unmeasured",
+                )
+            },
+        )
+
+    def test_status_does_not_crash_with_a_placement_record(self) -> None:
+        """`_check_inputs` is called unguarded, and raises for an unknown name.
+
+        Without its "placement" branch every `pcbforge status` invocation dies
+        with AssertionError the moment this record exists.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            document = self._document_with_failing_placement(project)
+            report = inspect_status(project, document=document)
+        self.assertIsNotNone(report)
+
+    def test_failing_placement_check_leaves_health_green(self) -> None:
+        """Advisory means advisory: it must not redden Health or the exit code.
+
+        Fails if the ADVISORY_CHECKS guard in `inspect_status` is removed.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            document = self._document_with_failing_placement(project)
+            report = inspect_status(project, document=document)
+            rendered = render_dashboard(report)
+
+        self.assertEqual(document.checks["placement"].outcome, "fail")
+        self.assertFalse(report.checks_failed)
+        self.assertIn("🟢 On track", rendered)
+        self.assertNotIn("🔴 Blocked", rendered)
+
+    def test_failing_placement_check_is_not_a_dashboard_blocker(self) -> None:
+        """Fails if the ADVISORY_CHECKS guard in `render_dashboard` is removed."""
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            document = self._document_with_failing_placement(project)
+            rendered = render_dashboard(inspect_status(project, document=document))
+
+        blockers = rendered.split("## Blockers", 1)[1].split("##", 1)[0]
+        self.assertNotIn("placement", blockers)
+        self.assertIn("- None.", blockers)
+
+    def test_placement_advisory_row_shows_the_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            document = self._document_with_failing_placement(project)
+            rendered = render_dashboard(inspect_status(project, document=document))
+
+        self.assertIn("placement check", rendered)
+        self.assertIn("⚠️ Advisory", rendered)
+        self.assertIn("8 pass, 23 fail", rendered)
+
+    def test_placement_never_gates_a_phase_or_an_approval(self) -> None:
+        """The two registries that block and gate must never list it."""
+        for phase, names in PHASE_EVIDENCE_CHECKS.items():
+            self.assertNotIn("placement", names, phase)
+        for phase, names in APPROVAL_CHECKS.items():
+            self.assertNotIn("placement", names, phase)
+        self.assertIn("placement", ADVISORY_CHECKS)
 
     def test_commodity_part_policy_failure_is_recorded(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

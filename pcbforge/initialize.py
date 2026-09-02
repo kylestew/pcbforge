@@ -906,6 +906,10 @@ After CIRCUIT completes, follow `{tool_root}/agent/layout-handoff.md`:
 - Placement and routing remain distinct user tasks, both performed in KiCad 9.
   The agent spots and audits by default and never edits spatial board data on
   its own initiative.
+- Measure placement against the contract at any time with
+  `{tool_root}/scripts/pcbforge check-placement --write-report`. It writes
+  `docs/placement-check.md` and never touches the board. The result is advisory:
+  it never blocks a phase, gates an approval, or changes project health.
 - When the user explicitly asks the agent to attempt placement or routing, that
   request authorizes spatial edits for that task only and expires with it.
   Before editing, copy `{spec.name}.kicad_pcb` into `layout-backups/`, state

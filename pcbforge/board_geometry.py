@@ -145,7 +145,13 @@ def union(boxes: Iterable[Box]) -> Box | None:
 
 @dataclass(frozen=True)
 class PadGeometry:
-    """One pad, with an absolute centre in board millimetres."""
+    """One pad, with an absolute centre in board millimetres.
+
+    ``size_x``/``size_y`` are the stored dimensions, unrotated. ``box`` is the
+    absolute extent with the pad's own rotation and any custom primitives
+    already applied, so distance work should use ``box`` and never rebuild one
+    from the sizes.
+    """
 
     number: str
     x: float
@@ -154,6 +160,7 @@ class PadGeometry:
     size_y: float
     net: str
     through_hole: bool
+    box: Box
 
     @property
     def centre(self) -> Point:
@@ -426,6 +433,7 @@ def _pad_geometry(
     centre = _transform(fx, fy, rotation, _point(at))
     size = sexpr.child(pad, "size")
     net = sexpr.child(pad, "net")
+    extent = _pad_extent(pad, centre)
     geometry = PadGeometry(
         number=sexpr.atom(pad, 1),
         x=centre[0],
@@ -434,8 +442,11 @@ def _pad_geometry(
         size_y=sexpr.number(size, 2),
         net=sexpr.atom(net, 2) if net is not None else "",
         through_hole=sexpr.atom(pad, 2) in _THROUGH_HOLE_TYPES,
+        box=extent
+        if extent is not None
+        else Box(centre[0], centre[1], centre[0], centre[1]),
     )
-    return geometry, _pad_extent(pad, centre)
+    return geometry, extent
 
 
 def _footprint_box(

@@ -31,7 +31,7 @@ transitions rather than numbered phases.
 | — | ARCHITECT → CIRCUIT: architecture baseline | AI + tool | Proposal current; build and IOC pass; spatial board unchanged; source baseline captured |
 | 3 | CIRCUIT | AI + tool | Approved authored circuit model; exact parts and source; parity, policy, parts, build, and acceptance checks |
 | — | CIRCUIT → LAYOUT: layout handoff | AI + tool + user | Current placement contract, generated brief, checks, and explicit handoff approval |
-| 4 | LAYOUT | User (AI on request) | Placement and routing declared complete in one spatially bound approval |
+| 4 | LAYOUT | User (AI on request) | Placement and routing declared complete in one spatially bound approval; advisory placement check reported, never gating |
 | 5 | VERIFY | Tool + AI | DRC, audits, and render review approved |
 | — | VERIFY → ORDER: FAB-OUT | Tool | `pcbforge fab-out` validated Gerber, drill, BOM, CPL, and archive packet fingerprint |
 | 6 | ORDER | User | Current sourcing confirmed and order approved |
@@ -213,6 +213,18 @@ pcbforge status approve layout --stage handoff \
 
 `prepare-layout` generates `docs/placement-brief.md` and merges only
 PCBForge-owned net classes. It never moves footprints or edits copper.
+
+Once LAYOUT is open, measure the board against that contract at any time:
+
+```text
+pcbforge check-placement --write-report
+```
+
+It reports every constraint, courtyard overlap, and outline result with its
+distance in millimetres, and writes `docs/placement-check.md`. The result is
+**advisory**: it is recorded and shown on the dashboard, but it never blocks a
+phase, gates an approval, or changes project health. Placement is the user's
+call; the check only supplies the numbers. It never edits the board.
 
 The handoff fingerprint binds the current CIRCUIT approval, build-test report,
 policy evidence, `placement.yaml`, generated brief, exact board topology, and

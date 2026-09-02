@@ -43,6 +43,11 @@ from pcbforge.policy import (
     check_policy,
     render_policy_result,
 )
+from pcbforge.placement_check import (
+    PlacementCheckError,
+    PlacementCheckInputError,
+    check_placement,
+)
 from pcbforge.placement import (
     PlacementError,
     PlacementInputError,
@@ -256,6 +261,34 @@ def _parser() -> argparse.ArgumentParser:
         default=".",
         metavar="PROJECT_DIR",
         help="initialized pcbforge project (default: current directory)",
+    )
+
+    check_placement_parser = subcommands.add_parser(
+        "check-placement",
+        help="measure the board against placement.yaml (advisory)",
+        description=(
+            "Measure the current board against the placement contract and "
+            "report every constraint, courtyard overlap, and outline result "
+            "with its distance. Advisory: it never changes the board and "
+            "never gates a phase."
+        ),
+    )
+    check_placement_parser.add_argument(
+        "project_dir",
+        nargs="?",
+        default=".",
+        metavar="PROJECT_DIR",
+        help="initialized pcbforge project (default: current directory)",
+    )
+    check_placement_parser.add_argument(
+        "--write-report",
+        action="store_true",
+        help="atomically write docs/placement-check.md",
+    )
+    check_placement_parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="also print findings that need a human judgement",
     )
 
     fab_out_parser = subcommands.add_parser(
@@ -907,6 +940,37 @@ def main(argv: list[str] | None = None) -> int:
             state = "updated" if result.wrote_report else "unchanged"
             print(f"pcbforge: {state} {result.report_path.as_posix()}")
         return 0
+
+    if args.command == "check-placement":
+        try:
+            result = check_placement(
+                Path(args.project_dir),
+                write_report=args.write_report,
+            )
+        except PlacementCheckInputError as exc:
+            print(f"pcbforge check-placement: {exc}", file=sys.stderr)
+            return 2
+        except PlacementCheckError as exc:
+            print(f"pcbforge check-placement: {exc}", file=sys.stderr)
+            return 1
+
+        print(f"pcbforge: placement check — {result.summary}")
+        for finding in result.findings:
+            if finding.status == "fail" or (
+                args.verbose and finding.status in {"manual", "unmeasured"}
+            ):
+                detail = f"  ({finding.detail})" if finding.detail else ""
+                limit = f"  limit {finding.limit}" if finding.limit else ""
+                print(
+                    f"  {finding.status.upper():10} {finding.identifier}  "
+                    f"measured {finding.measured}{limit}{detail}"
+                )
+        for warning in result.warnings:
+            print(f"  WARNING    {warning}")
+        if args.write_report:
+            state = "updated" if result.wrote_report else "unchanged"
+            print(f"pcbforge: {state} {result.report_path.as_posix()}; PCB unchanged")
+        return 1 if result.failures else 0
 
     if args.command in {"prepare-layout", "check-layout-handoff"}:
         try:

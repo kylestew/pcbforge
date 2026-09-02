@@ -69,6 +69,11 @@ from pcbforge.placement import (
     brief_status_fingerprint,
     check_brief,
 )
+from pcbforge.placement_check import (
+    PlacementCheckError,
+    check_placement,
+    placement_check_inputs,
+)
 STATUS_FILENAME = "STATUS.md"
 ARCHITECTURE_MARKER = "pcbforge-architecture-diagram-schema: 1"
 
@@ -110,19 +115,14 @@ POLICY_EVENT_ACTIONS = {
     "sourcing-confirmed",
     "reopened",
 }
-CHECK_PHASES = {
-    "architect": ("build", "ioc"),
-    "circuit": (
-        "build",
-        "parts",
-        "policy",
-        "ioc",
-        "circuit-final",
-        "build-test",
-    ),
-    "verify": ("build", "policy", "ioc", "drc"),
-    "order": ("fab",),
-}
+# Advisory checks are run, recorded, and displayed, but never gate anything.
+# They are deliberately absent from PHASE_EVIDENCE_CHECKS (which blocks a phase)
+# and APPROVAL_CHECKS (which gates approval and is hashed into the approval
+# fingerprint). That absence is not sufficient on its own: two loops below walk
+# every recorded check with no registry filter, so both consult this set.
+ADVISORY_CHECKS = frozenset({"placement"})
+#: Which phase row each advisory check is displayed under.
+ADVISORY_CHECK_PHASE = {"placement": "layout"}
 PHASE_EVIDENCE_CHECKS = {
     "architect": ("build", "ioc"),
     "circuit": ("build", "parts", "policy", "circuit-final", "build-test"),
@@ -886,6 +886,11 @@ def _phase_number(project_dir: Path, phase: str) -> int:
     return PHASE_NUMBER[phase]
 
 
+def _advisory_phase(name: str) -> str:
+    """The phase row an advisory check is displayed under, or ``""``."""
+    return ADVISORY_CHECK_PHASE.get(name, "")
+
+
 def _phase_check_names(
     project_dir: Path,
     checks: Mapping[str, tuple[str, ...]],
@@ -1202,6 +1207,8 @@ def _check_inputs(project_dir: Path, spec: ProjectSpec, name: str) -> tuple[Path
         return build_test_inputs(project_dir)
     if name == "layout-handoff":
         return brief_inputs(project_dir)
+    if name == "placement":
+        return placement_check_inputs(project_dir)
     if name == "circuit-proposal":
         return circuit_review_inputs(project_dir, "proposal")
     if name == "circuit-final":
@@ -2822,7 +2829,7 @@ def inspect_status(
     required = tuple(result for result in phases if result.phase.required)
     checks_failed = False
     for name, record in document.checks.items():
-        if record.outcome != "fail":
+        if record.outcome != "fail" or name in ADVISORY_CHECKS:
             continue
         inputs = _check_inputs(project_dir, spec, name)
         if not inputs:
@@ -3232,6 +3239,36 @@ def run_status_checks(
                     name,
                     _check_inputs(project_dir, spec, name),
                 ),
+                "pass" if ok else "fail",
+                summary,
+            )
+
+    if (
+        (project_dir / PLACEMENT_FILENAME).is_file()
+        and (project_dir / f"{spec.name}.kicad_pcb").is_file()
+        and _current_layout_handoff(project_dir, document) is not None
+    ):
+        name = "placement"
+        reusable = _reusable_check_record(
+            project_dir,
+            spec,
+            document,
+            name,
+            tool_root=tool_root,
+            force_checks=force_checks,
+        )
+        if reusable is None:
+            try:
+                result = check_placement(project_dir, write_report=write_reports)
+            except (PlacementCheckError, PlacementError) as exc:
+                ok = False
+                summary = str(exc).splitlines()[0]
+            else:
+                ok = not result.failures
+                summary = result.summary
+            checks[name] = CheckRecord(
+                checked_at,
+                _fingerprint(project_dir, _check_inputs(project_dir, spec, name)),
                 "pass" if ok else "fail",
                 summary,
             )
@@ -4667,7 +4704,7 @@ def render_dashboard(report: StatusReport) -> str:
         if transition.state in {"Blocked", "Stale"}
     )
     for name, record in sorted(report.document.checks.items()):
-        if record.outcome != "fail":
+        if record.outcome != "fail" or name in ADVISORY_CHECKS:
             continue
         _, detail = _current_check(
             report.project_dir,
@@ -4756,6 +4793,23 @@ def render_dashboard(report: StatusReport) -> str:
             )
             + " |"
         )
+        for name in sorted(ADVISORY_CHECKS):
+            record = report.document.checks.get(name)
+            if record is None or _advisory_phase(name) != result.phase.key:
+                continue
+            rows.append(
+                "| "
+                + " | ".join(
+                    (
+                        "·",
+                        f"{name} check",
+                        "Tool",
+                        "⚠️ Advisory",
+                        _escape(record.summary),
+                    )
+                )
+                + " |"
+            )
 
     updated = report.document.updated_at or "not written yet"
     performed_line = (

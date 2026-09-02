@@ -259,6 +259,19 @@ def _positive_number(
     return float(value)
 
 
+def split_endpoint(endpoint: str) -> tuple[str, str | None] | None:
+    """Split a ``REF`` or ``REF.PAD`` subject, or ``None`` when malformed.
+
+    The single definition of what a constraint subject means. Both the contract
+    validator and the placement checker resolve endpoints through it so they
+    cannot drift apart.
+    """
+    match = ENDPOINT_RE.fullmatch(endpoint)
+    if match is None:
+        return None
+    return match.group("reference"), match.group("pad")
+
+
 def _duplicates(values: Sequence[str]) -> list[str]:
     return sorted(item for item in set(values) if values.count(item) > 1)
 
@@ -462,8 +475,8 @@ def _parse_constraints(
             errors.append(f"{prefix}.keepout: not allowed for {kind or 'this type'}")
         if kind in {"orientation", "accessibility", "airflow"}:
             for subject in subjects:
-                match = ENDPOINT_RE.fullmatch(subject)
-                if match is not None and match.group("pad") is not None:
+                parsed = split_endpoint(subject)
+                if parsed is not None and parsed[1] is not None:
                     errors.append(
                         f"{prefix}.subjects: {kind} accepts references, not pads"
                     )
@@ -649,15 +662,14 @@ def _validate_against_board(
     board_pads = set(board.pads)
     for constraint in contract.constraints:
         for endpoint in constraint.subjects:
-            match = ENDPOINT_RE.fullmatch(endpoint)
-            if match is None:
+            parsed = split_endpoint(endpoint)
+            if parsed is None:
                 errors.append(
                     f"constraints.{constraint.identifier}.subjects: "
                     f"invalid endpoint {endpoint!r}"
                 )
                 continue
-            reference = match.group("reference")
-            pad = match.group("pad")
+            reference, pad = parsed
             if reference not in board_references:
                 errors.append(
                     f"constraints.{constraint.identifier}.subjects: "

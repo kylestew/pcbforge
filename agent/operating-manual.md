@@ -202,6 +202,7 @@ playbooks, `pcbforge check-ioc`, `pcbforge check-parts`,
 `pcbforge check-build-test`, the tracked CIRCUIT acceptance report, an explicit
 empty module catalog, `pcbforge prepare-layout` /
 `pcbforge check-layout-handoff`, the placement schema and handoff gate,
+`pcbforge check-placement` (advisory placement measurement),
 authored circuit schematic/model,
 compiled-parity, deterministic acceptance, and the v1 decision gates,
 `policy.yaml`, `pcbforge check-policy`, explicit policy approval commands, and
