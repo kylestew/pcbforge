@@ -2507,6 +2507,98 @@ class CheckTests(StatusFixture):
         self.assertIn("🟢 On track", rendered)
         self.assertNotIn("🔴 Blocked", rendered)
 
+    def _document_with_spent_proposal_check(
+        self,
+        project: Path,
+        *,
+        proposal_approved: bool,
+        fingerprint: str = "0" * 64,
+    ) -> StatusDocument:
+        """A failing `circuit-proposal` record, with and without its approval.
+
+        `circuit-proposal` proves physical source did not change before the
+        proposal was approved. Implementing the circuit necessarily changes that
+        fingerprint, so after Gate B the record fails permanently.
+        """
+        events = [
+            StatusEvent(
+                "2026-07-26T10:00:00+00:00",
+                "spec",
+                "complete",
+                "Approved",
+                _approval_fingerprint(project, "spec"),
+            ),
+        ]
+        if proposal_approved:
+            events.append(
+                StatusEvent(
+                    "2026-07-26T11:00:00+00:00",
+                    "circuit",
+                    "proposal-approved",
+                    "Approved",
+                    _approval_fingerprint(project, "circuit", "proposal-approved"),
+                )
+            )
+        return StatusDocument(
+            updated_at="",
+            events=tuple(events),
+            checks={
+                "circuit-proposal": CheckRecord(
+                    "2026-07-26T12:00:00+00:00",
+                    fingerprint,
+                    "fail",
+                    "physical source or board topology changed before proposal "
+                    "approval",
+                )
+            },
+        )
+
+    def test_a_spent_proposal_check_leaves_health_green(self) -> None:
+        """Once the proposal is approved the check has done its job.
+
+        It gates nothing at that point: it is in neither PHASE_EVIDENCE_CHECKS
+        nor APPROVAL_CHECKS, and `_gate_check_names` scopes it to the proposal
+        stage. Without the STAGE_SCOPED_CHECKS guard it would hold Health red
+        and print a blocker for the rest of the project's life. The guard runs
+        before `_check_inputs`, so no circuit-review artifacts are needed here.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            document = self._document_with_spent_proposal_check(
+                project, proposal_approved=True
+            )
+            report = inspect_status(project, document=document)
+            rendered = render_dashboard(report)
+
+        self.assertEqual(document.checks["circuit-proposal"].outcome, "fail")
+        self.assertFalse(report.checks_failed)
+        self.assertNotIn("circuit-proposal check", rendered)
+
+    def test_the_proposal_check_still_counts_before_its_approval(self) -> None:
+        """The guard is scoped, not a blanket exemption.
+
+        While the proposal is unapproved -- or has been reopened, which makes
+        `_current_circuit_proposal` None again -- a changed source baseline is
+        exactly what the check exists to catch, and it must still bite. The
+        fingerprint machinery is mocked so this tests the guard rather than
+        `circuit_review_inputs`.
+        """
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            document = self._document_with_spent_proposal_check(
+                project, proposal_approved=False, fingerprint="deadbeef"
+            )
+            with mock.patch(
+                "pcbforge.status._check_inputs",
+                return_value=(project / "spec.md",),
+            ), mock.patch(
+                "pcbforge.status._check_fingerprint",
+                return_value="deadbeef",
+            ):
+                report = inspect_status(project, document=document)
+
+        self.assertTrue(report.checks_failed)
+
     def test_failing_placement_check_is_not_a_dashboard_blocker(self) -> None:
         """Fails if the ADVISORY_CHECKS guard in `render_dashboard` is removed."""
         with tempfile.TemporaryDirectory() as temporary:

@@ -121,6 +121,16 @@ POLICY_EVENT_ACTIONS = {
 # fingerprint). That absence is not sufficient on its own: two loops below walk
 # every recorded check with no registry filter, so both consult this set.
 ADVISORY_CHECKS = frozenset({"placement"})
+# Stage-scoped checks guard one approval stage and stop applying once it is
+# passed. `circuit-proposal` proves physical source did not change before the
+# proposal was approved; implementing the circuit necessarily changes that
+# fingerprint, so once the proposal approval is current the check has done its
+# job and can never pass again. It gates nothing at that point -- it is in
+# neither PHASE_EVIDENCE_CHECKS nor APPROVAL_CHECKS, and `_gate_check_names`
+# scopes it to the proposal stage -- but the two unfiltered loops below would
+# otherwise keep it as a blocker and hold health red for the rest of the
+# project's life.
+STAGE_SCOPED_CHECKS = frozenset({"circuit-proposal"})
 #: Which phase row each advisory check is displayed under.
 ADVISORY_CHECK_PHASE = {"placement": "layout"}
 PHASE_EVIDENCE_CHECKS = {
@@ -884,6 +894,22 @@ def _workflow_phase_map(project_dir: Path) -> Mapping[str, Phase]:
 
 def _phase_number(project_dir: Path, phase: str) -> int:
     return PHASE_NUMBER[phase]
+
+
+def _check_is_spent(
+    project_dir: Path,
+    document: StatusDocument,
+    name: str,
+) -> bool:
+    """Whether a stage-scoped check has served its purpose and no longer applies.
+
+    Mirrors the condition that already governs whether the pre-circuit baseline
+    is consulted at all: while the proposal approval is missing or stale the
+    check still matters, and a reopened proposal brings it back.
+    """
+    if name not in STAGE_SCOPED_CHECKS:
+        return False
+    return _current_circuit_proposal(project_dir, document) is not None
 
 
 def _advisory_phase(name: str) -> str:
@@ -2850,6 +2876,8 @@ def inspect_status(
     for name, record in document.checks.items():
         if record.outcome != "fail" or name in ADVISORY_CHECKS:
             continue
+        if _check_is_spent(project_dir, document, name):
+            continue
         inputs = _check_inputs(project_dir, spec, name)
         if not inputs:
             continue
@@ -4724,6 +4752,8 @@ def render_dashboard(report: StatusReport) -> str:
     )
     for name, record in sorted(report.document.checks.items()):
         if record.outcome != "fail" or name in ADVISORY_CHECKS:
+            continue
+        if _check_is_spent(report.project_dir, report.document, name):
             continue
         _, detail = _current_check(
             report.project_dir,
