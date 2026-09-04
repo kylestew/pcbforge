@@ -34,6 +34,7 @@ CIRCUIT_MODEL_SCHEMA = 1
 PROJECT_PIN_SCHEMA = 1
 CONTRACT_FILENAME = "circuit-review.yaml"
 BASELINE_PATH = Path("review/circuit/source-baseline.json")
+REOPEN_BASELINE_PATH = Path("review/circuit/reopen-baseline.json")
 STAGES = {"proposal", "final"}
 SCHEMATIC_AUDIT_SCHEMA = 3
 SCHEMATIC_SCRIPT = Path("review/circuit/circuit_schematic.py")
@@ -304,28 +305,60 @@ def capture_implementation_baseline(project_dir: Path) -> Path:
         json.dumps(_source_baseline_payload(project_dir), indent=2, sort_keys=True)
         + "\n",
     )
+    (project_dir / REOPEN_BASELINE_PATH).unlink(missing_ok=True)
     return BASELINE_PATH
+
+
+def capture_reopen_baseline(
+    project_dir: Path,
+    prior_circuit_approval_fingerprint: str,
+) -> Path:
+    """Capture a previously approved CIRCUIT before its proposal is revised."""
+    project_dir = project_dir.expanduser().resolve()
+    _read_pins(project_dir)
+    if re.fullmatch(r"[0-9a-f]{64}", prior_circuit_approval_fingerprint) is None:
+        raise CircuitReviewInputError(
+            "CIRCUIT reopen baseline requires a prior approval fingerprint"
+        )
+    payload = _source_baseline_payload(project_dir)
+    payload["baseline_kind"] = "circuit-reopen"
+    payload["prior_circuit_approval_fingerprint"] = (
+        prior_circuit_approval_fingerprint
+    )
+    path = project_dir / REOPEN_BASELINE_PATH
+    _atomic_write(path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    return REOPEN_BASELINE_PATH
+
+
+def proposal_baseline_path(project_dir: Path) -> Path:
+    """Return the baseline that guards the next CIRCUIT proposal."""
+    project_dir = project_dir.expanduser().resolve()
+    reopen = project_dir / REOPEN_BASELINE_PATH
+    return reopen if reopen.is_file() else project_dir / BASELINE_PATH
 
 
 def baseline_is_current(project_dir: Path) -> tuple[bool, str]:
     """Check that physical circuit source did not change before approval."""
     project_dir = project_dir.expanduser().resolve()
-    path = project_dir / BASELINE_PATH
+    path = proposal_baseline_path(project_dir)
     try:
         saved = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return (
             False,
-            f"missing {BASELINE_PATH.as_posix()}; rerun finish-architect",
+            f"missing {path.relative_to(project_dir).as_posix()}; "
+            "rerun finish-architect",
         )
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        return False, f"invalid {BASELINE_PATH.as_posix()}: {exc}"
+        return False, f"invalid {path.relative_to(project_dir).as_posix()}: {exc}"
     current = _source_baseline_payload(project_dir)
     if not isinstance(saved, dict) or saved.get("fingerprint") != current["fingerprint"]:
         return (
             False,
             "physical source or board topology changed before proposal approval",
         )
+    if path == project_dir / REOPEN_BASELINE_PATH:
+        return True, "approved CIRCUIT reopen baseline is unchanged"
     return True, "pre-CIRCUIT source baseline is unchanged"
 
 
@@ -1208,7 +1241,7 @@ def circuit_review_inputs(project_dir: Path, stage: str) -> tuple[Path, ...]:
         project_dir / CONTRACT_FILENAME,
         project_dir / "spec.md",
         project_dir / "docs" / "architecture.md",
-        project_dir / BASELINE_PATH,
+        proposal_baseline_path(project_dir),
         project_dir / contract.model,
         project_dir / contract.schematic,
         audit_path_for(project_dir),
@@ -1383,7 +1416,7 @@ def check_circuit_review(
         "compiler_net_names": compiler_names,
         "material_differences": [],
         "source_baseline_sha256": hashlib.sha256(
-            (project_dir / BASELINE_PATH).read_bytes()
+            proposal_baseline_path(project_dir).read_bytes()
         ).hexdigest(),
     }
     if stage == "final":

@@ -17,6 +17,13 @@ exception gates.
 
 ## Gate A — explanatory circuit proposal before source edits
 
+If this is a material revision to an already approved CIRCUIT, first run
+`pcbforge status mark circuit reopened --note "<user-requested change>"` while
+the approved proposal, source, and board topology are still unchanged. The
+command verifies the prior approval and captures the approved implementation as
+the new pre-proposal baseline. Do not edit the proposal first, and do not use
+`finish-architect` to recapture a CIRCUIT-only revision.
+
 `pcbforge finish-architect` captures
 `review/circuit/source-baseline.json`. Do not change physical Atopile module
 bodies, part definitions, values, footprints, connectivity, or the product PCB

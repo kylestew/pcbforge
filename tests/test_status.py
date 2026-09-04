@@ -12,6 +12,7 @@ from unittest import mock
 import yaml
 
 from pcbforge.build_test import fingerprint_inputs
+from pcbforge.circuit_review import capture_reopen_baseline
 from pcbforge.cli import main
 from pcbforge.policy import load_policy_profile, render_default_policy
 from pcbforge.initialize import read_spec
@@ -30,6 +31,7 @@ from pcbforge.status import (
     StatusInputError,
     TransitionEvent,
     _approval_fingerprint,
+    _architecture_baseline_payload,
     _check_inputs,
     _approval_gate_sequence,
     _approval_payload,
@@ -1080,6 +1082,208 @@ class DashboardTests(StatusFixture):
                 [event.action for event in reopened.report.document.events],
                 ["complete", "reopened"],
             )
+
+    def test_circuit_reopen_captures_only_a_current_approved_implementation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            prior = StatusEvent(
+                "2026-07-26T10:00:00+00:00",
+                "circuit",
+                "complete",
+                "Approved CIRCUIT",
+                "a" * 64,
+            )
+            write_status(
+                project,
+                document=StatusDocument(updated_at="", events=(prior,), checks={}),
+            )
+            saved = mock.sentinel.status_result
+            with (
+                mock.patch(
+                    "pcbforge.status._approval_is_current",
+                    return_value=True,
+                ) as approval_current,
+                mock.patch(
+                    "pcbforge.status.capture_reopen_baseline",
+                ) as capture,
+                mock.patch(
+                    "pcbforge.status.write_status",
+                    return_value=saved,
+                ) as persist,
+            ):
+                result = mark_status(
+                    project,
+                    "circuit",
+                    "reopened",
+                    "Replace J1",
+                )
+
+            self.assertIs(result, saved)
+            approval_current.assert_called_once()
+            capture.assert_called_once_with(project.resolve(), "a" * 64)
+            recorded = persist.call_args.kwargs["document"].events[-1]
+            self.assertEqual((recorded.phase, recorded.action), ("circuit", "reopened"))
+
+            with (
+                mock.patch(
+                    "pcbforge.status._approval_is_current",
+                    return_value=False,
+                ),
+                mock.patch(
+                    "pcbforge.status.capture_reopen_baseline",
+                ) as rejected_capture,
+            ):
+                with self.assertRaisesRegex(
+                    StatusInputError,
+                    "restore the last approved CIRCUIT",
+                ):
+                    mark_status(
+                        project,
+                        "circuit",
+                        "reopened",
+                        "Changed too early",
+                    )
+            rejected_capture.assert_not_called()
+
+    def test_circuit_reopen_recovers_only_an_unchanged_automatic_baseline_reopen(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True)
+            baseline_fingerprint = _payload_fingerprint(
+                _architecture_baseline_payload(project, StatusDocument("", (), {}))
+            )
+            prior = StatusEvent(
+                "2026-07-26T10:00:00+00:00",
+                "circuit",
+                "complete",
+                "Approved CIRCUIT",
+                "a" * 64,
+            )
+            transitions = (
+                TransitionEvent(
+                    "2026-07-26T09:00:00+00:00",
+                    "architecture-baseline",
+                    "complete",
+                    "Architecture checked",
+                    content_fingerprint=baseline_fingerprint,
+                ),
+                TransitionEvent(
+                    "2026-07-26T10:30:00+00:00",
+                    "architecture-baseline",
+                    "reopened",
+                    "Automatic transition invalidated because ARCHITECT proposal or baseline content changed",
+                ),
+            )
+            write_status(
+                project,
+                document=StatusDocument(
+                    updated_at="",
+                    events=(prior,),
+                    checks={},
+                    transition_events=transitions,
+                ),
+            )
+            saved = mock.sentinel.status_result
+            with (
+                mock.patch(
+                    "pcbforge.status._approval_is_current",
+                    return_value=True,
+                ),
+                mock.patch("pcbforge.status.capture_reopen_baseline"),
+                mock.patch(
+                    "pcbforge.status.write_status",
+                    return_value=saved,
+                ) as persist,
+            ):
+                result = mark_status(
+                    project,
+                    "circuit",
+                    "reopened",
+                    "Replace J1",
+                    now="2026-07-26T11:00:00+00:00",
+                )
+
+            self.assertIs(result, saved)
+            recovered = persist.call_args.kwargs["document"].transition_events[-1]
+            self.assertEqual(recovered.action, "complete")
+            self.assertEqual(recovered.content_fingerprint, baseline_fingerprint)
+
+            changed = StatusDocument(
+                updated_at="",
+                events=(prior,),
+                checks={},
+                transition_events=(
+                    replace(transitions[0], content_fingerprint="b" * 64),
+                    transitions[1],
+                ),
+            )
+            write_status(project, document=changed)
+            with (
+                mock.patch(
+                    "pcbforge.status._approval_is_current",
+                    return_value=True,
+                ),
+                mock.patch("pcbforge.status.capture_reopen_baseline") as capture,
+            ):
+                with self.assertRaisesRegex(
+                    StatusInputError,
+                    "cannot recover the ARCHITECT baseline",
+                ):
+                    mark_status(
+                        project,
+                        "circuit",
+                        "reopened",
+                        "Unsafe recovery",
+                    )
+            capture.assert_not_called()
+
+    def test_circuit_reopen_reuses_a_previously_captured_bound_baseline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary), initialized=True).resolve()
+            prior = StatusEvent(
+                "2026-07-26T10:00:00+00:00",
+                "circuit",
+                "complete",
+                "Approved CIRCUIT",
+                "a" * 64,
+            )
+            reopened = StatusEvent(
+                "2026-07-26T10:30:00+00:00",
+                "circuit",
+                "reopened",
+                "Approved connector replacement requested",
+            )
+            write_status(
+                project,
+                document=StatusDocument(
+                    updated_at="",
+                    events=(prior, reopened),
+                    checks={},
+                ),
+            )
+            capture_reopen_baseline(project, "a" * 64)
+            saved = mock.sentinel.status_result
+            with (
+                mock.patch(
+                    "pcbforge.status._approval_is_current",
+                    return_value=False,
+                ),
+                mock.patch(
+                    "pcbforge.status.capture_reopen_baseline",
+                ) as recapture,
+                mock.patch(
+                    "pcbforge.status.write_status",
+                    return_value=saved,
+                ),
+            ):
+                result = mark_status(
+                    project,
+                    "circuit",
+                    "reopened",
+                    "Resume an interrupted reopen",
+                )
+
+            self.assertIs(result, saved)
+            recapture.assert_not_called()
 
     def test_reopened_phase_invalidates_older_downstream_confirmations(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

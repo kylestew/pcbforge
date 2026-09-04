@@ -77,6 +77,17 @@ pcbforge finish-architect
 Changed approved artifacts reopen the affected gate. Restoring old bytes or
 rerunning checks does not revive approval.
 
+For a deliberate material revision to an approved CIRCUIT, reopen it before
+editing any proposal or implementation artifact:
+
+```text
+pcbforge status mark circuit reopened --note "<user-requested change>"
+```
+
+This verifies the current CIRCUIT approval and captures that approved physical
+implementation as the next proposal's guard baseline. A CIRCUIT-only revision
+does not rerun the ARCHITECT baseline transition.
+
 When an upstream contract changes, refresh saved checks and run
 `pcbforge status review --cascade` before repeating individual gates. The
 cascade packet proves which gate-owned semantic slices are unchanged and stops

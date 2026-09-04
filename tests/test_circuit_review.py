@@ -14,12 +14,16 @@ from pcbforge.cli import main
 from pcbforge.artifact_hash import semantic_pin_bytes
 from pcbforge import circuit_review
 from pcbforge.circuit_review import (
+    REOPEN_BASELINE_PATH,
     CircuitReviewError,
     CircuitReviewInputError,
+    baseline_is_current,
     capture_implementation_baseline,
+    capture_reopen_baseline,
     check_circuit_review,
     circuit_model_fingerprint,
     circuit_review_status_fingerprint,
+    proposal_baseline_path,
     read_circuit_model,
 )
 from pcbforge.status import (
@@ -232,6 +236,63 @@ final_narrative: docs/{final_name}
 
 
 class CircuitReviewTests(CircuitReviewFixture):
+    def test_reopen_baseline_guards_an_approved_implementation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            original_baseline = (
+                project / "review/circuit/source-baseline.json"
+            ).read_bytes()
+            source = project / "src/main.ato"
+            source.write_text(
+                source.read_text(encoding="utf-8") + "# approved circuit\n",
+                encoding="utf-8",
+            )
+
+            path = capture_reopen_baseline(project, "a" * 64)
+            saved = json.loads((project / path).read_text(encoding="utf-8"))
+
+            self.assertEqual(path, REOPEN_BASELINE_PATH)
+            self.assertEqual(
+                proposal_baseline_path(project),
+                project.resolve() / path,
+            )
+            self.assertEqual(saved["baseline_kind"], "circuit-reopen")
+            self.assertEqual(
+                saved["prior_circuit_approval_fingerprint"],
+                "a" * 64,
+            )
+            self.assertEqual(
+                (project / "review/circuit/source-baseline.json").read_bytes(),
+                original_baseline,
+            )
+            self.assertEqual(
+                baseline_is_current(project),
+                (True, "approved CIRCUIT reopen baseline is unchanged"),
+            )
+            check_circuit_review(project, "proposal", write=True)
+
+            source.write_text(
+                source.read_text(encoding="utf-8") + "# premature edit\n",
+                encoding="utf-8",
+            )
+            self.assertFalse(baseline_is_current(project)[0])
+
+            capture_implementation_baseline(project)
+            self.assertFalse((project / REOPEN_BASELINE_PATH).exists())
+            self.assertEqual(
+                proposal_baseline_path(project),
+                project.resolve() / "review/circuit/source-baseline.json",
+            )
+
+    def test_reopen_baseline_requires_an_approval_fingerprint(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            with self.assertRaisesRegex(
+                CircuitReviewInputError,
+                "prior approval fingerprint",
+            ):
+                capture_reopen_baseline(project, "not-a-fingerprint")
+
     def test_proposal_writes_stable_authored_schematic_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))

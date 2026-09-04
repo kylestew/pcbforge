@@ -32,15 +32,18 @@ from pcbforge.build_test import (
 )
 from pcbforge.circuit_review import (
     BASELINE_PATH,
+    REOPEN_BASELINE_PATH,
     SCHEMATIC_AUDIT_PATH,
     CONTRACT_FILENAME as CIRCUIT_REVIEW_FILENAME,
     CircuitReviewError,
     CircuitReviewInputError,
     baseline_is_current,
     capture_implementation_baseline,
+    capture_reopen_baseline,
     check_circuit_review,
     circuit_review_inputs,
     circuit_review_status_fingerprint,
+    proposal_baseline_path,
 )
 from pcbforge.initialize import InitInputError, ProjectSpec, STATUS_SCHEMA, read_spec
 from pcbforge.ioc import IocProjectError, IocValidationError, check_ioc
@@ -5673,9 +5676,116 @@ def mark_status(
                 ),
             ),
         )
+    reopen_approval: StatusEvent | None = None
+    recovered_architecture_baseline: TransitionEvent | None = None
+    if phase == "circuit" and action == "reopened":
+        reopen_approval = next(
+            (
+                event
+                for event in reversed(document.events)
+                if event.phase == "circuit"
+                and event.action == "complete"
+                and event.approval_fingerprint
+            ),
+            None,
+        )
+        approval_is_current = reopen_approval is not None and _approval_is_current(
+            project_dir,
+            "circuit",
+            reopen_approval,
+            document,
+        )
+        reopen_baseline_is_current = False
+        if reopen_approval is not None and not approval_is_current:
+            reopen_path = project_dir / REOPEN_BASELINE_PATH
+            try:
+                reopen_payload = json.loads(reopen_path.read_text(encoding="utf-8"))
+            except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
+                reopen_payload = None
+            prior_reopen_recorded = any(
+                event.phase == "circuit"
+                and event.action == "reopened"
+                and not event.note.startswith(
+                    "Approval invalidated automatically because"
+                )
+                for event in document.events
+            )
+            reopen_baseline_is_current = (
+                prior_reopen_recorded
+                and isinstance(reopen_payload, dict)
+                and reopen_payload.get("prior_circuit_approval_fingerprint")
+                == reopen_approval.approval_fingerprint
+                and proposal_baseline_path(project_dir) == reopen_path
+                and baseline_is_current(project_dir)[0]
+            )
+        if reopen_approval is None or not (
+            approval_is_current or reopen_baseline_is_current
+        ):
+            raise StatusInputError(
+                "cannot reopen CIRCUIT after its approved artifacts or physical "
+                "implementation changed; restore the last approved CIRCUIT first"
+            )
+        latest_baseline = _latest_transition_events(document.transition_events).get(
+            "architecture-baseline"
+        )
+        if (
+            latest_baseline is not None
+            and latest_baseline.action == "reopened"
+            and latest_baseline.note.startswith(
+                "Automatic transition invalidated because"
+            )
+        ):
+            prior_baseline = next(
+                (
+                    event
+                    for event in reversed(document.transition_events)
+                    if event.transition == "architecture-baseline"
+                    and event.action == "complete"
+                    and event.content_fingerprint
+                ),
+                None,
+            )
+            current_fingerprint = _payload_fingerprint(
+                _architecture_baseline_payload(project_dir, document)
+            )
+            if (
+                prior_baseline is None
+                or prior_baseline.content_fingerprint != current_fingerprint
+            ):
+                raise StatusInputError(
+                    "cannot recover the ARCHITECT baseline during CIRCUIT reopen; "
+                    "its approved proposal, source baseline, or checks changed"
+                )
+            recovered_architecture_baseline = TransitionEvent(
+                now or _now(),
+                "architecture-baseline",
+                "complete",
+                "Recovered unchanged ARCHITECT baseline while reopening CIRCUIT",
+                content_fingerprint=current_fingerprint,
+            )
     initial = inspect_status(project_dir, document=document)
     _validate_transition(initial, phase, action)
+    if (
+        reopen_approval is not None
+        and not (project_dir / REOPEN_BASELINE_PATH).is_file()
+    ):
+        capture_reopen_baseline(
+            project_dir,
+            reopen_approval.approval_fingerprint,
+        )
     event_time = now or _now()
+    if recovered_architecture_baseline is not None:
+        recovered_architecture_baseline = replace(
+            recovered_architecture_baseline,
+            at=event_time,
+        )
+        document = replace(
+            document,
+            transition_events=(
+                *document.transition_events,
+                recovered_architecture_baseline,
+            ),
+        )
     event = StatusEvent(
         event_time,
         phase,

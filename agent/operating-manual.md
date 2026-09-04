@@ -145,6 +145,19 @@ approval fingerprint. Never use it across a `delta`, a failed check, or a gate
 the user explicitly reopened. Events without content fingerprints require the
 normal per-gate review ceremony.
 
+When an approved CIRCUIT needs a material part or topology change, record the
+reopen before editing its proposal or physical implementation:
+
+```text
+pcbforge status mark circuit reopened --note "<user-requested change>"
+```
+
+The command first verifies the last CIRCUIT approval is still byte-current,
+then captures that approved implementation as the baseline for the replacement
+proposal. It fails closed if proposal artifacts, source, or board topology were
+already changed. After it succeeds, repeat the normal CIRCUIT proposal and
+final gates; do not rerun `finish-architect` for a CIRCUIT-only change.
+
 Review commands save the latest ready packet in `STATUS.md`.
 `--last-reviewed` recomputes it before approval and fails closed if artifacts
 changed. The explicit `--fingerprint <sha256>` form remains available for
