@@ -12,6 +12,7 @@ import copy
 import math
 import re
 from dataclasses import dataclass
+from fnmatch import fnmatch
 from functools import lru_cache
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
@@ -114,9 +115,18 @@ class LibSymbol:
 
 @dataclass(frozen=True)
 class SymbolChoice:
+    """One resolved symbol and the search that led to it.
+
+    ``candidates`` lists every official id tried in order; ``rejected``
+    pairs each rejected id with why its pins do not fit the pads.
+    """
+
     symbol: LibSymbol
     reason: str
     generic: bool
+    candidates: tuple[str, ...] = ()
+    rejected: tuple[tuple[str, str], ...] = ()
+    pads_source: str = ""
 
 
 # ----------------------------------------------------------------------
@@ -498,7 +508,14 @@ _KIND_SYMBOLS: Mapping[str, tuple[str, ...]] = {
     "crystal": ("Device:Crystal", "Device:Crystal_GND24"),
     "fuse": ("Device:Fuse", "Device:Polyfuse"),
     "battery": ("Device:Battery_Cell", "Device:Battery"),
-    "switch": ("Switch:SW_Push", "Switch:SW_SPST", "Switch:SW_DIP_x01"),
+    "switch": (
+        "Switch:SW_Push",
+        "Switch:SW_SPST",
+        "Switch:SW_DIP_x01",
+        "Device:RotaryEncoder",
+        "Device:RotaryEncoder_Switch",
+        "Device:RotaryEncoder_Switch_MP",
+    ),
     "test-point": ("Connector:TestPoint",),
     "mechanical": (
         "Mechanical:MountingHole",
@@ -508,62 +525,132 @@ _KIND_SYMBOLS: Mapping[str, tuple[str, ...]] = {
     "mosfet": ("Device:Q_NMOS_GSD", "Device:Q_PMOS_GSD"),
     "transistor": ("Device:Q_NPN_BEC", "Device:Q_PNP_BEC"),
 }
-_MPN_LIBS = (
-    "Transistor_FET",
-    "Transistor_BJT",
-    "Regulator_Linear",
-    "Regulator_Switching",
-    "MCU_ST_STM32L0",
-    "MCU_ST_STM32F0",
-    "MCU_ST_STM32F1",
-    "MCU_ST_STM32F4",
-    "MCU_ST_STM32G0",
-    "MCU_ST_STM32G4",
-    "MCU_Microchip_ATmega",
-    "MCU_Microchip_ATtiny",
-    "MCU_RaspberryPi",
-    "MCU_Espressif",
+# Official libraries searched by MPN, as glob patterns over the pinned
+# directory so every family present is covered without listing each one.
+_MPN_LIB_PATTERNS = (
+    "MCU_*",
+    "Regulator_*",
+    "Transistor_*",
     "Diode",
     "LED",
-    "Sensor_Temperature",
-    "Sensor_Motion",
-    "Interface_USB",
-    "Interface_UART",
-    "Driver_Motor",
-    "Power_Protection",
-    "Jumper",
-    "Memory_EEPROM",
-    "Memory_Flash",
-    "Amplifier_Operational",
+    "Sensor_*",
+    "Interface_*",
+    "Driver_*",
+    "Power_*",
+    "Memory_*",
+    "Amplifier_*",
+    "Comparator",
+    "Reference_Voltage",
+    "Timer*",
+    "Logic_*",
+    "Isolator*",
+    "Converter_*",
+    "Battery_Management",
+    "RF_*",
+    "Display_*",
+    "Audio",
+    "Relay*",
     "Connector",
     "Connector_Generic",
     "Switch",
     "Crystal",
     "Oscillator",
+    "Jumper",
+)
+# Footprint library -> (symbol library, symbol-name pattern): the official
+# footprint family says where the matching official symbols live.
+_FOOTPRINT_HINTS: tuple[tuple[str, str, str], ...] = (
+    ("Rotary_Encoder", "Device", r"^RotaryEncoder"),
+    ("Connector_USB", "Connector", r"^USB_"),
+    ("Connector_JST", "Connector_Generic", r"^Conn_0[12]x"),
+    ("Connector_Molex", "Connector_Generic", r"^Conn_0[12]x"),
+    ("Connector_PinHeader", "Connector_Generic", r"^Conn_0[12]x"),
+    ("Connector_PinSocket", "Connector_Generic", r"^Conn_0[12]x"),
+    ("Connector_Audio", "Connector", r"^AudioJack"),
+    ("Connector_BarrelJack", "Connector", r"^Barrel_Jack"),
+    ("Connector_Card", "Connector", r"^(SD|microSD|Micro_SD)"),
+    ("Button_Switch", "Switch", r"^SW_"),
+    ("Crystal", "Device", r"^Crystal"),
+    ("Oscillator", "Oscillator", r"."),
+    ("Fuse", "Device", r"^(Fuse|Polyfuse)"),
+    ("Inductor", "Device", r"^L$"),
+    ("LED_", "Device", r"^LED$"),
+    ("Diode_", "Device", r"^D(_Schottky|_Zener|_TVS)?$"),
+    ("TestPoint", "Connector", r"^TestPoint$"),
+    ("MountingHole", "Mechanical", r"^MountingHole"),
+    ("Battery", "Device", r"^Battery"),
+    ("Jumper", "Jumper", r"^SolderJumper"),
 )
 
 
+def _canonical(text: str) -> str:
+    return re.sub(r"[^A-Za-z0-9]", "", text).upper()
+
+
+def _mpn_libraries(directory: Path) -> list[Path]:
+    paths = sorted(Path(directory).glob("*.kicad_sym"))
+    return [p for p in paths if any(fnmatch(p.stem, pattern) for pattern in _MPN_LIB_PATTERNS)]
+
+
+@lru_cache(maxsize=None)
+def _library_text_upper(path: str) -> str:
+    try:
+        return Path(path).read_text(encoding="utf-8", errors="replace").upper()
+    except OSError:
+        return ""
+
+
 def _mpn_candidates(mpn: str, directory: Path) -> list[str]:
-    """Stock symbols whose name is a prefix match of the MPN (e.g. STM32L011F4Px)."""
-    token = re.sub(r"[^A-Za-z0-9]", "", mpn).upper()
-    if len(token) < 4:
+    """Official symbols named for the MPN, exact first, then KiCad's ``x`` wildcards.
+
+    ``STM32G0B1KBT6`` finds ``MCU_ST_STM32G0:STM32G0B1KBTx``; the exact part
+    number stays the model value, the wildcard name is only the drawing.
+    """
+    token = _canonical(mpn)
+    if len(token) < 4 or token == "NA":
         return []
-    found: list[str] = []
-    for lib in _MPN_LIBS:
-        path = Path(directory) / f"{lib}.kicad_sym"
-        if not path.is_file():
+    exact: list[str] = []
+    wildcard: list[str] = []
+    prefix: list[str] = []
+    probe = token[:6]
+    for path in _mpn_libraries(directory):
+        # cheap pre-filter: a library that never mentions the first characters
+        # of the part number cannot name it
+        if probe not in _library_text_upper(str(path)):
             continue
+        lib = path.stem
         for name in _library(str(path)):
-            canonical = re.sub(r"[^A-Za-z0-9]", "", name).upper()
-            if not canonical or len(canonical) < 4:
+            canonical = _canonical(name)
+            if len(canonical) < 4:
                 continue
             if canonical == token:
-                found.insert(0, f"{lib}:{name}")
+                exact.append(f"{lib}:{name}")
                 continue
-            # KiCad uses x for package variants: STM32L011F4Px matches STM32L011F4P6
-            pattern = "^" + re.escape(canonical).replace("X", "[A-Z0-9]") + "$"
-            if re.match(pattern, token) or token.startswith(canonical):
-                found.append(f"{lib}:{name}")
+            if "X" in canonical:
+                pattern = "^" + re.escape(canonical).replace("X", "[A-Z0-9]") + "$"
+                if re.match(pattern, token):
+                    wildcard.append(f"{lib}:{name}")
+                    continue
+            if token.startswith(canonical):
+                prefix.append(f"{lib}:{name}")
+    return exact + wildcard + prefix
+
+
+def _footprint_candidates(footprint: str, directory: Path) -> list[str]:
+    """Official symbols suggested by the footprint's library family."""
+    if ":" not in footprint:
+        return []
+    fp_lib = footprint.split(":", 1)[0]
+    found: list[str] = []
+    for fp_prefix, sym_lib, pattern in _FOOTPRINT_HINTS:
+        if not fp_lib.startswith(fp_prefix):
+            continue
+        path = Path(directory) / f"{sym_lib}.kicad_sym"
+        if not path.is_file():
+            continue
+        for name in sorted(_library(str(path))):
+            if re.search(pattern, name):
+                found.append(f"{sym_lib}:{name}")
     return found
 
 
@@ -571,6 +658,33 @@ def connector_symbol(pad_count: int, rows: int = 1) -> str:
     if rows == 2:
         return f"Connector_Generic:Conn_02x{pad_count // 2:02d}_Odd_Even"
     return f"Connector_Generic:Conn_01x{pad_count:02d}"
+
+
+def official_candidates(
+    *,
+    kind: str,
+    mpn: str,
+    footprint: str,
+    pad_count: int,
+    directory: Path,
+) -> list[str]:
+    """Ordered official symbol ids worth trying: MPN, kind, footprint family, generic connectors."""
+    ordered: list[str] = []
+    ordered += _mpn_candidates(mpn, directory)
+    if kind != "connector":
+        ordered += _KIND_SYMBOLS.get(kind, ())
+    ordered += _footprint_candidates(footprint, directory)
+    if kind == "connector" and pad_count:
+        ordered.append(connector_symbol(pad_count))
+        if pad_count % 2 == 0:
+            ordered.append(connector_symbol(pad_count, rows=2))
+    seen: set[str] = set()
+    unique: list[str] = []
+    for lib_id in ordered:
+        if lib_id not in seen:
+            seen.add(lib_id)
+            unique.append(lib_id)
+    return unique
 
 
 def choose_symbol(
@@ -586,64 +700,126 @@ def choose_symbol(
     pin_names: Mapping[str, str] | None = None,
     pin_sides: Mapping[str, str] | None = None,
     pin_pitch: float = 2.54,
+    footprint: str = "",
+    pads_source: str = "",
 ) -> SymbolChoice:
-    """Pick a stock symbol whose pin numbers equal the footprint pads, else a box.
+    """Official symbol first: the one whose pin numbers equal every footprint pad.
 
-    ``override`` may be ``"Lib:Name"`` (must still match pads) or ``"generic"``.
+    ``board_pads`` should be the complete physical pad list (board, or the
+    footprint file before a board exists); unused pins count. ``override``
+    may be ``"Lib:Name"`` (must still match the pads) or ``"generic"``, which
+    is refused while an official symbol fits — a box is a fallback, not a
+    preference. The reason and the rejected list record the search.
     """
     model_pins = set(model_pins)
-    pads = {pad for pad in board_pads if pad} or set(model_pins)
+    pads = {pad for pad in board_pads if pad}
+    source = pads_source or ("pads" if pads else "model pins")
+    if not pads:
+        pads = set(model_pins)
     names = dict(pin_names or {})
+    pads_text = ",".join(sorted(pads, key=_pad_sort_key)) or "none"
 
-    def generic(reason: str) -> SymbolChoice:
+    def generic(reason: str, candidates: Sequence[str] = (), rejected: Sequence[tuple[str, str]] = ()) -> SymbolChoice:
         numbers = sorted(pads | model_pins, key=_pad_sort_key)
+        prefix_match = re.match(r"^[A-Z]+", reference)
         symbol = generic_symbol(
             _generic_name(mpn, value, reference),
             [(number, names.get(number, "")) for number in numbers],
-            reference_prefix=re.match(r"^[A-Z]+", reference).group(0) if re.match(r"^[A-Z]+", reference) else "U",
+            reference_prefix=prefix_match.group(0) if prefix_match else "U",
             sides=pin_sides,
             pitch=pin_pitch,
         )
-        return SymbolChoice(symbol, reason, True)
+        return SymbolChoice(symbol, reason, True, tuple(candidates), tuple(rejected), source)
 
-    if override == "generic":
-        return generic("generic box requested")
-    if override:
-        symbol = lib_symbol(override, directory)
-        if not _pads_match(symbol, pads, model_pins):
-            raise SymbolError(
-                f"{reference}: {override} pins {sorted(symbol.pin_numbers, key=_pad_sort_key)} "
-                f"do not match footprint pads {sorted(pads, key=_pad_sort_key)}"
-            )
-        return SymbolChoice(symbol, f"{override} requested; pads match", False)
-
-    candidates: list[str] = []
-    if kind == "connector":
-        candidates.append(connector_symbol(len(pads)))
-        if len(pads) % 2 == 0:
-            candidates.append(connector_symbol(len(pads), rows=2))
-    candidates += _mpn_candidates(mpn, directory)
-    candidates += _KIND_SYMBOLS.get(kind, ())
-    tried: list[str] = []
+    candidates = official_candidates(
+        kind=kind, mpn=mpn, footprint=footprint, pad_count=len(pads), directory=directory
+    )
+    rejected: list[tuple[str, str]] = []
+    official: tuple[str, LibSymbol] | None = None
     for lib_id in candidates:
         try:
             symbol = lib_symbol(lib_id, directory)
-        except SymbolError:
+        except SymbolError as exc:
+            rejected.append((lib_id, f"not loadable: {exc}"))
             continue
-        if _pads_match(symbol, pads, model_pins):
-            return SymbolChoice(symbol, f"{lib_id}: stock symbol, pads match", False)
-        tried.append(lib_id)
-    if tried:
+        mismatch = _mismatch(symbol, pads, model_pins)
+        if mismatch is None:
+            official = (lib_id, symbol)
+            break
+        rejected.append((lib_id, mismatch))
+
+    if override == "generic":
+        if official is not None:
+            raise SymbolError(
+                f"{reference}: generic box refused — official symbol {official[0]} matches all "
+                f"{len(pads)} pads ({source}); place it (symbol={official[0]!r}) or drop the override"
+            )
         return generic(
-            "generic box: pads " + ",".join(sorted(pads, key=_pad_sort_key))
-            + " do not match " + ", ".join(tried)
+            f"generic box requested; no official symbol matches pads {pads_text} ({source})"
+            + _rejected_text(rejected),
+            candidates,
+            rejected,
         )
-    return generic("generic box: no stock candidate")
+    if override:
+        symbol = lib_symbol(override, directory)
+        mismatch = _mismatch(symbol, pads, model_pins)
+        if mismatch is not None:
+            raise SymbolError(
+                f"{reference}: {override} pins {sorted(symbol.pin_numbers, key=_pad_sort_key)} "
+                f"do not match footprint pads {sorted(pads, key=_pad_sort_key)} ({source}): {mismatch}"
+            )
+        return SymbolChoice(
+            symbol,
+            f"{override} requested; pins match all {len(pads)} pads ({source})",
+            False,
+            tuple(candidates),
+            tuple(rejected),
+            source,
+        )
+    if official is not None:
+        lib_id, symbol = official
+        return SymbolChoice(
+            symbol,
+            f"{lib_id}: official symbol, pins match all {len(pads)} pads ({source})",
+            False,
+            tuple(candidates),
+            tuple(rejected),
+            source,
+        )
+    if rejected:
+        return generic(
+            f"generic box: pads {pads_text} ({source}) do not match "
+            + ", ".join(f"{lib_id} ({why})" for lib_id, why in rejected),
+            candidates,
+            rejected,
+        )
+    return generic(
+        f"generic box: no official candidate for kind {kind!r}, mpn {mpn!r}, footprint {footprint or '-'!r}",
+        candidates,
+        rejected,
+    )
 
 
-def _pads_match(symbol: LibSymbol, pads: set[str], model_pins: set[str]) -> bool:
+def _rejected_text(rejected: Sequence[tuple[str, str]]) -> str:
+    if not rejected:
+        return ""
+    return "; tried " + ", ".join(f"{lib_id} ({why})" for lib_id, why in rejected)
+
+
+def _mismatch(symbol: LibSymbol, pads: set[str], model_pins: set[str]) -> str | None:
+    """Why the symbol's pin numbers differ from the pads, or None when they fit."""
     numbers = {pin.number for pin in symbol.pins}
-    return numbers == pads and model_pins <= numbers
+    problems: list[str] = []
+    missing = sorted(numbers - pads, key=_pad_sort_key)
+    if missing:
+        problems.append("symbol pins without a pad: " + ",".join(missing))
+    extra = sorted(pads - numbers, key=_pad_sort_key)
+    if extra:
+        problems.append("pads without a symbol pin: " + ",".join(extra))
+    unmapped = sorted(model_pins - numbers, key=_pad_sort_key)
+    if unmapped and not extra:
+        problems.append("model pins without a symbol pin: " + ",".join(unmapped))
+    return "; ".join(problems) or None
 
 
 def _pad_sort_key(pad: str) -> tuple[int, int | str]:
@@ -669,6 +845,7 @@ __all__ = [
     "lib_symbol",
     "library_names",
     "load_stock",
+    "official_candidates",
     "power_symbol",
     "symbols_dir",
 ]

@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from pcbforge import circuit_review, kicad_sym, sexpr
+from pcbforge import circuit_review, kicad_fp, kicad_sym, sexpr
 from pcbforge.cli import main
 from pcbforge.kicad_sch import (
     REVIEW_MARKER,
@@ -14,11 +14,13 @@ from pcbforge.kicad_sch import (
     RenderResult,
     ReviewSchematic,
     SchematicError,
+    _board_pads,
     probe_text,
 )
 from pcbforge.sch_lint import Box, SheetGeometry, TextBox, lint
-from tests.kicad_fake import FIXTURE_SYMBOLS, FakeKicad
-from tests.test_circuit_review import CircuitReviewFixture
+from tests.connected_fixture import CONNECTED_MODEL, CONNECTED_PADS, _UNUSED_PINS, connected_nets, draw_connected
+from tests.kicad_fake import FIXTURE_FOOTPRINTS, FIXTURE_SYMBOLS, FakeKicad
+from tests.test_circuit_review import SPEC, CircuitReviewFixture
 
 TOOL_ROOT = Path(__file__).resolve().parents[1]
 KICAD9 = Path("/Applications/KiCad 9/KiCad.app/Contents/MacOS/kicad-cli")
@@ -177,6 +179,8 @@ class SymbolTests(unittest.TestCase):
         choice = kicad_sym.choose_symbol(kind="resistor", mpn="x", board_pads={"A", "K"}, **dict(common, model_pins={"A"}))
         self.assertTrue(choice.generic)
         self.assertIn("do not match Device:R", choice.reason)
+        self.assertEqual(choice.candidates, ("Device:R",))
+        self.assertEqual(choice.rejected, (("Device:R", "symbol pins without a pad: 1,2; pads without a symbol pin: A,K"),))
         choice = kicad_sym.choose_symbol(kind="mosfet", mpn="AO3401A", board_pads={"1", "2", "3"}, **dict(common, model_pins={"1"}))
         self.assertEqual(choice.symbol.lib_id, "Transistor_FET:AO3401A")
         choice = kicad_sym.choose_symbol(kind="mechanical", mpn="MountingHole_3.2mm_M3", board_pads={""}, **dict(common, model_pins=set()))
@@ -185,8 +189,110 @@ class SymbolTests(unittest.TestCase):
         self.assertEqual(choice.symbol.lib_id, "Connector_Generic:Conn_02x05_Odd_Even")
         with self.assertRaisesRegex(kicad_sym.SymbolError, "do not match footprint pads"):
             kicad_sym.choose_symbol(kind="resistor", mpn="x", board_pads={"1", "2", "3"}, override="Device:R", **common)
-        choice = kicad_sym.choose_symbol(kind="resistor", mpn="x", board_pads={"1", "2"}, override="generic", **common)
+        with self.assertRaisesRegex(kicad_sym.SymbolError, "generic box refused — official symbol Device:R matches"):
+            kicad_sym.choose_symbol(kind="resistor", mpn="x", board_pads={"1", "2"}, override="generic", **common)
+        choice = kicad_sym.choose_symbol(kind="resistor", mpn="x", board_pads={"A", "K"}, override="generic", **dict(common, model_pins={"A"}))
         self.assertTrue(choice.generic)
+        self.assertIn("generic box requested; no official symbol matches", choice.reason)
+
+    def test_official_search_covers_mpn_wildcards_and_footprint_families(self) -> None:
+        common = dict(value="v", directory=FIXTURE_SYMBOLS)
+        # the exact part number stays the value; KiCad's x-suffixed name is only the drawing
+        choice = kicad_sym.choose_symbol(
+            kind="ic", mpn="STM32G0B1KBT6", reference="U1", model_pins={"4", "5"},
+            board_pads={str(n) for n in range(1, 33)}, footprint="Package_QFP:LQFP-32_7x7mm_P0.8mm",
+            pads_source="official footprint", **common,
+        )
+        self.assertEqual(choice.symbol.lib_id, "MCU_ST_STM32G0:STM32G0B1KBTx")
+        self.assertFalse(choice.generic)
+        self.assertEqual(choice.reason, "MCU_ST_STM32G0:STM32G0B1KBTx: official symbol, pins match all 32 pads (official footprint)")
+        # net-connected pins alone must not pass for the full package
+        choice = kicad_sym.choose_symbol(
+            kind="ic", mpn="STM32G0B1KBT6", reference="U1", model_pins={"4", "5"}, board_pads=set(), **common,
+        )
+        self.assertTrue(choice.generic)
+        self.assertIn("MCU_ST_STM32G0:STM32G0B1KBTx (symbol pins without a pad:", choice.reason)
+        # the footprint family finds the encoder symbol, mounting pad included
+        choice = kicad_sym.choose_symbol(
+            kind="switch", mpn="EC11E15244B2", reference="SW1", model_pins={"A", "B", "C", "S1", "S2"},
+            board_pads={"A", "B", "C", "S1", "S2", "MP"},
+            footprint="Rotary_Encoder:RotaryEncoder_Alps_EC11E-Switch_Vertical_H20mm_MountingHoles", **common,
+        )
+        self.assertEqual(choice.symbol.lib_id, "Device:RotaryEncoder_Switch_MP")
+        self.assertIn("Switch:SW_Push", choice.candidates)
+        self.assertEqual(choice.candidates.index("Device:RotaryEncoder"), choice.candidates.index("Device:RotaryEncoder_Switch_MP") - 2)
+        choice = kicad_sym.choose_symbol(
+            kind="connector", mpn="GT-USB-7010ASV", reference="J1", model_pins={"A1"},
+            board_pads={"A1", "A12", "A4", "A5", "A6", "A7", "A8", "A9", "B1", "B12", "B4", "B5", "B6", "B7", "B8", "B9", "S1"},
+            footprint="Connector_USB:USB_C_Receptacle_G-Switch_GT-USB-7010ASV", **common,
+        )
+        self.assertEqual(choice.symbol.lib_id, "Connector:USB_C_Receptacle_USB2.0_16P")
+        # a keyed header has no official mapping: the fallback records what was tried and why
+        choice = kicad_sym.choose_symbol(
+            kind="connector", mpn="FTSH-105-01-L-DV-K", reference="J2", model_pins={"1", "2"},
+            board_pads=CONNECTED_PADS["J2"], footprint="knob:SWD_Header_2x05_Keyed", pads_source="board pads", **common,
+        )
+        self.assertTrue(choice.generic)
+        self.assertEqual(choice.candidates, ("Connector_Generic:Conn_01x09",))
+        self.assertIn("(board pads) do not match Connector_Generic:Conn_01x09 (symbol pins without a pad: 7; pads without a symbol pin: 10)", choice.reason)
+        self.assertEqual(choice.pads_source, "board pads")
+
+
+class PadDiscoveryTests(unittest.TestCase):
+    def test_footprint_pads_come_from_official_then_project_libraries(self) -> None:
+        pads, path = kicad_fp.footprint_pads("Package_QFP:LQFP-32_7x7mm_P0.8mm", FIXTURE_FOOTPRINTS)
+        self.assertEqual(pads, {str(n) for n in range(1, 33)})
+        self.assertEqual(path.parent.name, "Package_QFP.pretty")
+        pads, _ = kicad_fp.footprint_pads("Rotary_Encoder:RotaryEncoder_Alps_EC11E-Switch_Vertical_H20mm_MountingHoles", FIXTURE_FOOTPRINTS)
+        self.assertEqual(pads, {"A", "B", "C", "S1", "S2", "MP"})  # unnamed holes are not pads
+        self.assertIsNone(kicad_fp.footprint_pads("knob:SWD_Header_2x05_Keyed", FIXTURE_FOOTPRINTS))
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            local = project / "src" / "parts" / "knob" / "SWD_Header_2x05_Keyed.kicad_mod"
+            local.parent.mkdir(parents=True)
+            local.write_text(
+                '(footprint "knob:SWD_Header_2x05_Keyed"\n'
+                + "".join(f'  (pad "{n}" smd rect (at 0 0) (size 1 1) (layers "F.Cu"))\n' for n in CONNECTED_PADS["J2"])
+                + ")\n",
+                encoding="utf-8",
+            )
+            pads, path = kicad_fp.footprint_pads("knob:SWD_Header_2x05_Keyed", FIXTURE_FOOTPRINTS, project)
+            self.assertEqual(pads, CONNECTED_PADS["J2"])
+            self.assertEqual(path, local)
+            self.assertIsNone(kicad_fp.footprint_pads("no-colon", FIXTURE_FOOTPRINTS, project))
+
+    def test_board_pads_include_pads_without_nets(self) -> None:
+        board = """(kicad_pcb
+  (version 20241229)
+  (footprint "Package_TO_SOT_SMD:SOT-23-5"
+    (layer "F.Cu")
+    (at 110 120 0)
+    (property "Reference" "U3")
+    (pad "1" smd rect
+      (at -0.8 0)
+      (net 1 "VBUS")
+    )
+    (pad "2" smd rect
+      (at 0.8 0)
+      (net 2 "GND")
+    )
+    (pad "4" smd rect
+      (at 0 0.8)
+    )
+    (pad "" np_thru_hole circle
+      (at 0 2)
+    )
+  )
+)
+"""
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            (project / "spec.md").write_text(SPEC, encoding="utf-8")
+            self.assertEqual(_board_pads(project), {})
+            (project / "garden-logger.kicad_pcb").write_text(board, encoding="utf-8")
+            self.assertEqual(_board_pads(project), {"U3": {"1", "2", "4"}})
+            (project / "spec.md").unlink()
+            self.assertEqual(_board_pads(project), {})
 
 
 class PlacementTests(unittest.TestCase):
@@ -226,6 +332,7 @@ class SchematicFixture(unittest.TestCase):
 
     def schematic(self, **kwargs) -> ReviewSchematic:
         kwargs.setdefault("board_pads", {"J1": {"1", "2"}, "Q1": {"1", "2", "3"}})
+        kwargs.setdefault("group_boxes", True)  # the LDO drawing was laid out for boxes
         return ReviewSchematic(
             model_path=self.model_path,
             output_path=self.output,
@@ -233,9 +340,95 @@ class SchematicFixture(unittest.TestCase):
             desc="Test drawing.",
             tool_root=TOOL_ROOT,
             symbols_dir=FIXTURE_SYMBOLS,
+            footprints_dir=FIXTURE_FOOTPRINTS,
             runner=self.kicad,
             **kwargs,
         )
+
+
+class ConnectedFixture(unittest.TestCase):
+    """The connected-path reference drawing, boxes off by default."""
+
+    def setUp(self) -> None:
+        self.kicad = FakeKicad(connected_nets())
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.model_path = self.root / "circuit.yaml"
+        self.model_path.write_text(CONNECTED_MODEL, encoding="utf-8")
+        self.output = self.root / "knob.kicad_sch"
+
+    def schematic(self, **kwargs) -> ReviewSchematic:
+        kwargs.setdefault("board_pads", CONNECTED_PADS)
+        return ReviewSchematic(
+            model_path=self.model_path,
+            output_path=self.output,
+            title="knob",
+            desc="Connected reference drawing.",
+            tool_root=TOOL_ROOT,
+            symbols_dir=FIXTURE_SYMBOLS,
+            footprints_dir=FIXTURE_FOOTPRINTS,
+            runner=self.kicad,
+            **kwargs,
+        )
+
+
+class ConnectedDrawingTests(ConnectedFixture):
+    def test_official_parts_resolve_from_footprint_pads_before_a_board_exists(self) -> None:
+        sch = self.schematic()
+        self.assertEqual(sch.pad_sources["U1"], "official footprint Package_QFP:LQFP-32_7x7mm_P0.8mm")
+        self.assertEqual(sch.pad_sources["J2"], "board pads")
+        u1 = sch.symbol_for("U1")
+        self.assertEqual(u1.symbol.lib_id, "MCU_ST_STM32G0:STM32G0B1KBTx")
+        self.assertEqual(len(u1.symbol.pins), 32)
+        self.assertEqual(sch.symbol_for("SW1").symbol.lib_id, "Device:RotaryEncoder_Switch_MP")
+        self.assertEqual(sch.symbol_for("U3").symbol.lib_id, "Regulator_Linear:AP2112K-3.3")
+        self.assertEqual(sch.symbol_for("J1").symbol.lib_id, "Connector_Generic:Conn_01x04")
+        j2 = sch.symbol_for("J2")
+        self.assertTrue(j2.generic)
+        self.assertIn("symbol pins without a pad: 7", j2.reason)
+        with self.assertRaisesRegex(SchematicError, "generic box refused — official symbol Device:RotaryEncoder_Switch_MP"):
+            sch.place("SW1", (100, 100), symbol="generic")
+        text = probe_text(sch, ["U1"])
+        self.assertIn("official footprint Package_QFP", text)
+
+    def test_connected_drawing_is_clean_without_group_boxes(self) -> None:
+        sch = self.schematic()
+        draw_connected(sch)
+        result = sch.save()
+        self.assertEqual([w.payload() for w in result.warnings], [])
+        self.assertEqual({ref for ref, c in result.symbol_choices.items() if c.generic}, {"J2"})
+        root = sexpr.parse(self.output.read_text(encoding="utf-8"))
+        self.assertEqual(sexpr.children(root, "rectangle"), [])
+        texts = [sexpr.atom(node) for node in sexpr.children(root, "text")]
+        for title in ("USB entry and protection", "Encoder input", "SWD and reset"):
+            self.assertIn(title, texts)
+        self.assertTrue(any(t.startswith("Group register") and "Encoder input · Contacts" in t for t in texts))
+        symbols = {
+            sexpr.atom([p for p in sexpr.children(s, "property") if sexpr.atom(p, 1) == "Reference"][0], 2): s
+            for s in sexpr.children(root, "symbol")
+        }
+        props = {sexpr.atom(p, 1): sexpr.atom(p, 2) for p in sexpr.children(symbols["U1"], "property")}
+        self.assertEqual(sexpr.atom(sexpr.child(symbols["U1"], "lib_id")), "MCU_ST_STM32G0:STM32G0B1KBTx")
+        self.assertEqual(props["Value"], "STM32G0B1KBT6")
+        self.assertEqual(props["pcbforge_mpn"], "STM32G0B1KBT6")
+        # every unused pad is marked, nothing else is
+        self.assertEqual(len(sexpr.children(root, "no_connect")), len(_UNUSED_PINS))
+        labels = {sexpr.atom(node) for node in sexpr.children(root, "label")}
+        self.assertEqual(labels & {"USB_DM", "USB_DP", "ENC_A", "NRST"}, {"USB_DM", "USB_DP", "ENC_A", "NRST"})
+        audit = json.loads(result.audit_path.read_text(encoding="utf-8"))
+        self.assertEqual(audit["symbol_choices"]["U1"]["lib_id"], "MCU_ST_STM32G0:STM32G0B1KBTx")
+        self.assertIn("do not match Connector_Generic:Conn_01x09 (symbol pins without a pad: 7", audit["symbol_choices"]["J2"]["reason"])
+        self.assertTrue(audit["symbol_choices"]["J2"]["generic"])
+
+    def test_group_boxes_remain_available(self) -> None:
+        sch = self.schematic(group_boxes=True)
+        draw_connected(sch)
+        result = sch.save()
+        codes = {w.code for w in result.warnings}
+        self.assertIn("wire-crosses-group-box", codes)  # the connected style crosses boxes by design
+        root = sexpr.parse(self.output.read_text(encoding="utf-8"))
+        self.assertEqual(len(sexpr.children(root, "rectangle")), 6)
 
 
 class WriterTests(SchematicFixture):
@@ -599,10 +792,30 @@ class RealKicadTests(unittest.TestCase):
                 desc="Real KiCad 9 gate.",
                 tool_root=TOOL_ROOT,
                 board_pads={"J1": {"1", "2"}, "Q1": {"1", "2", "3"}},
+                group_boxes=True,
             )
             draw_ldo(sch)
             result = sch.save()
             self.assertEqual([w.payload() for w in result.warnings], [])
+
+    def test_connected_drawing_passes_real_erc_and_netlist_parity(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            model_path = root / "circuit.yaml"
+            model_path.write_text(CONNECTED_MODEL, encoding="utf-8")
+            sch = ReviewSchematic(
+                model_path=model_path,
+                output_path=root / "knob.kicad_sch",
+                title="knob",
+                desc="Real KiCad 9 gate, connected style.",
+                tool_root=TOOL_ROOT,
+                board_pads=CONNECTED_PADS,
+            )
+            draw_connected(sch)
+            result = sch.save()
+            self.assertEqual([w.payload() for w in result.warnings], [])
+            self.assertEqual(result.symbol_choices["U1"].symbol.lib_id, "MCU_ST_STM32G0:STM32G0B1KBTx")
+            self.assertEqual(result.symbol_choices["SW1"].symbol.lib_id, "Device:RotaryEncoder_Switch_MP")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,12 @@
+(footprint "Rotary_Encoder:RotaryEncoder_Alps_EC11E-Switch_Vertical_H20mm_MountingHoles"
+  (version 20241229)
+  (generator "pcbforge-test")
+  (layer "F.Cu")
+  (pad "A" smd rect (at 0.00 0) (size 1 1) (layers "F.Cu"))
+  (pad "B" smd rect (at 1.27 0) (size 1 1) (layers "F.Cu"))
+  (pad "C" smd rect (at 2.54 0) (size 1 1) (layers "F.Cu"))
+  (pad "S1" smd rect (at 3.81 0) (size 1 1) (layers "F.Cu"))
+  (pad "S2" smd rect (at 5.08 0) (size 1 1) (layers "F.Cu"))
+  (pad "MP" smd rect (at 6.35 0) (size 1 1) (layers "F.Cu"))
+  (pad "" smd rect (at 7.62 0) (size 1 1) (layers "F.Cu"))
+)

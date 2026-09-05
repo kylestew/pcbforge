@@ -91,6 +91,29 @@ exception approval reopens the profile-mapped completed phase.
 
 ## Decision record
 
+- **2026-09-05 — review schematics read as connected paths; official KiCad
+  parts first, checked pin for pin.**
+  The first review sheets drew a dashed box per model group and, because
+  lint refused wires across a box edge, cut every inter-group net into a
+  pair of labels. The user's volume board redrawn as continuous paths was
+  "MUCH easier to read", so that is now the default: `ReviewSchematic`
+  draws group titles and a group register, boxes only on `group_boxes=True`,
+  and the playbook asks for the longest useful functional paths as wires
+  with labels reserved for tangles and cross-sheet jumps. Electrical checks
+  are untouched — pin/wire safety, pre-flight connectivity, ERC, netlist
+  parity, and the naming warnings all run the same with or without boxes.
+  The same experiment found that official symbols were never chosen for
+  ICs: pad discovery from the board silently failed (wrong `spec.md` path)
+  and fell back to net-connected pins, so no full-package symbol could
+  match. Pads now come from the compiled board, else from the official (or
+  `src/parts`) footprint the model names, unused pins included; the search
+  covers exact MPN, KiCad's `x` wildcards, the footprint's library family,
+  and kind; an avoidable generic box is refused; and the audit records the
+  pads used and every rejected candidate with its mismatch. The exact MPN
+  stays the value while `STM32G0B1KBTx` is only the drawing. A project must
+  not need to override private renderer methods to get either behaviour.
+  Issue #5.
+
 - **2026-09-02 — placement assistance: the tool measures placement, and moves
   parts only when asked.**
   Placement research, closeness tradeoffs, and mechanical reasoning were all

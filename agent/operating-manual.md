@@ -256,7 +256,10 @@ preserve placement — fingerprint scripts in `pilots/*/scripts/`).
   availability remains unreliable. This may justify local source wrappers, but
   never redundant local KiCad assets for commodity parts.
 - Parts: prefer JLC **basic** library; pin the LCSC# in source/BOM metadata.
-  Use official KiCad symbols and footprints first. Use `easyeda2kicad` only
-  when the exact package or pin mapping is missing, and always verify generated
-  assets against the datasheet. `pcbforge check-parts` enforces the commodity
-  subset of this rule.
+  Use official KiCad symbols and footprints first, for every part including
+  MCUs and connectors, checked pin for pin with unused pins counted; keep the
+  exact MPN even when the official symbol name ends in a wildcard. Use
+  `easyeda2kicad` only when the exact package or pin mapping is missing,
+  record why, and always verify generated assets against the datasheet.
+  `pcbforge check-parts` enforces the commodity subset of this rule;
+  `pcbforge render-circuit` enforces it for the review schematic.

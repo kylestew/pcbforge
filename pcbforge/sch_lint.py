@@ -330,7 +330,7 @@ def lint(geometry: SheetGeometry) -> list[LintWarning]:
                     LintWarning(
                         "wire-crosses-group-box",
                         f"wire near {_fmt_point(mid)} crosses the {group_id} group box; "
-                        "use a net label for inter-group nets",
+                        "move the groups apart or draw without boxes (group_boxes=False)",
                     )
                 )
             elif not a_in and not b_in and _segment_hits_box(a, b, box):

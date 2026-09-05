@@ -840,7 +840,9 @@ Before adding physical parts, follow `{tool_root}/agent/circuit.md`:
    `review/circuit/circuit_schematic.py` script that `pcbforge render-circuit`
    turns into the review-only `{spec.name}.kicad_sch` beside the KiCad
    project (so eeschema and pcbnew cross-probe it during layout), and
-   `docs/circuit-proposal.md`. The review schematic is a derived artifact:
+   `docs/circuit-proposal.md`. Draw the schematic as connected paths a
+   reader can follow (supply chain, MCU to peripherals with their support
+   branches, debug to MCU); net-label jumps only where wires would tangle. The review schematic is a derived artifact:
    never hand-edit or save it from KiCad, never use "Update PCB from
    Schematic" or "Update Schematic from PCB" — Atopile owns the board and
    the gates refuse a board carrying schematic links.
@@ -848,13 +850,18 @@ Before adding physical parts, follow `{tool_root}/agent/circuit.md`:
    `pcbforge status review circuit --stage proposal`. Present the review
    schematic, narrative, exact model summary, and fingerprint, then stop.
    Record the proposal fingerprint only after explicit user approval.
-3. After proposal approval, implement the circuit in Atopile. Reuse canonical
-   KiCad symbols and footprints for commodity packages. A
-   selected MPN or LCSC number is supplier metadata, not a reason to generate
-   another 0603 resistor, capacitor, or LED library asset.
+3. After proposal approval, implement the circuit in Atopile. Search the
+   pinned official KiCad libraries first for every part — MCUs, ICs,
+   connectors, passives — and use the official symbol and footprint when pin
+   numbers, functions, unused pins, and package all match; resolve symbol and
+   footprint independently. A selected MPN or LCSC number is supplier
+   metadata that stays exact even when the official symbol name carries a
+   wildcard suffix; it is not a reason to generate another library asset.
 4. Generate project-local KiCad assets only when the exact required package or
-   pin mapping is absent from the official libraries, then verify the generated
-   geometry against the datasheet.
+   pin mapping is absent from the official libraries, record the search and
+   the mismatch, then verify the generated geometry against the datasheet.
+   The review schematic follows the same rule and refuses an avoidable
+   generic box.
 5. Give every resolved PCB net a concise human-readable name owned by Atopile
    source, and record the same exact `compiler_name` in the approved proposal
    model. Reject generic `hv`, `lv`, `line`, numeric-only, and

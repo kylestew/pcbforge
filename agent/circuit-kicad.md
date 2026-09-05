@@ -14,12 +14,13 @@ from KiCad, and never used to update the board — the gates refuse both.
 
 The agent writes `review/circuit/circuit_schematic.py` against
 `pcbforge.kicad_sch.ReviewSchematic`: semantic placement and wiring, no
-S-expressions. The tool copies the exact stock symbol from the pinned KiCad 9
-libraries (or generates a box when the footprint pads differ), computes pin
-positions through rotation and mirroring, snaps to the 1.27 mm grid, inserts
-junctions, splits wires so KiCad 9 sees every connection, draws the group
-boxes and registers, lints readability, runs `kicad-cli sch erc`, and proves
-the exported netlist equals the model pin for pin. Raw S-expression authoring
+S-expressions. The tool copies the exact official symbol from the pinned
+KiCad 9 libraries (a generated box only when no official symbol fits the
+footprint pads), computes pin positions through rotation and mirroring,
+snaps to the 1.27 mm grid, inserts junctions, splits wires so KiCad 9 sees
+every connection, writes the group titles and registers, lints readability,
+runs `kicad-cli sch erc`, and proves the exported netlist equals the model
+pin for pin. Raw S-expression authoring
 fails in known ways (inverted Y, off-grid pins, missing `instances`, wrong
 library syntax); the script never touches any of that.
 
@@ -37,6 +38,9 @@ Author `review/circuit/circuit_schematic.py`. It must:
    PROJECT = Path(__file__).resolve().parents[2]
    sch = ReviewSchematic(PROJECT, title="...", desc="...")
    ```
+
+   `group_boxes=True` adds the dashed rectangle per model group; the
+   default draws only the group titles so wires can follow the circuit.
 
 2. place every model component and wire or label every multi-pin net;
 3. end with `result = sch.save()`.
@@ -60,10 +64,13 @@ proposal check. `--svg` exports `review/circuit/preview/circuit.svg` (and
 
 - `warnings` — readability lint, each `[code] message`. Drive the list to
   zero; do not ignore a warning without looking at the preview.
-- `symbol_choices` — which stock symbol (or generated box) each reference
-  got and why. Override with `symbol="Lib:Name"` when the default reads
-  badly (`Connector_Generic:Conn_02x05_Odd_Even` for a 2×5 header, for
-  instance); the override must still match the footprint pads.
+- `symbol_choices` — which official symbol (or generated box) each
+  reference got, which pads it was checked against, and every candidate
+  that was rejected and why. The same record lands in the audit. Override
+  with `symbol="Lib:Name"` when the default reads badly
+  (`Connector_Generic:Conn_02x05_Odd_Even` for a 2×5 header, for instance);
+  the override must still match the footprint pads. `symbol="generic"` is
+  refused while an official symbol fits.
 - `missing_component_symbols` — connected references with no placed symbol.
 
 Output is deterministic for a given model and script; re-rendering without
@@ -77,10 +84,11 @@ Never guess which end pin 1 is. Run
 pcbforge render-circuit --probe all      # or --probe U1,D2,J1
 ```
 
-It prints, per component, the resolved symbol (stock or generated box), every
-pin with its model net, and the pin-tip offset and side for rotations
-0/90/180/270 (plus `mirror="y"` for connectors). Copy the conventions you
-rely on into a comment at the top of the script. Verified defaults:
+It prints, per component, the resolved symbol (official or generated box)
+with the pad list it was checked against, every pin with its model net, and
+the pin-tip offset and side for rotations 0/90/180/270 (plus `mirror="y"`
+for connectors). Copy the conventions you rely on into a comment at the top
+of the script. Verified defaults:
 
 | Part family | rotation 0 | 90 | 180 | 270 |
 |---|---|---|---|---|
@@ -111,7 +119,8 @@ what you wire to, so read the table, not the datasheet.
 | `sch.power_at(point, net_id, direction="up", flag=True)` | power symbol on a rail point; `flag=True` adds `PWR_FLAG` for externally driven rails |
 | `sch.no_connect(ref, n)` | no-connect marker; single-node model nets get one automatically |
 | `sch.note((x, y), text)` | free text |
-| `sch.group_box(group_id, (x1, y1, x2, y2))` | override the automatic group rectangle |
+| `sch.group_title(group_id, (x, y))` | put the group title here instead of above its placed members |
+| `sch.group_box(group_id, (x1, y1, x2, y2))` | draw this group's rectangle at an explicit place (with `group_boxes=True`, overrides the automatic one) |
 | `sch.pin_names(ref, {"A": "anode"}, sides={"A": "left"}, pitch=5.08)` | name and side pins of a generated box (call before `place`); `sides` insertion order is the pin order along each side; `pitch=5.08` leaves room for parts hanging from pin rows |
 | `sch.symbol_for(ref).symbol.pins` | the resolved symbol's pin table (number, name, lib position, direction) — read it before choosing a rotation |
 
@@ -123,25 +132,43 @@ cannot be overridden.
 
 - Sheet coordinates are millimetres, y down, 1.27 mm grid. Put the first
   part at roughly `(40, 60)` and let relative placement do the rest.
-- One rectangular region per model group; the tool draws the box and title
-  from the placed members. Leave ≥ 10 mm between regions so boxes never
-  touch. Wires must not cross a group box: connect groups with net labels.
+- **Connected paths first.** Arrange parts so a reader can follow the
+  longest useful functional paths as continuous wires: USB power through
+  protection and regulation to the MCU supply, MCU to encoder contacts
+  with their pull-up and filter branches, MCU to LED to current-limiting
+  resistor, debug header to MCU with the reset network. A wire that a
+  reader can trace beats a pair of labels they must search for.
+- This is a readability goal, not a wire-length contest. Keep pull-ups,
+  filters and decoupling in their real topology (a branch hangs off the
+  run; never redraw a branch as a series link). Keep normal power and
+  ground symbols.
+- Use a net label jump only when continuous wires would cause excessive
+  crossings, obscure a relationship, or cross sheets (the USB data pair
+  next to a dense MCU is the usual case). Labels may also name a
+  continuous run: every multi-pin net needs its compiler name somewhere on
+  the sheet (label or power symbol), and `label_at` on a long run does it
+  without crowding the symbols.
+- Group titles are placed by the tool above each group's parts (move one
+  with `group_title`); the group register lists title and purpose. Decorative
+  boxes are opt-in (`group_boxes=True`). With boxes, leave ≥ 10 mm between
+  regions and expect `wire-crosses-group-box` wherever a connected path
+  crosses a boundary.
 - Power flows left to right: entry connector at the left, protection, then
-  regulation; rails leave as power symbols. MCU in the middle, peripherals
+  regulation; rails continue as wires where the path is the point and
+  leave as power symbols where it is not. MCU in the middle, peripherals
   right, debug and mechanical parts at the bottom.
-- Rails: one `rail`/`drop` per supply inside a group, `power_at(...)` once
-  per rail with `flag=True` where the rail is driven from outside the sheet
-  (battery, USB, connector). Ground symbols point down, rail arrows up.
+- Rails: `power_at(...)` once per rail with `flag=True` where the rail is
+  driven from outside the sheet or through a passive part (battery, USB,
+  connector, the far side of a fuse). Ground symbols point down, rail
+  arrows up.
 - Draw local support parts (bypass, pull-ups, filters, current limits) with
   wires at the device pins they serve. A label is not a substitute.
-- Labels for everything that leaves a group, using the model net id; the
-  sheet shows the compiler name (what pcbnew's ratsnest and net highlight
-  use) and the net register lists the model display name beside it. A
-  label may sit anywhere along a wire
-  (`label_at` at a run's midpoint names a local two-pin net without
-  crowding the symbols).
 - Use `path="<path-id>"` on the wires that realise each model path; the
   legend colours them. Every model path needs at least one such wire.
+
+`tests/connected_fixture.py` is the reference drawing in this style: supply
+chain, encoder branches, LED series path, and debug/reset path as wires,
+only the USB pair labelled, zero warnings under real KiCad.
 
 ## Using it during layout
 
@@ -162,7 +189,8 @@ which the gate proves equal to the board.
    `<project>-backups/` or rebuild with atopile.
 3. Open the sheet with KiCad 9, not 10 (format pin).
 4. Every group needs ≥ 1 placed part; every component exactly one placement
-   (one per unit for multi-unit symbols).
+   (one per unit for multi-unit symbols). Every group title must appear on
+   the sheet; the tool places it whether or not boxes are drawn.
 5. Externally driven rails need `flag=True` once, or ERC reports
    `power_pin_not_driven`.
 6. A wire that passes over a pin tip connects to it in KiCad. The lint
@@ -175,6 +203,9 @@ which the gate proves equal to the board.
    when values are shown.
 8. Mechanical parts (mounting holes) still get a symbol; the stock
    `Mechanical:MountingHole` has no pins and no wires.
+9. Official symbols carry every physical pin. Pins with no model net get a
+   no-connect marker automatically; the model still names each unused pad
+   as a single-node `NC_<REF>_<PIN>` net, and the gate checks both.
 
 ## When the tool says nets are joined
 
@@ -204,9 +235,11 @@ as disconnected pieces with no shared label — add the label or the wire.
 
 Work through them in this order; each step removes whole families:
 
-1. **Group separation** — `group-boxes-overlap`, `symbol-outside-group`,
-   `wire-crosses-group-box`: move whole groups apart (≥ 10 mm) before
-   touching parts. Boxes include the group's wires, labels and text.
+1. **Group separation** (only with `group_boxes=True`) —
+   `group-boxes-overlap`, `symbol-outside-group`, `wire-crosses-group-box`:
+   move whole groups apart (≥ 10 mm) before touching parts, or drop the
+   boxes when the connected paths matter more. Boxes include the group's
+   wires, labels and text.
 2. **Big-part text** — set `ref_pos`/`value_pos` for ICs and connectors
    (above the body when the top has no pins, bottom-right otherwise); the
    default right-of-body position collides with right-side pin labels.
@@ -227,7 +260,24 @@ Work through them in this order; each step removes whole families:
 A realistic budget is 5–8 renders for 20 parts and 10–15 for 80+; that is
 the normal loop, not failure.
 
-## Generated-box recipe (no stock symbol)
+## Official symbols and the generated-box fallback
+
+The tool searches the pinned official libraries before drawing a box, for
+every kind of part: by exact MPN, by KiCad's `x`-suffixed package wildcards
+(`STM32G0B1KBT6` draws as `MCU_ST_STM32G0:STM32G0B1KBTx` while the value,
+MPN and LCSC fields keep the exact part), by the footprint's library family
+(a `Rotary_Encoder` footprint looks at `Device:RotaryEncoder*`, a
+`Connector_USB` one at `Connector:USB_*`), then by kind. A candidate is
+accepted only when its pin numbers equal the complete pad list — unused
+pins included — taken from the compiled board when it exists, else from the
+official footprint the model names (or the project's `src/parts` copy). Pin
+count alone is never enough. `symbol_choices` and the audit record the
+pads used, every rejected candidate and its mismatch.
+
+Ask for a box (`symbol="generic"`) only when no official symbol fits; the
+tool refuses an avoidable box and names the symbol to place instead. Do not
+force a similar-but-wrong official symbol to satisfy the preference: a
+keyed header without pad 7 is a generated box, and its reason says why.
 
 ```python
 sch.pin_names("U2", NAMES, sides={**{n: "left" for n in LEFT}, **{n: "right" for n in RIGHT},

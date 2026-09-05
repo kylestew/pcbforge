@@ -10,6 +10,7 @@ from typing import Mapping, Sequence
 from pcbforge.circuit_review import SCHEMATIC_AUDIT_SCHEMA, SCH_FORMAT_VERSION
 
 FIXTURE_SYMBOLS = Path(__file__).resolve().parent / "fixtures" / "symbols"
+FIXTURE_FOOTPRINTS = Path(__file__).resolve().parent / "fixtures" / "footprints"
 
 
 class FakeKicad:

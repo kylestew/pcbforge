@@ -105,9 +105,11 @@ must:
 3. Name nets as the board does (model `compiler_name`) so KiCad net
    highlight crosses over; the generated net register maps each to the
    model display name.
-4. Group related parts — one region per model group, drawn by the tool — and
-   label ambiguous functions such as MOSFETs, switches, connectors, and
-   protection devices directly.
+4. Arrange parts so the longest useful functional paths read as continuous
+   wires (supply chain, MCU to peripheral with its support branches, debug
+   to MCU); the tool writes each model group's title and the group register,
+   and draws boundary boxes only on request. Label ambiguous functions such
+   as MOSFETs, switches, connectors, and protection devices directly.
 5. Draw each local support part at its device pin with a real symbol and wire.
 6. Keep all readability warnings at zero before review.
 7. Give every passive a visible purpose note. The generated component
@@ -167,16 +169,32 @@ select/finalize parts, or update compiler-owned PCB identity/connectivity.
 
 For every physical part, decide in this order:
 
-1. Use the compiler's standard primitive and an official KiCad symbol and
-   footprint when the electrical behavior, pin mapping, and verified package
-   match.
-2. Keep the exact manufacturer part number and LCSC selection in supplier/BOM
-   metadata. Exact sourcing does not require a unique KiCad symbol or footprint.
-3. Generate a project-local symbol or footprint only when the exact required
+1. Search the pinned official KiCad 9 libraries first, for every part —
+   MCUs, other ICs, connectors, and passives alike — and use the official
+   symbol and footprint when the electrical behavior, pin mapping, and
+   verified package match. Check physical pin numbers, names and functions,
+   every unused pin, and the package geometry; a matching pin count alone is
+   not a match.
+2. Resolve symbol and footprint independently: a missing exact footprint
+   never blocks a correct official symbol, and vice versa.
+3. Keep the exact manufacturer part number and LCSC selection in supplier/BOM
+   metadata even when the official symbol name carries a wildcard suffix:
+   `STM32G0B1KBT6` uses `MCU_ST_STM32G0:STM32G0B1KBTx` and stays
+   `STM32G0B1KBT6` in its value, MPN, and sourcing fields. Exact sourcing does
+   not require a unique KiCad symbol or footprint.
+4. Generate a project-local symbol or footprint only when the exact required
    pin mapping or mechanical package is missing from the official libraries.
-4. For a generated asset, record why the official library is insufficient and
+   Record the search and the mismatch that forced the fallback; never
+   substitute a similar but incorrect official part to avoid it.
+5. For a generated asset, record why the official library is insufficient and
    verify pad count, pitch, body, courtyard, polarity/pin 1, and exposed-pad
    geometry against the datasheet.
+
+The review schematic applies the same order mechanically:
+`pcbforge render-circuit` tries the official libraries by MPN, wildcard,
+footprint family and kind against the complete pad list, refuses an
+avoidable generated box, and records the chosen library identifiers and
+every rejected candidate in `review/circuit/schematic.audit.json`.
 
 Standard two-terminal chip resistors in 01005, 0201, 0402, 0603, 0805, 1206,
 1210, 1812, 2010, and 2512 packages must use `Device:R` and the matching

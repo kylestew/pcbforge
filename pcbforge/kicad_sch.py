@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
-from pcbforge import kicad_sym, sexpr
+from pcbforge import kicad_fp, kicad_sym, sexpr
 from pcbforge.circuit_review import (
     SCHEMATIC_AUDIT_SCHEMA,
     CircuitModel,
@@ -248,7 +248,18 @@ class ReviewSchematic:
         runner: CommandRunner | None = None,
         project_name: str | None = None,
         audit_path: Path | None = None,
+        footprints_dir: Path | None = None,
+        group_boxes: bool = False,
     ) -> None:
+        """Bind to a project (or a model and output path).
+
+        ``board_pads`` overrides pad discovery per reference; otherwise pads
+        come from the compiled board when it exists, else from the footprint
+        the model names (pinned official library, then ``src/parts``), else
+        the model's connected pins. ``group_boxes=True`` draws the dashed
+        region per model group; the default draws only the group titles so
+        wires can follow the circuit across groups.
+        """
         self.project_dir = None
         self.project_path: Path | None = None
         self.board_path: Path | None = None
@@ -277,9 +288,21 @@ class ReviewSchematic:
         self.runner = runner
         self.project_name = project_name or "pcbforge-review"
         self.fingerprint = circuit_model_fingerprint(self.model)
+        self.draw_group_boxes = bool(group_boxes)
+        self._footprints_dir: Path | None = Path(footprints_dir) if footprints_dir else None
+        if self._footprints_dir is None:
+            try:
+                self._footprints_dir = kicad_fp.footprints_dir(self.tool_root)
+            except kicad_fp.FootprintError:
+                self._footprints_dir = None
         self._board_pads = dict(board_pads or {})
         if not self._board_pads and self.project_dir is not None:
             self._board_pads = _board_pads(self.project_dir)
+        self._pads: dict[str, tuple[set[str], str]] = {}
+        self.pad_sources: dict[str, str] = {}
+        for component in self.model.components:
+            self._pads[component.reference] = self._resolve_pads(component.reference, component.footprint)
+            self.pad_sources[component.reference] = self._pads[component.reference][1]
 
         self._components = {c.reference: c for c in self.model.components}
         self._nets = {n.identifier: n for n in self.model.nets}
@@ -304,6 +327,7 @@ class ReviewSchematic:
         self._texts: list[_Text] = []
         self._rects: list[_Rect] = []
         self._manual_boxes: dict[str, Box] = {}
+        self._title_at: dict[str, Point] = {}
         self._lib_symbols: dict[str, LibSymbol] = {}
         self._flagged: set[str] = set()
         self._power_count = 0
@@ -312,6 +336,21 @@ class ReviewSchematic:
     # ------------------------------------------------------------------
     # symbols
     # ------------------------------------------------------------------
+
+    def _resolve_pads(self, reference: str, footprint: str) -> tuple[set[str], str]:
+        """Every physical pad of a component and where the list came from."""
+        pads = {pad for pad in self._board_pads.get(reference, set()) if pad}
+        if pads:
+            return pads, "board pads"
+        try:
+            found = kicad_fp.footprint_pads(footprint, self._footprints_dir, self.project_dir)
+        except kicad_fp.FootprintError as exc:
+            raise SchematicError(f"{reference}: {exc}") from exc
+        if found is not None:
+            pads, path = found
+            official = self._footprints_dir is not None and path.is_relative_to(self._footprints_dir)
+            return pads, f"{'official' if official else 'project'} footprint {footprint}"
+        return set(), "model pins"
 
     def symbol_for(self, reference: str, override: str | None = None) -> SymbolChoice:
         """Resolve (and cache) the symbol policy decision for one component."""
@@ -326,6 +365,7 @@ class ReviewSchematic:
             for node in net.nodes
             if node.split(".", 1)[0] == reference
         }
+        pads, pads_source = self._pads.get(reference, (set(), "model pins"))
         try:
             choice = kicad_sym.choose_symbol(
                 kind=component.kind,
@@ -333,9 +373,11 @@ class ReviewSchematic:
                 value=component.value,
                 reference=reference,
                 model_pins=model_pins,
-                board_pads=self._board_pads.get(reference, set()),
+                board_pads=pads,
                 directory=self.symbols_dir,
                 override=override,
+                footprint=component.footprint,
+                pads_source=pads_source,
                 pin_names=self._pin_names.get(reference),
                 pin_sides=self._pin_sides.get(reference),
                 pin_pitch=self._pin_pitch.get(reference, 2.54),
@@ -632,11 +674,17 @@ class ReviewSchematic:
         self._texts.append(_Text(text, _p(at), size, color))
 
     def group_box(self, group_id: str, box: tuple[float, float, float, float]) -> None:
-        """Override the automatic group rectangle."""
+        """Draw this group's rectangle at an explicit place (also when boxes are off)."""
         if group_id not in self._groups:
             raise SchematicError(f"unknown group id {group_id!r}")
         x1, y1, x2, y2 = box
         self._manual_boxes[group_id] = Box(snap(min(x1, x2)), snap(min(y1, y2)), snap(max(x1, x2)), snap(max(y1, y2)))
+
+    def group_title(self, group_id: str, at: Point) -> None:
+        """Put the group's title at ``at`` instead of above its placed members."""
+        if group_id not in self._groups:
+            raise SchematicError(f"unknown group id {group_id!r}")
+        self._title_at[group_id] = _p(at)
 
     # ------------------------------------------------------------------
     # save and prove
@@ -764,8 +812,15 @@ class ReviewSchematic:
             raise SchematicError("groups without placed parts: " + ", ".join(empty_groups))
 
     def _auto_no_connects(self) -> None:
-        """Single-node model nets get a no-connect marker unless already wired."""
-        wire_points = {w.start for w in self._wires} | {w.end for w in self._wires}
+        """Mark pins nothing connects to: single-node nets and pins with no model net.
+
+        Official symbols carry every physical pin, so an MCU's unused pins
+        get a no-connect marker automatically unless the script drew
+        something at the tip.
+        """
+        occupied = {w.start for w in self._wires} | {w.end for w in self._wires}
+        occupied |= {label.at for label in self._labels}
+        occupied |= {power.at for power in self._powers}
         for net in self.model.nets:
             if len(net.nodes) != 1:
                 continue
@@ -777,9 +832,19 @@ class ReviewSchematic:
                 tip = placed.pin(number)
             except SymbolError:
                 continue
-            if tip in wire_points or tip in self._no_connects:
+            if tip in occupied or tip in self._no_connects:
                 continue
             self._no_connects.append(tip)
+        for ref, placed in sorted(self.placed.items()):
+            for pin in placed.symbol.pins:
+                if pin.unit not in (0, placed.unit) or pin.hidden:
+                    continue
+                if f"{ref}.{pin.number}" in self._net_of_node:
+                    continue
+                tip = placed.pin(pin.number)
+                if tip in occupied or tip in self._no_connects:
+                    continue
+                self._no_connects.append(tip)
 
     def _preflight_connectivity(self) -> tuple[list[str], list[str]]:
         """Connectivity from our own geometry, checked against the model.
@@ -923,6 +988,8 @@ class ReviewSchematic:
             if group.identifier in self._manual_boxes:
                 boxes[group.identifier] = self._manual_boxes[group.identifier]
                 continue
+            if not self.draw_group_boxes:
+                continue
             members = [self.placed[r] for r in group.references if r in self.placed]
             if not members:
                 continue
@@ -1001,18 +1068,53 @@ class ReviewSchematic:
                 )
         return out
 
+    def _group_anchors(self, group_boxes: dict[str, Box]) -> dict[str, Point]:
+        """Where each group's title goes: inside its box, or above its members."""
+        anchors: dict[str, Point] = {}
+        for group in self.model.groups:
+            gid = group.identifier
+            if gid in self._title_at:
+                anchors[gid] = self._title_at[gid]
+                continue
+            box = group_boxes.get(gid)
+            if box is not None:
+                anchors[gid] = (box.x1 + 1.27, box.y1 + 2.794)
+                continue
+            members = [self.placed[r] for r in group.references if r in self.placed]
+            if not members:
+                continue
+            xs: list[float] = []
+            ys: list[float] = []
+            for placed in members:
+                bbox = placed.bbox
+                xs += [bbox.x1, bbox.x2]
+                ys += [bbox.y1, bbox.y2]
+                for _, text, pos in self._property_positions(placed):
+                    tbox = _text_box(text, pos, FONT, "left")
+                    xs += [tbox.x1, tbox.x2]
+                    ys += [tbox.y1, tbox.y2]
+            anchors[gid] = (snap(min(xs)), snap(min(ys) - 2.54))
+        return anchors
+
     def _furniture(self, group_boxes: dict[str, Box]) -> list[_Text]:
         texts: list[_Text] = []
-        content = self._content_box(group_boxes)
+        anchors = self._group_anchors(group_boxes)
+        extra = [
+            _text_box(self._groups[gid].title, at, 1.5, "left bottom")
+            for gid, at in anchors.items()
+            if gid not in group_boxes
+        ]
+        content = self._content_box(group_boxes, extra)
         x0 = content.x1
         texts.append(_Text(self.title, (x0, content.y1 - 16.51), 2.0, None, bold=True, furniture=True))
         texts.append(_Text(REVIEW_MARKER, (x0, content.y1 - 11.43), 2.54, (200, 0, 0), bold=True, furniture=True))
         texts.append(_Text(REVIEW_MARKER_DETAIL, (x0, content.y1 - 8.255), 1.27, (200, 0, 0), furniture=True))
         texts.append(_Text(f"model sha256 {self.fingerprint}", (x0, content.y1 - 5.08), 1.0, (90, 90, 90), furniture=True))
-        for group_id, box in group_boxes.items():
+        for group_id, at in anchors.items():
             group = self._groups[group_id]
-            texts.append(_Text(group.title, (box.x1 + 1.27, box.y1 + 2.794), 1.5, (60, 60, 120), bold=True))
-            texts.append(_Text(group.purpose, (box.x1 + 1.27, box.y1 + 4.699), 1.0, (90, 90, 90)))
+            texts.append(_Text(group.title, at, 1.5, (60, 60, 120), bold=True))
+            if group_id in group_boxes:
+                texts.append(_Text(group.purpose, (at[0], at[1] + 1.905), 1.0, (90, 90, 90)))
         # registers to the right of the content, clear of long group purposes
         right = content.x2
         for text in texts:
@@ -1027,6 +1129,13 @@ class ReviewSchematic:
                 lines.append(f"{ref}  {component.value}  — {component.purpose}")
         texts.append(_Text("\n".join(lines), (rx, y + len(lines) * 1.27 * 1.35), 1.0, None, furniture=True))
         y = snap(y + len(lines) * 1.27 * 1.35 + 7.62)
+        unboxed = [g for g in self.model.groups if g.identifier not in group_boxes]
+        if unboxed:
+            lines = ["Group register (title · purpose)"]
+            for group in unboxed:
+                lines.append(f"{group.title} · {group.purpose}")
+            texts.append(_Text("\n".join(lines), (rx, y + len(lines) * 1.27 * 1.35), 1.0, None, furniture=True))
+            y = snap(y + len(lines) * 1.27 * 1.35 + 7.62)
         lines = ["Net register (sheet/board name · model name)"]
         for net in self.model.nets:
             if len(net.nodes) < 2:
@@ -1044,10 +1153,10 @@ class ReviewSchematic:
         texts.append(_Text(self.desc, (x0, content.y2 + 7.62), 1.0, (90, 90, 90), furniture=True))
         return texts
 
-    def _content_box(self, group_boxes: dict[str, Box]) -> Box:
+    def _content_box(self, group_boxes: dict[str, Box], extra: Sequence[Box] = ()) -> Box:
         xs: list[float] = []
         ys: list[float] = []
-        for box in list(group_boxes.values()) + [p.bbox for p in self.placed.values()] + [p.bbox for p in self._powers]:
+        for box in list(group_boxes.values()) + list(extra) + [p.bbox for p in self.placed.values()] + [p.bbox for p in self._powers]:
             xs += [box.x1, box.x2]
             ys += [box.y1, box.y2]
         for wire in self._wires:
@@ -1277,18 +1386,25 @@ def _net_name(net) -> str:
 
 
 def _board_pads(project_dir: Path) -> dict[str, set[str]]:
-    """Pad names per reference from the compiled board, when it exists."""
-    try:
-        from pcbforge.build_test import read_board_evidence
-        from pcbforge.initialize import read_spec
+    """Every pad name per reference from the compiled board, when it exists.
 
-        spec = read_spec(project_dir)
-        board_path = project_dir / f"{spec.name}.kicad_pcb"
-        if not board_path.is_file():
-            return {}
-        board = read_board_evidence(board_path)
-    except Exception:  # noqa: BLE001 - the board is optional for authoring
+    Unused pads count too: an official symbol is accepted only when its pin
+    numbers equal the whole physical pad list.
+    """
+    from pcbforge.build_test import BuildTestError, read_board_evidence
+    from pcbforge.initialize import InitInputError, read_spec
+
+    try:
+        spec = read_spec(project_dir / "spec.md")
+    except InitInputError:
         return {}
+    board_path = project_dir / f"{spec.name}.kicad_pcb"
+    if not board_path.is_file():
+        return {}
+    try:
+        board = read_board_evidence(board_path)
+    except (BuildTestError, OSError, UnicodeError) as exc:
+        raise SchematicError(f"cannot read board pads from {board_path.name}: {exc}") from exc
     pads: dict[str, set[str]] = {}
     for ref, pad in board.pads:
         if pad:
