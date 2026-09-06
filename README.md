@@ -43,3 +43,5 @@ uv run --project toolchain python -m unittest discover -s tests -t . -q
 ```
 
 See [DESIGN.md](DESIGN.md) for ownership and reproducibility decisions.
+
+The native workflow validation results are in [the pilot report](pilots/native-kicad/REPORT.md).

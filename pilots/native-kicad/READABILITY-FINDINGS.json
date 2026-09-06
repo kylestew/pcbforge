@@ -1,0 +1,744 @@
+[
+  {
+    "code": "missing-purpose",
+    "message": "Y1: explain the component purpose",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "warning",
+    "id": "c424090126e3b707c341"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "R5: explain the component purpose",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "warning",
+    "id": "d500d9a872597fb9a924"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "SW1: explain the component purpose",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "warning",
+    "id": "1b43d19b196368a30633"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "C5: explain the component purpose",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "warning",
+    "id": "64390899cebffae86c07"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "H1: explain the component purpose",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "warning",
+    "id": "07260216d40ffb49b43d"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "R7: explain the component purpose",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "warning",
+    "id": "312a94c186819e764887"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "R1: explain the component purpose",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "warning",
+    "id": "a56180f27b5d1fa2dbe9"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "C2: explain the component purpose",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "warning",
+    "id": "bbab053acde68c7b56bd"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "C9: explain the component purpose",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "warning",
+    "id": "18cd5301e43475fd0f62"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "J2: explain the component purpose",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "warning",
+    "id": "29e45e01e1ad50fbed71"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "C7: explain the component purpose",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "warning",
+    "id": "a018c2cda13a8549c62a"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "H2: explain the component purpose",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "warning",
+    "id": "985ef37e8c591fe7e72b"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "C6: explain the component purpose",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "warning",
+    "id": "e74c1842d767c218869a"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "C1: explain the component purpose",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "warning",
+    "id": "56bfb595617da3ae885d"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "C4: explain the component purpose",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "warning",
+    "id": "44c4c8c2c46af9fa26a3"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "U1: explain the component purpose",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "warning",
+    "id": "5b6afdd203a7cadf887c"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "C3: explain the component purpose",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "warning",
+    "id": "bdc7db228c2231939c92"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "C8: explain the component purpose",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "warning",
+    "id": "1cf8b9807e0335c8b793"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "H4: explain the component purpose",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "warning",
+    "id": "520077ed7bdb51c76d4d"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "H3: explain the component purpose",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "warning",
+    "id": "d0e2f04fe6fc354158f2"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "J1: explain the component purpose",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "warning",
+    "id": "1b96f503e1a7ff7b62e7"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "D2: explain the component purpose",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "warning",
+    "id": "e0f901c91d043c3fd3d2"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "C22: explain the component purpose",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "warning",
+    "id": "dc3c9005cc688b12ff05"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "U2: explain the component purpose",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "warning",
+    "id": "8634da1f9bd70f8dd2c0"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "R6: explain the component purpose",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "warning",
+    "id": "445949a20f28d9c5e00f"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "R21: explain the component purpose",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "warning",
+    "id": "ae1f8d7327ea87ce96d4"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "C23: explain the component purpose",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "warning",
+    "id": "cd3e0dbe6041141b3196"
+  },
+  {
+    "code": "text-text-overlap",
+    "message": "text 'SW1' overlaps text 'SW_Push'",
+    "sheet": "driver-board.kicad_sch",
+    "severity": "error",
+    "id": "eb8b40f3b038511817b5"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "TP4: explain the component purpose",
+    "sheet": "power.kicad_sch",
+    "severity": "warning",
+    "id": "636cb70e7789c807fc44"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "R18: explain the component purpose",
+    "sheet": "power.kicad_sch",
+    "severity": "warning",
+    "id": "ba8dae7e6cd30dbb39de"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "BT1: explain the component purpose",
+    "sheet": "power.kicad_sch",
+    "severity": "warning",
+    "id": "f613514a74e97e499bea"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "TP1: explain the component purpose",
+    "sheet": "power.kicad_sch",
+    "severity": "warning",
+    "id": "d47865bb2e5c216876a9"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "L1: explain the component purpose",
+    "sheet": "power.kicad_sch",
+    "severity": "warning",
+    "id": "55fbf408f07351a919d0"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "BT2: explain the component purpose",
+    "sheet": "power.kicad_sch",
+    "severity": "warning",
+    "id": "35ea7fce847f7f59c53a"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "R17: explain the component purpose",
+    "sheet": "power.kicad_sch",
+    "severity": "warning",
+    "id": "64c9ba3e38a631271727"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "Q2: explain the component purpose",
+    "sheet": "power.kicad_sch",
+    "severity": "warning",
+    "id": "fdc462e9af9950077615"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "TP2: explain the component purpose",
+    "sheet": "power.kicad_sch",
+    "severity": "warning",
+    "id": "490b8c04057b4a19a110"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "U5: explain the component purpose",
+    "sheet": "power.kicad_sch",
+    "severity": "warning",
+    "id": "d7618cea1f29fec96173"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "R22: explain the component purpose",
+    "sheet": "power.kicad_sch",
+    "severity": "warning",
+    "id": "9a7c4d1a818d31f1bca2"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "R19: explain the component purpose",
+    "sheet": "power.kicad_sch",
+    "severity": "warning",
+    "id": "57f57d72e994dce66874"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "Q1: explain the component purpose",
+    "sheet": "power.kicad_sch",
+    "severity": "warning",
+    "id": "2ca4d2947656f29748df"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "C18: explain the component purpose",
+    "sheet": "power.kicad_sch",
+    "severity": "warning",
+    "id": "e45ef660c97c9750180e"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "C16: explain the component purpose",
+    "sheet": "power.kicad_sch",
+    "severity": "warning",
+    "id": "e2616e9738954d280871"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "C17: explain the component purpose",
+    "sheet": "power.kicad_sch",
+    "severity": "warning",
+    "id": "96967997f04820bc953c"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "C21: explain the component purpose",
+    "sheet": "power.kicad_sch",
+    "severity": "warning",
+    "id": "5a5df4ce460201868ea9"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "D1: explain the component purpose",
+    "sheet": "power.kicad_sch",
+    "severity": "warning",
+    "id": "70de94556ca3679fa9a4"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "SW2: explain the component purpose",
+    "sheet": "power.kicad_sch",
+    "severity": "warning",
+    "id": "3ec2ada44b19863e0838"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "R23: explain the component purpose",
+    "sheet": "power.kicad_sch",
+    "severity": "warning",
+    "id": "7739209dbce2a013b87b"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "F1: explain the component purpose",
+    "sheet": "power.kicad_sch",
+    "severity": "warning",
+    "id": "6150a80dd21aef299fd8"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "R16: explain the component purpose",
+    "sheet": "power.kicad_sch",
+    "severity": "warning",
+    "id": "d17938454c04b11c4e8a"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "C19: explain the component purpose",
+    "sheet": "power.kicad_sch",
+    "severity": "warning",
+    "id": "1af23408427cd0c57972"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "TP3: explain the component purpose",
+    "sheet": "power.kicad_sch",
+    "severity": "warning",
+    "id": "0da835b43a495f1a6c43"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "C20: explain the component purpose",
+    "sheet": "power.kicad_sch",
+    "severity": "warning",
+    "id": "a316e779219e791f269a"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "R20: explain the component purpose",
+    "sheet": "power.kicad_sch",
+    "severity": "warning",
+    "id": "f725a6558ef7c553f51b"
+  },
+  {
+    "code": "text-text-overlap",
+    "message": "text 'VBAT_SW' overlaps text 'TP_BAT_SW'",
+    "sheet": "power.kicad_sch",
+    "severity": "error",
+    "id": "d6b3b5c197c5f0252f1c"
+  },
+  {
+    "code": "text-text-overlap",
+    "message": "text 'TP1' overlaps text 'TP_3V3'",
+    "sheet": "power.kicad_sch",
+    "severity": "error",
+    "id": "4828b52454d21799566b"
+  },
+  {
+    "code": "text-text-overlap",
+    "message": "text 'Q2' overlaps text 'AO4407A'",
+    "sheet": "power.kicad_sch",
+    "severity": "error",
+    "id": "3b9fe886e498abc3884b"
+  },
+  {
+    "code": "text-text-overlap",
+    "message": "text 'TP2' overlaps text 'TP_GND'",
+    "sheet": "power.kicad_sch",
+    "severity": "error",
+    "id": "3f0dd43de63b7aa5e9f5"
+  },
+  {
+    "code": "text-text-overlap",
+    "message": "text 'Q1' overlaps text 'AO3401A'",
+    "sheet": "power.kicad_sch",
+    "severity": "error",
+    "id": "f5a4d657f48c081e46d5"
+  },
+  {
+    "code": "text-text-overlap",
+    "message": "text 'D1' overlaps text 'PWR_ON_LED'",
+    "sheet": "power.kicad_sch",
+    "severity": "error",
+    "id": "10a47fe8dfc089053824"
+  },
+  {
+    "code": "text-text-overlap",
+    "message": "text 'SW2' overlaps text 'SK-3296S-01-L2'",
+    "sheet": "power.kicad_sch",
+    "severity": "error",
+    "id": "b520fd952e7e89f9f91f"
+  },
+  {
+    "code": "text-text-overlap",
+    "message": "text 'F1' overlaps text 'PTC_2.6A_16V'",
+    "sheet": "power.kicad_sch",
+    "severity": "error",
+    "id": "34a56f7bb37e24cbd4f3"
+  },
+  {
+    "code": "text-text-overlap",
+    "message": "text 'TP3' overlaps text 'TP_BAT'",
+    "sheet": "power.kicad_sch",
+    "severity": "error",
+    "id": "522139f2bb9aec8d2acb"
+  },
+  {
+    "code": "text-wire-overlap",
+    "message": "text 'PWR_FLAG' overlaps a wire near (80.65, 35.56)",
+    "sheet": "power.kicad_sch",
+    "severity": "error",
+    "id": "49d82a156f73d58149d4"
+  },
+  {
+    "code": "dangling-wire-end",
+    "message": "wire end at (105.41, 59.69) connects to nothing",
+    "sheet": "power.kicad_sch",
+    "severity": "error",
+    "id": "c60b0061b03364c1395a"
+  },
+  {
+    "code": "dangling-wire-end",
+    "message": "wire end at (102.87, 69.85) connects to nothing",
+    "sheet": "power.kicad_sch",
+    "severity": "error",
+    "id": "1a4e2ea1a4fda2bb9e44"
+  },
+  {
+    "code": "dangling-wire-end",
+    "message": "wire end at (107.95, 69.85) connects to nothing",
+    "sheet": "power.kicad_sch",
+    "severity": "error",
+    "id": "f9883ad84ad407616e64"
+  },
+  {
+    "code": "dangling-wire-end",
+    "message": "wire end at (105.41, 43.18) connects to nothing",
+    "sheet": "power.kicad_sch",
+    "severity": "error",
+    "id": "8b70e1c615e4e4ea97ca"
+  },
+  {
+    "code": "dangling-wire-end",
+    "message": "wire end at (110.49, 35.56) connects to nothing",
+    "sheet": "power.kicad_sch",
+    "severity": "error",
+    "id": "4ef8a91700e2748496dc"
+  },
+  {
+    "code": "dangling-wire-end",
+    "message": "wire end at (100.33, 35.56) connects to nothing",
+    "sheet": "power.kicad_sch",
+    "severity": "error",
+    "id": "34ce4c9758b1d3ff7206"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "U4: explain the component purpose",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "2f63d41c26bf2543d613"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "R13: explain the component purpose",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "c374e6112f804af4162d"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "J4: explain the component purpose",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "9ccf44fd14a6cb885404"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "R11: explain the component purpose",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "b1416f0560e4622e8de3"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "R10: explain the component purpose",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "840a178113c49c9469c1"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "C12: explain the component purpose",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "14f9f97281ea851a9d66"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "J3: explain the component purpose",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "ae15fbc9276498827660"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "C14: explain the component purpose",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "a3d0b3d3a291c01496ff"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "C11: explain the component purpose",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "de9d4b360125f55a1383"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "U3: explain the component purpose",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "ec5bc51d1c96dd462942"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "R14: explain the component purpose",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "d196a383a68892617646"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "C15: explain the component purpose",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "7bbc699472567be3fb39"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "C13: explain the component purpose",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "2302a03516ff961298d9"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "R15: explain the component purpose",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "e90994869c3843336157"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "R12: explain the component purpose",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "5887b99b4eb90f17faa1"
+  },
+  {
+    "code": "missing-purpose",
+    "message": "C10: explain the component purpose",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "a639b2adcd9019ef391c"
+  },
+  {
+    "code": "text-wire-overlap",
+    "message": "text 'DRV8838' overlaps a wire near (146.05, 144.78)",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "error",
+    "id": "fa777627397063eb9b22"
+  },
+  {
+    "code": "text-wire-overlap",
+    "message": "text 'DRV8838' overlaps a wire near (139.70, 146.05)",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "error",
+    "id": "6d47b1d9a534b1b6e518"
+  },
+  {
+    "code": "text-wire-overlap",
+    "message": "text 'DRV8838' overlaps a wire near (139.70, 143.51)",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "error",
+    "id": "bbbc8b803757bc001e32"
+  },
+  {
+    "code": "text-wire-overlap",
+    "message": "text 'CONN_MOTOR_R' overlaps a wire near (67.94, 121.92)",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "error",
+    "id": "001c30d29797684aa376"
+  },
+  {
+    "code": "wire-crossing",
+    "message": "wires cross without connecting at (185.42, 57.15)",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "db6791731cc840068d16"
+  },
+  {
+    "code": "wire-crossing",
+    "message": "wires cross without connecting at (179.07, 54.61)",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "ad2a60eb9edaec06b22f"
+  },
+  {
+    "code": "wire-crossing",
+    "message": "wires cross without connecting at (179.07, 52.07)",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "c470670201993d3d22bf"
+  },
+  {
+    "code": "wire-crossing",
+    "message": "wires cross without connecting at (67.31, 124.46)",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "23eefd764eb26d9b1e43"
+  },
+  {
+    "code": "wire-crossing",
+    "message": "wires cross without connecting at (185.42, 62.23)",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "4e55ea87d3f6906b27e0"
+  },
+  {
+    "code": "wire-crossing",
+    "message": "wires cross without connecting at (185.42, 54.61)",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "e173c06fa6801e486b8e"
+  },
+  {
+    "code": "wire-crossing",
+    "message": "wires cross without connecting at (185.42, 59.69)",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "a829cfbc7e204c9ac1df"
+  },
+  {
+    "code": "wire-crossing",
+    "message": "wires cross without connecting at (185.42, 52.07)",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "f66a1951e087e0194349"
+  },
+  {
+    "code": "wire-crossing",
+    "message": "wires cross without connecting at (67.31, 121.92)",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "7200b0d4c644daeb2db1"
+  },
+  {
+    "code": "wire-crossing",
+    "message": "wires cross without connecting at (67.31, 119.38)",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "92a8dc1dd6b2a4e07f7f"
+  },
+  {
+    "code": "wire-crossing",
+    "message": "wires cross without connecting at (67.31, 127.00)",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "8822174dc9cf96759d93"
+  },
+  {
+    "code": "wire-crossing",
+    "message": "wires cross without connecting at (67.31, 116.84)",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "62e62202e96c83ff723a"
+  },
+  {
+    "code": "wire-crossing",
+    "message": "wires cross without connecting at (83.82, 116.84)",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "d714f354497c3c9ded47"
+  },
+  {
+    "code": "wire-crossing",
+    "message": "wires cross without connecting at (168.91, 52.07)",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "ff122419afe12b5c3372"
+  },
+  {
+    "code": "wire-crossing",
+    "message": "wires cross without connecting at (73.66, 119.38)",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "97f98bf1580e895f331a"
+  },
+  {
+    "code": "wire-crossing",
+    "message": "wires cross without connecting at (73.66, 116.84)",
+    "sheet": "motor_control.kicad_sch",
+    "severity": "warning",
+    "id": "39c7250774132cf6515e"
+  }
+]

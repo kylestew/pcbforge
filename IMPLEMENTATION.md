@@ -20,18 +20,21 @@ Acceptance includes native saves followed by AI edits, hierarchical instances,
 deliberate electrical faults, source staleness and preserved routed geometry.
 The GUI synchronization and final visual review remain user-operated steps.
 
-## Implementation checkpoint
+## Validation
 
 The native CLI, scaffold, electrical checks, approval gates, PCB synchronization,
 policy, placement and fabrication integration are implemented. Atopile and its
-compatibility patches have been removed from source, lockfile and installed runtime.
+compatibility patches are absent from source, lockfile and installed runtime.
 
-The full regression run passed 475 tests with two opt-in external checks skipped.
-A subsequent 29-test run passed after adding native sheet interfaces and shared
-multi-unit field updates. Real KiCad extraction covers repeated hierarchy,
-multi-unit symbols, excluded parts and transactional saves.
+The final suite ran 479 tests: 477 passed and two opt-in external checks were skipped.
+Both external checks passed separately: real two- and four-layer KiCad initialization,
+and a CubeMX round trip. Native tests also cover repeated hierarchy, shared multi-unit
+fields, excluded parts, transactions, drawing visibility, staleness and PCB preservation.
 
-Clean-revision initialization and the representative native pilot run next.
-User-operated GUI synchronization and final visual acceptance remain pending.
+The representative pilot extracted 69 components across three connected sheets.
+It preserved unchanged saves, cosmetic graph identity and routed PCB hashes.
+A deliberately incorrect bypass capacitor failed the independent requirement test.
+The historical drawing findings remain recorded; no full hardware approval is claimed.
 
-Regression command: `toolchain/.venv/bin/python -m unittest discover -s tests -t . -q`.
+See [the validation report](pilots/native-kicad/REPORT.md) for results and reproduction commands.
+User-operated GUI synchronization and final visual acceptance remain unverified.

@@ -1,0 +1,120 @@
+{
+  "kicad": "10.0.3",
+  "revision": "3414af4e1c4cf78b5d47ec7f5ae48c98e6ee5873",
+  "gui_validation": "pending user-operated check",
+  "hardware_approval": false,
+  "fresh_initialization": [
+    {
+      "layers": 2,
+      "schematic_sha256": "c4aec6d6e31ed8e4b0590f165c34f45d497d291a47ee91e67b70f8adf541dffb",
+      "board_sha256": "39edac67fb49ff36280d484fc5f7c976b3881ae152ffddb2e91586f155bdc847"
+    },
+    {
+      "layers": 4,
+      "schematic_sha256": "1f9ec7e416fc3661dd1b7f0409b2490e7e515bb4da9c4e1777c67135d363b37a",
+      "board_sha256": "b21b17ad19c56c39c551822f160ee803e02bae14e18c5c64d5c3e17ae665fdb3"
+    }
+  ],
+  "representative_round_trip": {
+    "source_revision": "3bc3361573dd21070efe9f76bba473947e2a0c21",
+    "components": 69,
+    "nets": 67,
+    "sheets": 3,
+    "graph_sha256": "28c44b57120b6a4489b5dcce829211da4a9d4f70d96deeea0b43eeb450cc0776",
+    "source_sha256": {
+      "pilots/roamer-rev-a/baseline/source/hardware/driver-board/driver-board.kicad_sch": "68cdf351e3349577ad27eef175cc2d70ac30f20b884fc9f5b9c64fb83e0b98c3",
+      "pilots/roamer-rev-a/baseline/source/hardware/driver-board/power.kicad_sch": "cb7b74f953c42f4992e91cc84b3773d550194b39f97520623651405a7e4d7afd",
+      "pilots/roamer-rev-a/baseline/source/hardware/driver-board/usb.kicad_sch": "72a191f6d8bcac063cb4e8bb5ae51b66f52e7a51b0ff36aded5baa0743d8e863",
+      "pilots/roamer-rev-a/baseline/source/hardware/driver-board/motor_control.kicad_sch": "9fb80131a69cd034e53fc0170b98e4a392f1a9cd6cd89139cc3ed43a53bf9dbb",
+      "pilots/roamer-rev-a/baseline/source/hardware/driver-board/driver-board.kicad_pro": "bad1ceea51b8d80b543abe92cdd0f53d6287e341af6ea2fbba2662008f324343",
+      "pilots/roamer-rev-a/baseline/source/hardware/driver-board/driver-board.kicad_pcb": "e04f6c20f57d42fa0a57ec5c2aa19e5a8bb18250b94119320026c57ad961ae8f"
+    },
+    "measurements": [
+      {
+        "check": "U3.1 must use rail VBAT_SW",
+        "passed": true
+      },
+      {
+        "check": "U3.8 must use rail +3V3",
+        "passed": true
+      },
+      {
+        "check": "U3.4 must use rail GND",
+        "passed": true
+      },
+      {
+        "check": "supply and ground use distinct connected nets",
+        "passed": true
+      },
+      {
+        "check": "decoupling on U3.8, U3.4 within [9e-08, 1.1e-07] F",
+        "passed": true
+      },
+      {
+        "check": "U4.1 must use rail VBAT_SW",
+        "passed": true
+      },
+      {
+        "check": "U4.8 must use rail +3V3",
+        "passed": true
+      },
+      {
+        "check": "U4.4 must use rail GND",
+        "passed": true
+      },
+      {
+        "check": "supply and ground use distinct connected nets",
+        "passed": true
+      },
+      {
+        "check": "decoupling on U4.8, U4.4 within [9e-08, 1.1e-07] F",
+        "passed": true
+      },
+      {
+        "check": "left VM bypass",
+        "measured": 1.0000000000000001e-07,
+        "minimum": 9e-08,
+        "maximum": 1.1e-07,
+        "unit": "F",
+        "passed": true
+      },
+      {
+        "check": "right VM bypass",
+        "measured": 1.0000000000000001e-07,
+        "minimum": 9e-08,
+        "maximum": 1.1e-07,
+        "unit": "F",
+        "passed": true
+      },
+      {
+        "check": "Forbidden connection: U3.1, U3.8",
+        "passed": true
+      },
+      {
+        "check": "Forbidden connection: U4.1, U4.8",
+        "passed": true
+      }
+    ],
+    "no_op_bytes_preserved": true,
+    "cosmetic_graph_preserved": true,
+    "source_and_routed_pcb_preserved": true,
+    "deliberate_fault_rejected": "left VM bypass: 1e-12 F outside [9e-08, 1.1e-07]",
+    "fault_delta": [
+      "C11: value changed from 100n to 1pF"
+    ],
+    "lint_findings": 106,
+    "lint_summary": {
+      "missing-purpose": 69,
+      "text-text-overlap": 10,
+      "text-wire-overlap": 5,
+      "dangling-wire-end": 6,
+      "wire-crossing": 16
+    },
+    "preview_sha256": {
+      "driver-board.svg": "532bcc000db36c6401dae1de0711fcb77e0a63dfe757f64833abfa1c4dc99f0c",
+      "driver-board-Motor Control.svg": "f8149b5fe23b21de9ce545bb73dc26f258886cfd755e5a47fdace3244b17b661",
+      "driver-board-Power.svg": "e55cb453b576dcddd1d2d05074719e7e6e99f4e001083e921d064c3407229b68"
+    },
+    "full_circuit_acceptance": "not claimed: historical design lacks the new sourced-facts contract"
+  }
+}
