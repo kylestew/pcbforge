@@ -14,10 +14,10 @@ import yaml
 
 POLICY_SCHEMA = 1
 POLICY_PROFILE_SCHEMA = 1
-POLICY_PROFILE_ID = "pcbforge-standard-v1"
+POLICY_PROFILE_ID = "pcbforge-native-v2"
 POLICY_FILENAME = "policy.yaml"
 POLICY_PROFILE_PATH = Path("policies") / f"{POLICY_PROFILE_ID}.yaml"
-PROJECT_PIN_SCHEMA = 1
+PROJECT_PIN_SCHEMA = 2
 
 ASSURANCE_RULES = (
     "reverse-polarity",
@@ -326,8 +326,8 @@ def load_policy_profile(
             "assembler": "jlcpcb",
             "mcu_vendor": "STMicroelectronics",
             "debug_interface": "swd",
-            "eda": "kicad-9",
-            "circuit_language": "atopile",
+            "eda": "kicad-10",
+            "circuit_language": "kicad-schematic",
         }
         for key, expected in expected_hard.items():
             if hard.get(key) != expected:
@@ -756,15 +756,11 @@ def policy_sourcing_fingerprint(
     digest.update(
         _canonical([asdict(part) for part in sorted(contract.sourcing, key=lambda p: p.lcsc)])
     )
-    for relative in (Path("build-test.yaml"),):
-        path = project_dir / relative
-        digest.update(relative.as_posix().encode())
-        digest.update(b"\0")
-        digest.update(
-            hashlib.sha256(path.read_bytes()).digest()
-            if path.is_file()
-            else b"<missing>"
-        )
+    from pcbforge.circuit import load_graph
+    if any(project_dir.glob("*.kicad_sch")):
+        digest.update(_canonical(load_graph(project_dir).bom()))
+    else:
+        digest.update(b"<missing-native-bom>")
     fab = project_dir / "fab"
     outputs = (
         sorted(path for path in fab.rglob("*") if path.is_file() and path.name != ".gitkeep")
@@ -785,8 +781,9 @@ def policy_inputs(project_dir: Path) -> tuple[Path, ...]:
         "policy.yaml",
         "spec.md",
         ".pcbforge",
-        "build-test.yaml",
+        "circuit-tests.yaml",
         "*.kicad_pcb",
+        "**/*.kicad_sch",
     )
     paths: set[Path] = set()
     for pattern in patterns:
@@ -815,6 +812,7 @@ def policy_status_fingerprint(
             digest.update(
                 _canonical(
                     {
+                        "circuit": policy_circuit_fingerprint(project_dir, tool_root=tool_root),
                         "baseline": policy_baseline_fingerprint(
                             project_dir,
                             tool_root=tool_root,
@@ -836,9 +834,12 @@ def policy_status_fingerprint(
                     }
                 )
             )
+        elif path.suffix == ".kicad_sch":
+            from pcbforge.circuit import load_graph
+            digest.update(load_graph(project_dir).fingerprint.encode())
         elif path.suffix == ".kicad_pcb":
             try:
-                from pcbforge.build_test import (
+                from pcbforge.circuit_evidence import (
                     board_topology_bytes,
                     read_board_evidence,
                 )
@@ -1007,14 +1008,23 @@ def _board_violations(
             )
         )
     try:
-        from pcbforge.build_test import read_board_evidence
+        from pcbforge.circuit_evidence import read_board_evidence
 
         board = read_board_evidence(board_paths[0])
     except Exception:
         return violations
     minimum_rank = PACKAGE_ORDER[minimum_package]
     declared_advanced = set(advanced_packages)
-    for reference, footprint in board.footprints:
+    footprints = set(board.footprints)
+    schematics = tuple(project_dir.glob("*.kicad_sch"))
+    if schematics:
+        from pcbforge.circuit import load_graph
+        from pcbforge.schematic import SchematicError
+        try:
+            footprints.update((c.reference, c.footprint) for c in load_graph(project_dir).components if not c.exclude_board)
+        except (SchematicError, OSError) as exc:
+            violations.append(PolicyViolation("components.schematic", "project", "circuit", str(exc), True))
+    for reference, footprint in sorted(footprints):
         upper = footprint.upper()
         commodity = (
             reference.startswith(("R", "C"))
@@ -1079,7 +1089,6 @@ def check_policy(
     if through_phase not in PHASE_ORDER:
         raise PolicyInputError(f"unknown policy phase {through_phase!r}")
     from pcbforge.initialize import (
-        ATO_VERSION,
         KICAD_VERSION,
         InitInputError,
         read_spec,
@@ -1137,7 +1146,6 @@ def check_policy(
             )
         else:
             expected_versions = {
-                "atopile": ATO_VERSION,
                 "kicad": KICAD_VERSION,
                 "uv_lock_sha256": lock_hash,
             }
@@ -1307,21 +1315,21 @@ def check_policy(
 
     warnings: list[PolicyWarning] = []
     sourcing_by_lcsc = {part.lcsc: part for part in contract.sourcing}
-    build_test_path = project_dir / "build-test.yaml"
+    circuit_test_path = project_dir / "circuit-tests.yaml"
     expected_lcsc: set[str] = set()
-    if build_test_path.is_file():
+    if circuit_test_path.is_file():
         try:
-            from pcbforge.build_test import read_build_test_contract
+            from pcbforge.circuit_evidence import read_circuit_inventory
 
             expected_lcsc = {
                 component.lcsc
-                for component in read_build_test_contract(project_dir).bom
+                for component in read_circuit_inventory(project_dir).bom
             }
         except Exception as exc:
             violations.append(
                 PolicyViolation(
                     "hard.exact-parts",
-                    "build-test.yaml",
+                    "circuit-tests.yaml",
                     "circuit",
                     f"cannot validate exact BOM sourcing: {exc}",
                     True,

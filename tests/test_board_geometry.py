@@ -4,8 +4,8 @@ Provenance for the golden values
 --------------------------------
 
 The golden fixture is
-`pilots/kicad9-multichannel/baseline/source/multichannel_mixer.kicad_pcb`:
-KiCad's own `multichannel` demo, vendored from the KiCad 9.0.9 macOS image and
+`tests/fixtures/native-layout.kicad_pcb`: a format-updated copy of
+KiCad's own `multichannel` demo, vendored from the KiCad 9.0.8 macOS image and
 licensed CC-BY-SA 4.0. See `pilots/kicad9-multichannel/NOTICE.md`. Its sibling
 `multichannel_mixer-unrouted.kicad_pcb` carries `(version 20241030)` and serves
 as the version-rejection fixture.
@@ -18,7 +18,7 @@ coordinate converts with `mm = value * 0.00254` and y is negated. Its quantum is
 
     scripts/kicad-cli pcb export ipcd356 -o out.d356 board.kicad_pcb
 
-Result, kicad-cli 9.0.9, 2026-09-02, 114 footprints (81 on the back), 265 pads
+Original oracle result, kicad-cli 9.0.8, 2026-09-02, 114 footprints (81 on the back), 265 pads
 compared:
 
     worst error         0.0017 mm   (front 0.0017, back 0.0017)
@@ -35,12 +35,8 @@ Regenerate any of the above with:
     uv run --project toolchain python \\
         pilots/kicad9-multichannel/scripts/check_board_geometry.py
 
-Tests here never shell out to `kicad-cli`. `scripts/kicad-cli` hard-codes a
-macOS path and exits 2 when absent, so such a test would silently skip
-everywhere and protect nothing; the repo gates its only real-CLI tests behind
-PCBFORGE_RUN_REAL_INTEGRATION for the same reason. The baked values below are
-exact decimals read from the committed board, and so are more precise than the
-oracle that validated the method.
+These geometry unit tests use saved reference values. Native extraction and
+round-trip checks in test_schematic and test_circuit also run the real CLI.
 """
 
 from __future__ import annotations
@@ -62,16 +58,12 @@ from pcbforge.board_geometry import (
 TOOL_ROOT = Path(__file__).resolve().parents[1]
 MULTICHANNEL = (
     TOOL_ROOT
-    / "pilots"
-    / "kicad9-multichannel"
-    / "baseline"
-    / "source"
-    / "multichannel_mixer.kicad_pcb"
+    / "tests" / "fixtures" / "native-layout.kicad_pcb"
 )
-UNROUTED = MULTICHANNEL.with_name("multichannel_mixer-unrouted.kicad_pcb")
+UNROUTED = TOOL_ROOT / "pilots/kicad9-multichannel/baseline/source/multichannel_mixer-unrouted.kicad_pcb"
 
 HEADER = """(kicad_pcb
-  (version 20241229)
+  (version 20260206)
   (generator "pcbnew")
   (layers
     (0 "F.Cu" signal)
@@ -602,7 +594,7 @@ class RejectionTests(unittest.TestCase):
         self.assertIn("not a KiCad board", self.read(""))
 
     def test_non_board_root_is_rejected(self) -> None:
-        self.assertIn("not a KiCad board", self.read('(kicad_sch (version 20241229))'))
+        self.assertIn("not a KiCad board", self.read('(kicad_sch (version 20260206))'))
 
     def test_old_board_version_is_rejected(self) -> None:
         message = self.read("(kicad_pcb (version 20241030))")
@@ -622,7 +614,7 @@ class LayerCountTests(GeometryFixture):
             path = Path(temporary) / "board.kicad_pcb"
             path.write_text(
                 """(kicad_pcb
-  (version 20241229)
+  (version 20260206)
   (layers
     (0 "F.Cu" signal)
     (1 "In1.Cu" power)
@@ -648,7 +640,7 @@ class MultichannelBoardTests(unittest.TestCase):
         cls.geometry = read_board_geometry(MULTICHANNEL)
 
     def test_board_level_counts(self) -> None:
-        self.assertEqual(self.geometry.version, 20241229)
+        self.assertEqual(self.geometry.version, 20260206)
         self.assertEqual(self.geometry.layer_count, 2)
         self.assertEqual(len(self.geometry.footprints), 114)
         self.assertEqual(len(self.geometry.vias), 29)

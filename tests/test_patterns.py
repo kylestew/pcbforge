@@ -380,11 +380,7 @@ class BoardFactsTests(unittest.TestCase):
 
         board = (
             Path(__file__).resolve().parents[1]
-            / "pilots"
-            / "kicad9-multichannel"
-            / "baseline"
-            / "source"
-            / "multichannel_mixer.kicad_pcb"
+            / "tests" / "fixtures" / "native-layout.kicad_pcb"
         )
         derived = board_facts(read_board_geometry(board))
 

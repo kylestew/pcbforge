@@ -1,10 +1,4 @@
-"""KiCad symbol resolution for the generated review schematic.
-
-Symbols come from the pinned KiCad 9 bundle's stock libraries, are flattened
-(`extends` resolved) and renamed to `Lib:Name` so they can be embedded in a
-`.kicad_sch` `lib_symbols` block. Parts whose stock symbol does not match the
-compiled footprint pads get a generated box symbol instead.
-"""
+"""Resolve and inspect native KiCad symbols from the pinned libraries."""
 
 from __future__ import annotations
 
@@ -23,13 +17,7 @@ from pcbforge.sexpr import Node, Quoted
 GRID = 1.27
 GENERIC_LIB = "pcbforge"
 POWER_LIB = "pcbforge_power"
-_SHIM_RE = re.compile(r'^KICAD9_CLI="(?P<path>[^"]+)"', re.MULTILINE)
-_KICAD10_ONLY = {
-    "duplicate_pin_numbers_are_jumpers",
-    "in_pos_files",
-    "show_name",
-    "do_not_autoplace",
-}
+
 
 
 class SymbolError(RuntimeError):
@@ -67,7 +55,7 @@ class LibSymbol:
                 return pin
         raise SymbolError(f"{self.lib_id} has no pin {number!r} in unit {unit}")
 
-    def bbox(self, unit: int = 1) -> tuple[float, float, float, float]:
+    def bbox(self, unit: int = 1, *, include_pins: bool = True) -> tuple[float, float, float, float]:
         """Graphics extent in library coordinates (y up), pins included."""
         xs: list[float] = []
         ys: list[float] = []
@@ -100,7 +88,7 @@ class LibSymbol:
                         point = sexpr.child(item, key)
                         xs.append(sexpr.number(point, 1))
                         ys.append(sexpr.number(point, 2))
-        for pin in self.pins:
+        for pin in self.pins if include_pins else ():
             if pin.unit not in (0, unit):
                 continue
             xs.append(pin.x)
@@ -135,25 +123,21 @@ class SymbolChoice:
 
 
 def symbols_dir(tool_root: Path) -> Path:
-    """Locate the pinned KiCad 9 stock symbol directory via the CLI shim."""
-    shim = Path(tool_root) / "scripts" / "kicad-cli"
+    from pcbforge.kicad_tools import library_dir
     try:
-        text = shim.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise SymbolError(f"cannot read {shim}: {exc}") from exc
-    match = _SHIM_RE.search(text)
-    if match is None:
-        raise SymbolError(f"{shim} does not pin KICAD9_CLI")
-    cli = Path(match.group("path"))
-    # .../KiCad.app/Contents/MacOS/kicad-cli -> .../Contents/SharedSupport/symbols
-    candidate = cli.parents[1] / "SharedSupport" / "symbols"
-    if not candidate.is_dir():
-        raise SymbolError(f"KiCad 9 symbol library directory not found: {candidate}")
-    return candidate
+        return library_dir("symbols", tool_root)
+    except (OSError, RuntimeError) as exc:
+        raise SymbolError(str(exc)) from exc
 
 
-@lru_cache(maxsize=None)
+
 def _library(path: str) -> Mapping[str, Node]:
+    stat = Path(path).stat()
+    return _library_version(path, stat.st_mtime_ns, stat.st_size)
+
+
+@lru_cache(maxsize=64)
+def _library_version(path: str, modified: int, size: int) -> Mapping[str, Node]:
     try:
         root = sexpr.parse(Path(path).read_text(encoding="utf-8"))
     except (OSError, sexpr.SExprError) as exc:
@@ -248,12 +232,6 @@ def load_stock(lib: str, name: str, directory: Path) -> LibSymbol:
     if name not in library:
         raise SymbolError(f"{lib}.kicad_sym has no symbol {name!r}")
     flat = _flatten(name, library)
-    for node in sexpr.walk(flat):
-        if sexpr.head(node) in _KICAD10_ONLY:
-            raise SymbolError(
-                f"{lib}:{name} uses KiCad 10 syntax ({sexpr.head(node)}); "
-                "the pinned KiCad 9 libraries are required"
-            )
     lib_id = f"{lib}:{name}"
     flat[1] = Quoted(lib_id)
     return LibSymbol(

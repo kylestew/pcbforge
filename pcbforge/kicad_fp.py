@@ -1,21 +1,11 @@
-"""Pad discovery from KiCad footprints for the review schematic.
-
-Before a board exists (Gate A) the only pad list is the footprint the model
-names. The pinned KiCad 9 bundle supplies official footprints; a project's
-own copies live under ``src/parts/<Lib>/<Name>.kicad_mod`` (atopile atomic
-parts). Every physical pad counts, connected or not, so official symbols
-can be checked pin for pin.
-"""
+"""Resolve native footprint libraries and inspect physical pads."""
 
 from __future__ import annotations
 
-import re
-from functools import lru_cache
 from pathlib import Path
 
 from pcbforge import sexpr
 
-_SHIM_RE = re.compile(r'^KICAD9_CLI="(?P<path>[^"]+)"', re.MULTILINE)
 
 
 class FootprintError(RuntimeError):
@@ -23,20 +13,12 @@ class FootprintError(RuntimeError):
 
 
 def footprints_dir(tool_root: Path) -> Path:
-    """Locate the pinned KiCad 9 stock footprint directory via the CLI shim."""
-    shim = Path(tool_root) / "scripts" / "kicad-cli"
+    from pcbforge.kicad_tools import library_dir
     try:
-        text = shim.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise FootprintError(f"cannot read {shim}: {exc}") from exc
-    match = _SHIM_RE.search(text)
-    if match is None:
-        raise FootprintError(f"{shim} does not pin KICAD9_CLI")
-    cli = Path(match.group("path"))
-    candidate = cli.parents[1] / "SharedSupport" / "footprints"
-    if not candidate.is_dir():
-        raise FootprintError(f"KiCad 9 footprint library directory not found: {candidate}")
-    return candidate
+        return library_dir("footprints", tool_root)
+    except (OSError, RuntimeError) as exc:
+        raise FootprintError(str(exc)) from exc
+
 
 
 def footprint_path(
@@ -44,28 +26,34 @@ def footprint_path(
     directory: Path | None,
     project_dir: Path | None = None,
 ) -> Path | None:
-    """Resolve ``Lib:Name`` to a ``.kicad_mod`` file: official first, then project-local."""
+    """Resolve ``Lib:Name`` to a ``.kicad_mod`` file: project table first, then official libraries."""
     if ":" not in footprint:
         return None
     lib, name = footprint.split(":", 1)
     if not lib or not name or "/" in name or "/" in lib:
         return None
-    candidates: list[Path] = []
-    if directory is not None:
-        candidates.append(Path(directory) / f"{lib}.pretty" / f"{name}.kicad_mod")
+    # KiCad project tables override global libraries. Honor that precedence.
     if project_dir is not None:
-        parts = Path(project_dir) / "src" / "parts"
-        candidates.append(parts / lib / f"{name}.kicad_mod")
-        candidates.append(parts / f"{lib}.pretty" / f"{name}.kicad_mod")
-        if parts.is_dir():
-            candidates += sorted(parts.rglob(f"{name}.kicad_mod"))
-    for path in candidates:
-        if path.is_file():
-            return path
-    return None
+        table = Path(project_dir) / "fp-lib-table"
+        if table.is_file():
+            try:
+                root = sexpr.parse(table.read_text())
+                for entry in sexpr.children(root, "lib"):
+                    if sexpr.atom(sexpr.child(entry, "name")) != lib:
+                        continue
+                    uri = sexpr.atom(sexpr.child(entry, "uri"))
+                    uri = uri.replace("${KIPRJMOD}", str(Path(project_dir).resolve()))
+                    path = (Path(uri) / f"{name}.kicad_mod").resolve()
+                    if not path.is_relative_to(Path(project_dir).resolve()):
+                        raise FootprintError("project footprint library must be inside the project")
+                    return path if path.is_file() else None
+            except (OSError, sexpr.SExprError) as exc:
+                raise FootprintError(f"invalid fp-lib-table: {exc}") from exc
+    path = Path(directory) / f"{lib}.pretty" / f"{name}.kicad_mod" if directory else None
+    return path if path and path.is_file() else None
 
 
-@lru_cache(maxsize=None)
+
 def _pads_of(path: str) -> frozenset[str]:
     try:
         root = sexpr.parse(Path(path).read_text(encoding="utf-8"))

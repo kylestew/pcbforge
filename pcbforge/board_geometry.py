@@ -1,4 +1,4 @@
-"""Absolute board geometry read from a KiCad 9 ``.kicad_pcb``.
+"""Absolute board geometry read from a KiCad 10 ``.kicad_pcb``.
 
 Read-only. Nothing here writes, and no caller may use it to modify a board.
 
@@ -35,7 +35,7 @@ from typing import Iterable, Mapping, Sequence
 from pcbforge import sexpr
 from pcbforge.sexpr import Node
 
-BOARD_FORMAT_VERSION = "20241229"
+from pcbforge.kicad_tools import BOARD_FORMAT as BOARD_FORMAT_VERSION
 FALLBACK_MARGIN_MM = 0.25
 
 Point = tuple[float, float]
@@ -52,7 +52,7 @@ _ANGLE_EPS = 1e-6
 
 
 class BoardGeometryError(RuntimeError):
-    """The board cannot be read as KiCad 9 geometry."""
+    """The board cannot be read as KiCad 10 geometry."""
 
 
 @dataclass(frozen=True)
@@ -216,7 +216,7 @@ class ZoneGeometry:
 
 @dataclass(frozen=True)
 class BoardGeometry:
-    """Absolute geometry for one KiCad 9 board."""
+    """Absolute geometry for one KiCad 10 board."""
 
     version: int
     layer_count: int
@@ -457,7 +457,7 @@ def _pad_geometry(
         y=centre[1],
         size_x=sexpr.number(size, 1),
         size_y=sexpr.number(size, 2),
-        net=sexpr.atom(net, 2) if net is not None else "",
+        net=(sexpr.atom(net, 2) or sexpr.atom(net, 1)) if net is not None else "",
         through_hole=sexpr.atom(pad, 2) in _THROUGH_HOLE_TYPES,
         box=extent
         if extent is not None
@@ -587,7 +587,7 @@ def _vias(root: Node, nets: Mapping[str, str]) -> tuple[ViaGeometry, ...]:
                 y=y,
                 diameter=sexpr.number(sexpr.child(node, "size"), 1),
                 drill=sexpr.number(sexpr.child(node, "drill"), 1),
-                net=nets.get(index, ""),
+                net=(index if net is not None and len(net) > 1 and isinstance(net[1], sexpr.Quoted) else nets.get(index, "")),
             )
         )
     return tuple(vias)
@@ -615,13 +615,14 @@ def _zones(root: Node, nets: Mapping[str, str]) -> tuple[ZoneGeometry, ...]:
         if net_name is not None:
             net = sexpr.atom(net_name)
         else:
-            net = nets.get(sexpr.atom(sexpr.child(node, "net"), 1), "")
+            net = sexpr.atom(sexpr.child(node, "net"), 1)
+            net = nets.get(net, net)
         zones.append(ZoneGeometry(layer=name, net=net, box=box))
     return tuple(zones)
 
 
 def read_board_geometry(path: Path) -> BoardGeometry:
-    """Read absolute geometry from a KiCad 9 board. Never writes."""
+    """Read absolute geometry from a KiCad 10 board. Never writes."""
     path = Path(path)
     root = _read_root(path)
     nets = _net_names(root)

@@ -34,15 +34,11 @@ from pcbforge.board_edit import (
     move_footprint,
 )
 from pcbforge.board_geometry import read_board_geometry
-from pcbforge.build_test import board_topology_bytes, read_board_evidence
+from pcbforge.circuit_evidence import board_topology_bytes, read_board_evidence
 
 FIXTURE = (
     Path(__file__).resolve().parents[1]
-    / "pilots"
-    / "kicad9-multichannel"
-    / "baseline"
-    / "source"
-    / "multichannel_mixer.kicad_pcb"
+    / "tests" / "fixtures" / "native-layout.kicad_pcb"
 )
 
 

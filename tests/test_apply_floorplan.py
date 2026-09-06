@@ -19,7 +19,7 @@ from pcbforge.apply_floorplan import (
 )
 from pcbforge.board_edit import BACKUP_DIRNAME
 from pcbforge.board_geometry import read_board_geometry
-from pcbforge.build_test import board_topology_bytes, read_board_evidence
+from pcbforge.circuit_evidence import board_topology_bytes, read_board_evidence
 from pcbforge.cli import main
 from pcbforge.placement_check import check_placement
 from tests.test_placement_check import CheckFixture, footprint

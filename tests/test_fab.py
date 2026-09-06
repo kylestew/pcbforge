@@ -12,7 +12,7 @@ from unittest import mock
 
 import yaml
 
-from pcbforge.build_test import fingerprint_inputs
+from pcbforge.circuit_evidence import fingerprint_inputs
 from pcbforge.cli import main
 from pcbforge.fab import (
     ARCHIVE_SUFFIX,
@@ -54,7 +54,7 @@ board_mm: [50, 40]
 """
 
 BOARD = """(kicad_pcb
-  (version 20241229)
+  (version 20260206)
   (footprint "Resistor_SMD:R_0603_1608Metric"
     (layer "F.Cu")
     (at 110 120 0)
@@ -78,7 +78,7 @@ BOARD = """(kicad_pcb
 )
 """
 
-CONTRACT = """build_test_schema: 1
+CONTRACT = """electrical_test_schema: 2
 build: default
 bom:
   - lcsc: C25804
@@ -95,7 +95,7 @@ assertions:
 """
 
 STATUS = """---
-pcbforge_status_schema: 1
+pcbforge_status_schema: 2
 updated_at: '2026-08-03T10:00:00+00:00'
 events:
 - at: '2026-08-03T09:00:00+00:00'
@@ -123,7 +123,11 @@ events:
   approval_fingerprint: {hash}
   content_fingerprint: {hash}
 policy_events: []
-transition_events: []
+transition_events:
+  - at: "2026-07-27T10:00:00+00:00"
+    transition: circuit-sync
+    action: complete
+    note: fixture
 checks: {{}}
 ---
 # fixture
@@ -175,7 +179,7 @@ class FakeKicad:
                 name = f"{self.stem}-{layer.replace('.', '_')}.gbr"
                 (output / name).write_text(
                     f"G04 #@! TF.CreationDate,{self._stamp()}*\n"
-                    f"G04 Created by KiCad (PCBNEW 9.0.9) date {self._stamp()}*\n"
+                    f"G04 Created by KiCad (PCBNEW 10.0.3) date {self._stamp()}*\n"
                     f"G04 layer {layer}*\nM02*\n",
                     encoding="utf-8",
                 )
@@ -192,7 +196,7 @@ class FakeKicad:
             output = Path(self._value(command, "--output"))
             for kind in ("PTH", "NPTH"):
                 (output / f"{self.stem}-{kind}.drl").write_text(
-                    f"M48\n; DRILL file {{KiCad 9.0.9}} date {self._stamp()}\n"
+                    f"M48\n; DRILL file {{KiCad 10.0.3}} date {self._stamp()}\n"
                     "METRIC\nT1C0.600\nM30\n",
                     encoding="utf-8",
                 )
@@ -212,7 +216,7 @@ class FakeKicad:
                     {
                         "$schema": "https://schemas.kicad.org/drc.v1.json",
                         "date": self._stamp(),
-                        "kicad_version": "9.0.9",
+                        "kicad_version": "10.0.3",
                         "coordinate_units": "mm",
                         "violations": [
                             {"severity": "error"} for _ in range(self.drc_violations)
@@ -242,18 +246,17 @@ class FabFixture(unittest.TestCase):
         )
         _, _, policy_hash = load_policy_profile(TOOL_ROOT)
         (project / ".pcbforge").write_text(
-            f"""schema: 1
+            f"""schema: 2
 toolchain:
-  atopile: 0.15.7
-  kicad: 9.0.9
+  kicad: 10.0.3
   uv_lock_sha256: {TOOLCHAIN_LOCK_HASH}
 guidance:
-  build_test_schema: 1
-  layout_handoff_schema: 1
-  approval_schema: 1
+  electrical_test_schema: 2
+  layout_handoff_schema: 2
+  approval_schema: 2
   policy_schema: 1
 policy:
-  profile: pcbforge-standard-v1
+  profile: pcbforge-native-v2
   profile_sha256: {policy_hash}
   baseline_approval: spec
 rules:
@@ -262,74 +265,18 @@ rules:
 """,
             encoding="utf-8",
         )
-        (project / "ato.yaml").write_text(
-            "builds:\n  default:\n    entry: src/main.ato:App\n",
-            encoding="utf-8",
-        )
-        (project / "build-test.yaml").write_text(CONTRACT, encoding="utf-8")
-        (project / "src").mkdir()
-        (project / "src" / "main.ato").write_text(
-            "module App:\n    pass\n",
-            encoding="utf-8",
-        )
         (project / "garden-logger.kicad_pcb").write_text(BOARD, encoding="utf-8")
         (project / "garden-logger.kicad_pro").write_text("{}\n", encoding="utf-8")
         (project / "garden-logger.kicad_dru").write_text(
             "(version 1)\n",
             encoding="utf-8",
         )
-        build = project / "build" / "builds" / "default"
-        build.mkdir(parents=True)
-        (project / "build" / "manifest.json").write_text(
-            '{"version": "2.0"}\n',
-            encoding="utf-8",
-        )
-        (build / "default.bom.json").write_text(
-            json.dumps(
-                {
-                    "version": "1.0",
-                    "build_id": "fixture",
-                    "components": [
-                        {
-                            "lcsc": "C25804",
-                            "mpn": "0603WAF1002T5E",
-                            "package": "Resistor_SMD:R_0603_1608Metric",
-                            "quantity": 1,
-                            "usages": [{"designator": "R1"}],
-                        },
-                        {
-                            "lcsc": "C8734",
-                            "mpn": "STM32G031K8T6",
-                            "package": "Package_QFP:LQFP-32",
-                            "quantity": 1,
-                            "usages": [{"designator": "U1"}],
-                        },
-                    ],
-                }
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-        (build / "default.bom.csv").write_text(
-            "Designator,Footprint,Quantity,Value,Manufacturer,Partnumber,"
-            "LCSC Part #\nR1,Resistor_SMD:R_0603_1608Metric,1,10k,UNI-ROYAL,"
-            "0603WAF1002T5E,C25804\n",
-            encoding="utf-8",
-        )
         (project / "fab").mkdir()
-        (project / "fab" / ".gitkeep").write_text("", encoding="utf-8")
-        (project / "docs").mkdir()
-        (project / "docs" / "build-test.md").write_text(
-            f"""---
-pcbforge_build_test_report_schema: 1
-result: pass
-build: default
-fingerprint: {fingerprint_inputs(project)}
----
-# Pass
-""",
-            encoding="utf-8",
-        )
+        (project / "fab/.gitkeep").write_text("")
+        from tests.native_fixture import seed_native
+        seed_native(project, [
+            {"ref":"R1", "value":"10k", "lcsc":"C25804", "mpn":"0603WAF1002T5E", "footprint":"Resistor_SMD:R_0603_1608Metric"},
+            {"ref":"U1", "lcsc":"C8734", "mpn":"STM32G031K8T6", "footprint":"Package_QFP:LQFP-32"}])
         if verified:
             (project / "STATUS.md").write_text(STATUS, encoding="utf-8")
         return project
@@ -350,6 +297,7 @@ fingerprint: {fingerprint_inputs(project)}
                 "pcbforge.status._current_architecture_baseline",
                 return_value=mock.sentinel.baseline,
             ),
+            mock.patch("pcbforge.pcb_update.sync_is_current", return_value=True),
             mock.patch(
                 "pcbforge.status._current_layout_handoff",
                 return_value=mock.sentinel.handoff,
@@ -395,14 +343,14 @@ class GenerationTests(FabFixture):
             "garden-logger-PTH.drl",
         ):
             self.assertIn(expected, names)
-        self.assertEqual(manifest["pcbforge_fab_schema"], 1)
+        self.assertEqual(manifest["pcbforge_fab_schema"], 2)
         self.assertEqual(manifest["rules_profile"], "jlc-2layer-conservative-v1")
         self.assertEqual(manifest["sources"]["board_sha256"], hashlib.sha256(
             board_before
         ).hexdigest())
         self.assertEqual(
             [event["transition"] for event in document["transition_events"]],
-            ["fab-out"],
+            ["circuit-sync", "fab-out"],
         )
 
     def test_manifest_commands_are_machine_independent(self) -> None:
@@ -486,7 +434,7 @@ class RefusalTests(FabFixture):
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary), verified=False)
             (project / "STATUS.md").write_text(
-                "---\npcbforge_status_schema: 1\nupdated_at: ''\n"
+                "---\npcbforge_status_schema: 2\nupdated_at: ''\n"
                 "events: []\npolicy_events: []\ntransition_events: []\n"
                 "checks: {}\n---\n",
                 encoding="utf-8",
@@ -504,13 +452,13 @@ class RefusalTests(FabFixture):
     def test_refuses_when_circuit_acceptance_is_stale(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))
-            (project / "src" / "main.ato").write_text(
+            (project / "circuit_tests.py").write_text(
                 "module App:\n    pass\n    # changed\n",
                 encoding="utf-8",
             )
             with (
                 self.verify_complete(),
-                self.assertRaisesRegex(FabInputError, "CIRCUIT acceptance"),
+                self.assertRaisesRegex(FabInputError, "circuit acceptance"),
             ):
                 generate_fab(project, tool_root=TOOL_ROOT, runner=FakeKicad())
 

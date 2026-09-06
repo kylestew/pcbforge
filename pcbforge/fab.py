@@ -17,28 +17,27 @@ from typing import Any, Callable, Mapping, Sequence
 import yaml
 
 from pcbforge.artifact_hash import ArtifactHashError, semantic_bom_sha256
-from pcbforge.build_test import (
-    BuildTestError,
-    BuildTestInputError,
+from pcbforge.circuit_evidence import (
+    CircuitEvidenceError,
+    CircuitEvidenceInputError,
     BoardEvidence,
     read_board_evidence,
-    schematic_tamper_message,
     read_bom_components,
-    read_build_test_contract,
+    read_circuit_inventory,
     require_current_acceptance,
 )
 from pcbforge.initialize import InitInputError, read_spec
 from pcbforge.fsutil import AtomicWriteError, commit_outputs, remove_paths
 from pcbforge.placement import PlacementError, read_rules_profile
 
-FAB_SCHEMA = 1
+FAB_SCHEMA = 2
 FAB_DIRNAME = "fab"
 MANIFEST_FILENAME = "manifest.json"
 JLC_BOM_FILENAME = "jlc-bom.csv"
 JLC_CPL_FILENAME = "jlc-cpl.csv"
 DRC_REPORT_FILENAME = "drc-report.json"
 POS_FILENAME = "position.csv"
-BOM_CSV_FILENAME = "compiler-bom.csv"
+BOM_CSV_FILENAME = "schematic-bom.csv"
 ARCHIVE_SUFFIX = "-fab.zip"
 KEEP_FILENAME = ".gitkeep"
 
@@ -156,11 +155,8 @@ def _spec(project_dir: Path) -> Any:
 def _board_evidence(path: Path) -> BoardEvidence:
     try:
         board = read_board_evidence(path)
-    except (BuildTestInputError, BuildTestError) as exc:
+    except (CircuitEvidenceInputError, CircuitEvidenceError) as exc:
         raise FabInputError(str(exc)) from exc
-    tamper = schematic_tamper_message(board, path.name)
-    if tamper:
-        raise FabInputError(tamper)
     return board
 
 
@@ -275,7 +271,7 @@ def _short_footprint(footprint: str) -> str:
 
 
 def render_jlc_bom(components: Sequence[Any]) -> str:
-    """Render the JLC assembly BOM from validated compiler components."""
+    """Render the JLC assembly BOM from validated schematic components."""
     rows = [
         (
             component.mpn,
@@ -433,7 +429,6 @@ def _manifest_bytes(
         "project": project_name,
         "build": build,
         "toolchain": {
-            "atopile": pins["toolchain"].get("atopile"),
             "kicad": pins["toolchain"].get("kicad"),
         },
         "rules_profile": rules_profile,
@@ -471,33 +466,26 @@ def _context(
     return spec, pins, rules_profile, _layers(spec.layers), tool_root
 
 
-def _compiler_paths(project_dir: Path, build: str) -> tuple[Path, Path]:
-    build_dir = project_dir / "build" / "builds" / build
-    return build_dir / f"{build}.bom.json", build_dir / f"{build}.bom.csv"
+def _schematic_paths(project_dir: Path, build: str) -> tuple[Path, Path]:
+    build_dir = project_dir / "build" / "circuit"
+    return build_dir / "bom.json", build_dir / "bom.csv"
 
 
 def _read_sources(
     project_dir: Path,
 ) -> tuple[Any, tuple[Any, ...], Path, Path, str]:
     try:
-        contract = read_build_test_contract(project_dir)
-    except (BuildTestInputError, BuildTestError) as exc:
+        contract = read_circuit_inventory(project_dir)
+    except (CircuitEvidenceInputError, CircuitEvidenceError) as exc:
         raise FabInputError(str(exc)) from exc
-    bom_json, bom_csv = _compiler_paths(project_dir, contract.build)
+    bom_json, bom_csv = _schematic_paths(project_dir, contract.build)
     try:
         components = read_bom_components(bom_json)
         bom_sha256 = semantic_bom_sha256(bom_json)
-    except (BuildTestError, ArtifactHashError) as exc:
-        raise FabInputError(f"cannot read the compiler BOM: {exc}") from exc
-    expected = {item.lcsc for item in contract.bom}
-    actual = {item.lcsc for item in components}
-    if expected != actual:
-        missing = ", ".join(sorted(expected - actual)) or "none"
-        extra = ", ".join(sorted(actual - expected)) or "none"
-        raise FabInputError(
-            "compiler BOM does not match the approved build-test contract "
-            f"(missing: {missing}; unexpected: {extra})"
-        )
+    except (CircuitEvidenceError, ArtifactHashError) as exc:
+        raise FabInputError(f"cannot read the schematic BOM: {exc}") from exc
+    if set(contract.bom) != set(components):
+        raise FabInputError("saved BOM differs from the current saved schematic; rerun check-circuit --write-report")
     return contract, components, bom_json, bom_csv, bom_sha256
 
 
@@ -514,7 +502,7 @@ def generate_fab(
     _require_verify_complete(project_dir)
     try:
         require_current_acceptance(project_dir)
-    except BuildTestInputError as exc:
+    except CircuitEvidenceInputError as exc:
         raise FabInputError(str(exc)) from exc
 
     spec, pins, rules_profile, layers, tool_root = _context(project_dir, tool_root)
@@ -566,7 +554,7 @@ def generate_fab(
                 kicad, "pcb", "drc",
                 "--format", "json",
                 "--output", str(drc_path),
-                "--severity-all",
+                "--severity-all", "--schematic-parity",
                 str(board_path),
             ),
         )
@@ -592,7 +580,7 @@ def generate_fab(
     try:
         staged[BOM_CSV_FILENAME] = bom_csv.read_bytes()
     except OSError as exc:
-        raise FabInputError(f"cannot read the compiler BOM CSV: {exc}") from exc
+        raise FabInputError(f"cannot read the schematic BOM CSV: {exc}") from exc
     staged[JLC_BOM_FILENAME] = render_jlc_bom(components).encode()
     staged[JLC_CPL_FILENAME] = render_jlc_cpl(placements).encode()
 
@@ -734,6 +722,10 @@ def check_fab(
     """Validate the recorded packet against the project without regenerating."""
     project_dir = project_dir.expanduser().resolve()
     spec, _pins, _profile, layers, _tool_root = _context(project_dir, tool_root)
+    try:
+        require_current_acceptance(project_dir)
+    except CircuitEvidenceInputError as exc:
+        raise FabInputError(str(exc)) from exc
     manifest = read_manifest(project_dir)
     target = fab_dir(project_dir)
     board_path = project_dir / f"{spec.name}.kicad_pcb"
@@ -750,9 +742,9 @@ def check_fab(
     if sources.get("board_sha256") != board_sha256:
         errors.append("the board changed after the packet was generated")
     if sources.get("bom_semantic_sha256") != bom_sha256:
-        errors.append("the compiler BOM changed after the packet was generated")
+        errors.append("the schematic BOM changed after the packet was generated")
     if manifest.get("build") != contract.build:
-        errors.append("the packet was generated for a different compiler build")
+        errors.append("the packet was generated for a different schematic build")
     if tuple(manifest.get("layers") or ()) != layers:
         errors.append("the packet layer set does not match the project stackup")
 
@@ -778,7 +770,7 @@ def check_fab(
 
     expected_bom = render_jlc_bom(components).encode()
     if staged.get(JLC_BOM_FILENAME) not in (None, expected_bom):
-        errors.append(f"fab/{JLC_BOM_FILENAME} no longer matches the compiler BOM")
+        errors.append(f"fab/{JLC_BOM_FILENAME} no longer matches the schematic BOM")
     if POS_FILENAME in staged:
         placements = _read_position_rows(target / POS_FILENAME)
         expected_cpl = render_jlc_cpl(placements).encode()

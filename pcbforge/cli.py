@@ -6,18 +6,11 @@ import argparse
 import sys
 from pathlib import Path
 
-from pcbforge.build_test import (
-    BuildTestError,
-    BuildTestInputError,
-    check_build_test,
-)
 from pcbforge.compatibility import CompatibilityError, validate_project_compatibility
-from pcbforge.circuit_review import (
-    CircuitReviewError,
-    CircuitReviewInputError,
-    check_circuit_review,
-)
-from pcbforge.kicad_sch import RenderResult, ReviewSchematic, SchematicError, export_preview, probe_text
+from pcbforge.circuit import check_circuit, export_preview
+from pcbforge.schematic import SchematicError
+from pcbforge.electrical import ElectricalError
+from pcbforge.pcb_update import prepare_pcb_update, check_pcb_update, finish_circuit
 from pcbforge.fab import (
     FabError,
     FabInputError,
@@ -96,7 +89,7 @@ from pcbforge.status import (
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pcbforge",
-        description="AI-assisted circuit-as-code PCB project tooling.",
+        description="AI-assisted native KiCad PCB project tooling.",
     )
     subcommands = parser.add_subparsers(dest="command", required=True)
 
@@ -167,88 +160,17 @@ def _parser() -> argparse.ArgumentParser:
         help="initialized pcbforge project (default: current directory)",
     )
 
-    check_circuit_review_parser = subcommands.add_parser(
-        "check-circuit-review",
-        help="validate the authored CIRCUIT review gate",
-        description=(
-            "Validate the exact proposal model and the generated review "
-            "schematic (structure, ERC, pin-exact netlist parity). Final checks "
-            "compare the approved model directly with the compiled Atopile BOM "
-            "and PCB topology."
-        ),
-    )
-    check_circuit_review_parser.add_argument(
-        "project_dir",
-        nargs="?",
-        default=".",
-        metavar="PROJECT_DIR",
-        help="initialized pcbforge project (default: current directory)",
-    )
-    check_circuit_review_parser.add_argument(
-        "--stage",
-        required=True,
-        choices=("proposal", "final"),
-    )
-    check_circuit_review_parser.add_argument(
-        "--write",
-        action="store_true",
-        help="atomically write canonical circuit review evidence",
-    )
-
-    render_circuit_parser = subcommands.add_parser(
-        "render-circuit",
-        help="run the authored circuit schematic script",
-        description=(
-            "Execute review/circuit/circuit_schematic.py inside the pinned "
-            "toolchain. The script places symbols and wires through "
-            "pcbforge.kicad_sch.ReviewSchematic, whose save step embeds KiCad 9 "
-            "symbols, stamps the model fingerprint, generates group boxes and "
-            "registers, lints readability, runs ERC, and proves the netlist "
-            "against the model with the same gate as check-circuit-review."
-        ),
-    )
-    render_circuit_parser.add_argument(
-        "project_dir",
-        nargs="?",
-        default=".",
-        metavar="PROJECT_DIR",
-        help="initialized pcbforge project (default: current directory)",
-    )
-    render_circuit_parser.add_argument(
-        "--svg",
-        action="store_true",
-        help="also export review/circuit/preview/circuit.svg (and .png when a rasterizer exists)",
-    )
-    render_circuit_parser.add_argument(
-        "--probe",
-        metavar="REFS",
-        help=(
-            "do not render; print the resolved symbol, pins, model nets and pin-tip "
-            "offsets per rotation for REFS (comma separated) or 'all'"
-        ),
-    )
-
-    check_build_test_parser = subcommands.add_parser(
-        "check-build-test",
-        help="run the deterministic CIRCUIT acceptance gate",
-        description=(
-            "Run a pinned frozen build, then validate build-test.yaml against "
-            "the exact BOM, source assertions, resolved PCB, and no-op spatial "
-            "preservation contract."
-        ),
-    )
-    check_build_test_parser.add_argument(
-        "project_dir",
-        nargs="?",
-        default=".",
-        metavar="PROJECT_DIR",
-        help="initialized pcbforge project (default: current directory)",
-    )
-    check_build_test_parser.add_argument(
-        "--write-report",
-        action="store_true",
-        help="atomically write docs/build-test.md after a full pass",
-    )
+    for name, help_text in {
+        "check-circuit": "validate the saved schematic and electrical acceptance tests",
+        "preview-schematic": "export previews of the saved schematic",
+        "prepare-pcb-update": "back up the PCB and prepare its approved native update",
+        "check-pcb-update": "verify native PCB parity and spatial preservation",
+        "finish-circuit": "record verified native PCB synchronization",
+    }.items():
+        command = subcommands.add_parser(name, help=help_text)
+        command.add_argument("project_dir", nargs="?", default=".", metavar="PROJECT_DIR")
+        if name == "check-circuit":
+            command.add_argument("--write-report", action="store_true")
 
     prepare_layout_parser = subcommands.add_parser(
         "prepare-layout",
@@ -516,7 +438,7 @@ def _status_show_parser() -> argparse.ArgumentParser:
         "--check",
         action="store_true",
         help=(
-            "run stage-appropriate compiler, policy, build-test, parts, "
+            "run stage-appropriate schematic, policy, electrical tests, parts, "
             "layout-handoff, IOC, and DRC checks"
         ),
     )
@@ -842,7 +764,7 @@ def main(argv: list[str] | None = None) -> int:
 
         print(f"pcbforge: initialized {result.name} in {result.project_dir}")
         print(
-            "pcbforge: compiler smoke test passed; "
+            "pcbforge: native KiCad smoke test passed; "
             "STATUS.md refreshed; run `pcbforge status` for the next action"
         )
         return 0
@@ -904,76 +826,26 @@ def main(argv: list[str] | None = None) -> int:
         print(render_parts_audit(result))
         return 0 if result.ok else 1
 
-    if args.command == "check-circuit-review":
-        try:
-            result = check_circuit_review(
-                Path(args.project_dir),
-                args.stage,
-                write=args.write,
-            )
-        except CircuitReviewInputError as exc:
-            print(f"pcbforge check-circuit-review: {exc}", file=sys.stderr)
-            return 2
-        except CircuitReviewError as exc:
-            print(f"pcbforge check-circuit-review: {exc}", file=sys.stderr)
-            return 1
-        state = "wrote" if args.write and result.wrote else "validated"
-        print(f"pcbforge: {state} {result.stage} circuit review evidence")
-        print(f"pcbforge: {result.summary}")
-        for warning in result.diagram_warnings:
-            print(f"pcbforge: schematic warning {warning}")
-        print(f"pcbforge: evidence fingerprint {result.fingerprint}")
-        return 0
-
-    if args.command == "render-circuit":
-        import runpy
-
+    if args.command in {"check-circuit", "preview-schematic", "prepare-pcb-update", "check-pcb-update", "finish-circuit"}:
         project_dir = Path(args.project_dir).expanduser().resolve()
-        if args.probe:
-            try:
-                sch = ReviewSchematic(project_dir, title="probe", desc="probe")
-                refs = None if args.probe.strip() == "all" else [r.strip() for r in args.probe.split(",") if r.strip()]
-                print(probe_text(sch, refs))
-            except (SchematicError, CircuitReviewError) as exc:
-                print(f"pcbforge render-circuit: {exc}", file=sys.stderr)
-                return 2
-            return 0
-        script = project_dir / "review" / "circuit" / "circuit_schematic.py"
-        if not script.is_file():
-            print(
-                "pcbforge render-circuit: missing review/circuit/"
-                "circuit_schematic.py — author it per agent/circuit-kicad.md",
-                file=sys.stderr,
-            )
-            return 2
         try:
-            namespace = runpy.run_path(str(script), run_name="__main__")
-        except (SchematicError, CircuitReviewError) as exc:
-            import traceback
-
-            where = ""
-            for frame in reversed(traceback.extract_tb(exc.__traceback__)):
-                if Path(frame.filename).name == script.name:
-                    where = f" (at {script.name}:{frame.lineno}: {frame.line})"
-                    break
-            print(f"pcbforge render-circuit: {exc}{where}", file=sys.stderr)
+            if args.command == "check-circuit":
+                result = check_circuit(project_dir, write_report=args.write_report)
+                print(result.summary)
+                for finding in result.findings:
+                    print(f"[{finding.identifier}] {finding.severity}: {finding.message}")
+            elif args.command == "preview-schematic":
+                print(f"Schematic previews: {export_preview(project_dir)}")
+            elif args.command == "prepare-pcb-update":
+                print(f"PCB update baseline: {prepare_pcb_update(project_dir)}")
+                print("In KiCad, run Update PCB from Schematic with footprint field updates enabled. Save the board, then run pcbforge finish-circuit.")
+            elif args.command == "check-pcb-update":
+                print(check_pcb_update(project_dir).summary)
+            else:
+                print(render_terminal(finish_circuit(project_dir).report))
+        except (SchematicError, ElectricalError, StatusError, OSError, RuntimeError) as exc:
+            print(f"pcbforge {args.command}: {exc}", file=sys.stderr)
             return 1
-        result = namespace.get("result")
-        if isinstance(result, RenderResult):
-            for reference, choice in result.symbol_choices.items():
-                print(f"pcbforge: symbol {reference} -> {choice.symbol.lib_id} ({choice.reason})")
-            for warning in result.warnings:
-                print(f"pcbforge: schematic warning [{warning.code}] {warning.message}")
-            print(f"pcbforge: {result.summary}")
-        if args.svg:
-            try:
-                outputs = export_preview(project_dir)
-            except (SchematicError, CircuitReviewInputError) as exc:
-                print(f"pcbforge render-circuit: {exc}", file=sys.stderr)
-                return 1
-            for path in outputs:
-                print(f"pcbforge: preview {path.relative_to(project_dir).as_posix()}")
-        print("pcbforge: rendered and validated the circuit review schematic")
         return 0
 
     if args.command == "check-policy":
@@ -1026,25 +898,6 @@ def main(argv: list[str] | None = None) -> int:
             f"pcbforge: recorded policy {action}; "
             f"{'updated' if result.wrote else 'unchanged'} STATUS.md"
         )
-        return 0
-
-    if args.command == "check-build-test":
-        try:
-            result = check_build_test(
-                Path(args.project_dir),
-                write_report=args.write_report,
-            )
-        except BuildTestInputError as exc:
-            print(f"pcbforge check-build-test: {exc}", file=sys.stderr)
-            return 2
-        except BuildTestError as exc:
-            print(f"pcbforge check-build-test: {exc}", file=sys.stderr)
-            return 1
-
-        print(f"pcbforge: build + test passed — {result.summary}")
-        if args.write_report:
-            state = "updated" if result.wrote_report else "unchanged"
-            print(f"pcbforge: {state} {result.report_path.as_posix()}")
         return 0
 
     if args.command == "sketch-placement":

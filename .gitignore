@@ -4,3 +4,4 @@ toolchain/.uv-cache/
 __pycache__/
 *.log
 layout-backups/
+*.kicad_prl

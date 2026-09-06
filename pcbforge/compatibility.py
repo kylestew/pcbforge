@@ -9,25 +9,26 @@ import yaml
 
 from pcbforge.markdown_metadata import metadata_yaml
 
-PIN_SCHEMA = 1
-STATUS_SCHEMA = 1
+PIN_SCHEMA = 2
+STATUS_SCHEMA = 2
 EXPECTED_GUIDANCE = {
-    "agents_schema": 1,
-    "architect_schema": 1,
-    "architecture_diagram_schema": 1,
-    "mcu_schema": 1,
-    "circuit_schema": 1,
-    "build_test_schema": 1,
-    "layout_handoff_schema": 1,
-    "approval_schema": 1,
-    "circuit_review_schema": 3,
+    "agents_schema": 2,
+    "architect_schema": 2,
+    "architecture_diagram_schema": 2,
+    "mcu_schema": 2,
+    "circuit_schema": 2,
+    "electrical_test_schema": 2,
+    "layout_handoff_schema": 2,
+    "approval_schema": 2,
+    "circuit_review_schema": 4,
     "policy_schema": 1,
-    "status_schema": 1,
+    "status_schema": 2,
 }
 STRUCTURED_ARTIFACT_SCHEMAS = {
     "policy.yaml": ("policy_schema", 1),
-    "circuit-review.yaml": ("circuit_review_schema", 3),
-    "build-test.yaml": ("build_test_schema", 1),
+    "circuit-review.yaml": ("circuit_review_schema", 4),
+    "circuit-tests.yaml": ("circuit_tests_schema", 1),
+    "electrical-facts.yaml": ("electrical_facts_schema", 1),
     "placement.yaml": ("placement_schema", 1),
 }
 

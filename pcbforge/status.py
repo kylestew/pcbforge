@@ -16,35 +16,23 @@ from typing import Any, Callable, Mapping, Sequence
 import yaml
 
 from pcbforge.artifact_hash import evidence_bytes
-from pcbforge.build_test import (
-    BUILD_TEST_FILENAME,
-    BUILD_TEST_REPORT,
-    BuildTestError,
-    BuildTestInputError,
+from pcbforge.circuit_evidence import (
+    ELECTRICAL_TEST_FILENAME,
+    CIRCUIT_REPORT_PATH,
+    CircuitEvidenceError,
+    CircuitEvidenceInputError,
     _spatial_errors,
-    ato_source_semantic_bytes,
     board_topology_bytes,
-    build_test_inputs,
-    check_build_test,
+    circuit_evidence_inputs,
     fingerprint_inputs,
     read_board_evidence,
     saved_report_status,
 )
-from pcbforge.circuit_review import (
-    BASELINE_PATH,
-    REOPEN_BASELINE_PATH,
-    SCHEMATIC_AUDIT_PATH,
-    CONTRACT_FILENAME as CIRCUIT_REVIEW_FILENAME,
-    CircuitReviewError,
-    CircuitReviewInputError,
-    baseline_is_current,
+from pcbforge.architecture_baseline import (
+    BASELINE_PATH, ArchitectureBaselineError, baseline_is_current,
     capture_implementation_baseline,
-    capture_reopen_baseline,
-    check_circuit_review,
-    circuit_review_inputs,
-    circuit_review_status_fingerprint,
-    proposal_baseline_path,
 )
+
 from pcbforge.initialize import InitInputError, ProjectSpec, STATUS_SCHEMA, read_spec
 from pcbforge.ioc import IocProjectError, IocValidationError, check_ioc
 from pcbforge.markdown_metadata import metadata_trailer, metadata_yaml
@@ -78,7 +66,7 @@ from pcbforge.placement_check import (
     placement_check_inputs,
 )
 STATUS_FILENAME = "STATUS.md"
-ARCHITECTURE_MARKER = "pcbforge-architecture-diagram-schema: 1"
+ARCHITECTURE_MARKER = "pcbforge-architecture-diagram-schema: 2"
 
 EVENT_ACTIONS = {
     "complete",
@@ -98,13 +86,13 @@ TRANSITION_ACTIONS = {
 TRANSITIONS = {
     "initialize",
     "architecture-baseline",
+    "circuit-sync",
     "layout-handoff",
     "fab-out",
 }
 REVIEW_KEYS = {
     "spec",
     "architect:proposal",
-    "circuit:proposal",
     "circuit",
     "layout:handoff",
     "layout",
@@ -124,21 +112,11 @@ POLICY_EVENT_ACTIONS = {
 # fingerprint). That absence is not sufficient on its own: two loops below walk
 # every recorded check with no registry filter, so both consult this set.
 ADVISORY_CHECKS = frozenset({"placement"})
-# Stage-scoped checks guard one approval stage and stop applying once it is
-# passed. `circuit-proposal` proves physical source did not change before the
-# proposal was approved; implementing the circuit necessarily changes that
-# fingerprint, so once the proposal approval is current the check has done its
-# job and can never pass again. It gates nothing at that point -- it is in
-# neither PHASE_EVIDENCE_CHECKS nor APPROVAL_CHECKS, and `_gate_check_names`
-# scopes it to the proposal stage -- but the two unfiltered loops below would
-# otherwise keep it as a blocker and hold health red for the rest of the
-# project's life.
-STAGE_SCOPED_CHECKS = frozenset({"circuit-proposal"})
 #: Which phase row each advisory check is displayed under.
 ADVISORY_CHECK_PHASE = {"placement": "layout"}
 PHASE_EVIDENCE_CHECKS = {
-    "architect": ("build", "ioc"),
-    "circuit": ("build", "parts", "policy", "circuit-final", "build-test"),
+    "architect": ("ioc",),
+    "circuit": ("circuit", "policy"),
     "verify": ("policy", "drc"),
     "order": ("fab",),
 }
@@ -187,7 +165,7 @@ PHASES = (
         "CIRCUIT",
         "AI + tool",
         True,
-        "Approve, implement, compile, and deterministically validate the circuit.",
+        "Approve the checked schematic, update the PCB, and verify synchronization.",
     ),
     Phase(
         "layout",
@@ -220,18 +198,8 @@ PHASE_NUMBER = {phase.key: index for index, phase in enumerate(PHASES, start=1)}
 APPROVAL_BOUND_PHASES = set(PHASE_BY_KEY) - {"architect"}
 
 APPROVAL_CHECKS = {
-    "spec": ("policy",),
-    "architect": ("build", "ioc"),
-    "circuit": (
-        "build",
-        "parts",
-        "policy",
-        "ioc",
-        "circuit-final",
-        "build-test",
-    ),
-    "verify": ("build", "policy", "ioc", "drc"),
-    "order": ("fab",),
+    "spec": ("policy",), "architect": ("ioc",), "circuit": ("circuit", "policy", "ioc"),
+    "verify": ("circuit", "policy", "ioc", "drc"), "order": ("fab",),
 }
 
 
@@ -252,6 +220,7 @@ class CheckRecord:
     fingerprint: str
     outcome: str
     summary: str
+    scope: str = ""
 
 
 @dataclass(frozen=True)
@@ -812,23 +781,13 @@ def read_status_document(project_dir: Path) -> StatusDocument:
     else:
         for name, raw in checks_raw.items():
             prefix = f"checks.{name}"
-            if name not in {
-                "build",
-                "build-test",
-                "parts",
-                "ioc",
-                "layout-handoff",
-                "policy",
-                "drc",
-                "circuit-proposal",
-                "circuit-final",
-            }:
+            if name not in {"circuit", "parts", "ioc", "layout-handoff", "placement", "policy", "drc", "fab"}:
                 errors.append(f"{prefix}: unknown check")
                 continue
             if not isinstance(raw, dict):
                 errors.append(f"{prefix}: expected a mapping")
                 continue
-            if set(raw) - {"at", "fingerprint", "outcome", "summary"}:
+            if set(raw) - {"at", "fingerprint", "outcome", "summary", "scope"}:
                 errors.append(f"{prefix}: contains unknown keys")
             at = _text(raw.get("at"), f"{prefix}.at", errors)
             fingerprint = _text(raw.get("fingerprint"), f"{prefix}.fingerprint", errors)
@@ -836,7 +795,10 @@ def read_status_document(project_dir: Path) -> StatusDocument:
             summary = _text(raw.get("summary"), f"{prefix}.summary", errors)
             if outcome and outcome not in {"pass", "fail"}:
                 errors.append(f"{prefix}.outcome: expected 'pass' or 'fail'")
-            checks[name] = CheckRecord(at, fingerprint, outcome, summary)
+            scope = raw.get("scope", "")
+            if not isinstance(scope, str) or scope and scope not in PHASE_BY_KEY:
+                errors.append(f"{prefix}.scope: unknown policy phase")
+            checks[name] = CheckRecord(at, fingerprint, outcome, summary, scope)
 
     if errors:
         raise StatusInputError(
@@ -899,20 +861,9 @@ def _phase_number(project_dir: Path, phase: str) -> int:
     return PHASE_NUMBER[phase]
 
 
-def _check_is_spent(
-    project_dir: Path,
-    document: StatusDocument,
-    name: str,
-) -> bool:
-    """Whether a stage-scoped check has served its purpose and no longer applies.
+def _check_is_spent(project_dir, document, name):
+    return name not in {"circuit", "ioc", "policy", "layout-handoff", "placement", "drc", "fab"}
 
-    Mirrors the condition that already governs whether the pre-circuit baseline
-    is consulted at all: while the proposal approval is missing or stale the
-    check still matters, and a reopened proposal brings it back.
-    """
-    if name not in STAGE_SCOPED_CHECKS:
-        return False
-    return _current_circuit_proposal(project_dir, document) is not None
 
 
 def _advisory_phase(name: str) -> str:
@@ -987,67 +938,18 @@ def _content_fingerprint(payload: Mapping[str, Any]) -> str:
     )
 
 
-def _approval_payload(
-    project_dir: Path,
-    phase: str,
-    action: str = "complete",
-    document: StatusDocument | None = None,
-) -> Mapping[str, Any]:
+def _approval_payload(project_dir, phase, action="complete", document=None):
     if action == "proposal-approved":
-        if phase == "architect":
-            paths = {
-                path
-                for path in (
-                    project_dir / "docs" / "architecture.md",
-                    project_dir / "docs" / "mcu.md",
-                )
-                if path.is_file()
-            }
-            checks: list[dict[str, str]] = []
-        elif phase == "circuit":
-            try:
-                paths = {
-                    *circuit_review_inputs(project_dir, "proposal"),
-                    project_dir / "review" / "circuit" / "proposal" / "evidence.json",
-                }
-            except CircuitReviewError:
-                paths = {
-                    path
-                    for path in (
-                        project_dir / ".pcbforge",
-                        project_dir / CIRCUIT_REVIEW_FILENAME,
-                        project_dir / "review" / "circuit" / "circuit.yaml",
-                        *project_dir.glob("*.kicad_sch"),
-                        project_dir / SCHEMATIC_AUDIT_PATH,
-                        project_dir / "docs" / "circuit-proposal.md",
-                        project_dir / BASELINE_PATH,
-                    )
-                    if path.is_file()
-                }
-            checks = [{"name": "circuit-proposal", "required_outcome": "pass"}]
-        else:
-            raise AssertionError(f"{phase} has no proposal fingerprint")
-        paths.discard(project_dir / "spec.md")
-        payload = {
-            "approval_schema": 1,
-            "phase": phase,
-            "stage": "proposal",
-            "spec_contract": spec_contract_digest(project_dir),
-            "artifacts": _file_semantics(
-                project_dir,
-                tuple(path for path in paths if path.is_file()),
-            ),
-            "checks": checks,
-        }
-        return payload
+        if phase != "architect":
+            raise StatusInputError("only ARCHITECT has a proposal approval")
+        paths = tuple(p for p in (project_dir / "docs/architecture.md", project_dir / "docs/mcu.md") if p.is_file())
+        return {"approval_schema": 2, "phase": phase, "stage": "proposal",
+                "spec_contract": spec_contract_digest(project_dir),
+                "artifacts": _file_semantics(project_dir, paths), "checks": []}
     if action == "complete":
-        document = (
-            document
-            if document is not None
-            else read_status_document(project_dir)
-        )
-        return _phase_approval_payload(project_dir, phase, document)
-    raise AssertionError(f"{phase} has no approval fingerprint")
+        return _phase_approval_payload(project_dir, phase, document or read_status_document(project_dir))
+    raise StatusInputError(f"{phase} has no approval fingerprint for {action}")
+
 
 
 def _approval_is_current(
@@ -1102,11 +1004,8 @@ def _current_architect_proposal(
     return _current_proposal(project_dir, document, "architect")
 
 
-def _current_circuit_proposal(
-    project_dir: Path,
-    document: StatusDocument,
-) -> StatusEvent | None:
-    return _current_proposal(project_dir, document, "circuit")
+
+
 
 
 def _architect_proposal_was_approved(document: StatusDocument) -> bool:
@@ -1119,22 +1018,9 @@ def _architect_proposal_was_approved(document: StatusDocument) -> bool:
     )
 
 
-def _architecture_source_started(project_dir: Path) -> bool:
-    sources = _files(project_dir, ("src/**/*.ato",))
-    main = project_dir / "src" / "main.ato"
-    if any(path != main for path in sources):
-        return True
-    if not main.is_file():
-        return False
-    text = _read_text(main)
-    text = re.sub(r'(?s)""".*?"""', "", text)
-    text = re.sub(r"(?s)'''.*?'''", "", text)
-    code = [
-        line.strip()
-        for line in text.splitlines()
-        if line.strip() and not line.lstrip().startswith("#")
-    ]
-    return code != ["module App:", "pass"]
+def _architecture_source_started(project_dir):
+    return any((project_dir / "firmware").glob("*.ioc"))
+
 
 
 def _latest_policy_events(
@@ -1201,68 +1087,26 @@ def _current_policy_baseline(
     return isinstance(policy, dict) and policy.get("baseline_approval") == "spec"
 
 
-def _check_inputs(project_dir: Path, spec: ProjectSpec, name: str) -> tuple[Path, ...]:
-    if name == "build":
-        return _files(
-            project_dir,
-            (
-                "spec.md",
-                "ato.yaml",
-                "src/**/*.ato",
-                f"{spec.name}.kicad_pcb",
-                f"{spec.name}.kicad_pro",
-                f"{spec.name}.kicad_dru",
-            ),
-        )
+def _check_inputs(project_dir, spec, name):
+    if name == "circuit":
+        try:
+            return circuit_evidence_inputs(project_dir)
+        except (ValueError, OSError):
+            return _files(project_dir, ("*.kicad_sch", "circuit-tests.yaml", "electrical-facts.yaml", "circuit-review.yaml", ".pcbforge"))
     if name == "ioc":
-        return _files(
-            project_dir,
-            ("spec.md", f"firmware/{spec.name}.ioc"),
-        )
-    if name == "parts":
-        return _files(
-            project_dir,
-            (
-                "spec.md",
-                "fp-lib-table",
-                "src/**/*.ato",
-                "src/**/*.kicad_mod",
-                "src/**/*.kicad_sym",
-                "src/**/*.step",
-                "src/**/*.wrl",
-            ),
-        )
-    if name == "build-test":
-        return build_test_inputs(project_dir)
+        return _files(project_dir, ("spec.md", f"firmware/{spec.name}.ioc"))
+    if name == "policy":
+        return policy_inputs(project_dir)
     if name == "layout-handoff":
         return brief_inputs(project_dir)
     if name == "placement":
         return placement_check_inputs(project_dir)
-    if name == "circuit-proposal":
-        return circuit_review_inputs(project_dir, "proposal")
-    if name == "circuit-final":
-        return circuit_review_inputs(project_dir, "final")
-    if name == "policy":
-        return policy_inputs(project_dir)
     if name == "drc":
-        return _files(
-            project_dir,
-            (
-                f"{spec.name}.kicad_pcb",
-                f"{spec.name}.kicad_pro",
-                f"{spec.name}.kicad_dru",
-            ),
-        )
+        return _files(project_dir, ("*.kicad_pcb", "*.kicad_pro", "*.kicad_dru", "**/*.kicad_sch"))
     if name == "fab":
-        return _files(
-            project_dir,
-            (
-                f"{spec.name}.kicad_pcb",
-                "build/builds/*/*.bom.json",
-                "fab/*",
-            ),
-        )
-    raise AssertionError(f"unknown check: {name}")
+        return _fab_artifact_paths(project_dir)
+    return ()
+
 
 
 def _current_check(
@@ -1276,15 +1120,15 @@ def _current_check(
         return False, f"{name} has not been checked"
     try:
         inputs = _check_inputs(project_dir, spec, name)
-    except (CircuitReviewError, OSError) as exc:
+    except (ArchitectureBaselineError, OSError) as exc:
         return False, f"{name} inputs are invalid: {exc}"
     if not inputs:
         return False, f"{name} inputs are missing"
     try:
         fingerprint = _check_fingerprint(project_dir, name, inputs)
     except (
-        BuildTestError,
-        CircuitReviewError,
+        CircuitEvidenceError,
+        ArchitectureBaselineError,
         PlacementError,
         PolicyError,
         OSError,
@@ -1297,195 +1141,36 @@ def _current_check(
     return True, f"{name} passed"
 
 
-def _check_fingerprint(
-    project_dir: Path,
-    name: str,
-    inputs: Sequence[Path],
-    *,
-    tool_root: Path | None = None,
-) -> str:
-    if name == "build":
-        digest = hashlib.sha256()
-        for path in inputs:
-            if path.suffix in {".kicad_pcb", ".kicad_pro", ".kicad_dru"}:
-                continue
-            digest.update(path.relative_to(project_dir).as_posix().encode())
-            digest.update(b"\0")
-            if path == project_dir / "spec.md":
-                digest.update(spec_contract_digest(project_dir).encode())
-            else:
-                digest.update(hashlib.sha256(path.read_bytes()).digest())
-        board_paths = [path for path in inputs if path.suffix == ".kicad_pcb"]
-        if board_paths:
-            digest.update(b"pcb-topology\0")
-            try:
-                digest.update(board_topology_bytes(read_board_evidence(board_paths[0])))
-            except BuildTestError:
-                digest.update(b"invalid\0")
-                digest.update(hashlib.sha256(board_paths[0].read_bytes()).digest())
-        return digest.hexdigest()
-    if name == "build-test":
-        from pcbforge.build_test import fingerprint_inputs
-
-        return fingerprint_inputs(project_dir)
+def _check_fingerprint(project_dir, name, inputs, *, tool_root=None):
+    if name == "circuit":
+        from pcbforge.circuit import fingerprint_inputs, presentation_fingerprint
+        return _payload_fingerprint({"electrical": fingerprint_inputs(project_dir), "presentation": presentation_fingerprint(project_dir)})
     if name == "layout-handoff":
         return brief_status_fingerprint(project_dir, tool_root=tool_root)
-    if name == "circuit-proposal":
-        return circuit_review_status_fingerprint(project_dir, "proposal")
-    if name == "circuit-final":
-        return circuit_review_status_fingerprint(project_dir, "final")
     if name == "policy":
         return policy_status_fingerprint(project_dir, tool_root=tool_root)
     if name == "ioc":
-        digest = hashlib.sha256()
-        for path in sorted(set(inputs)):
-            digest.update(path.relative_to(project_dir).as_posix().encode())
-            digest.update(b"\0")
-            if path == project_dir / "spec.md":
-                digest.update(spec_contract_digest(project_dir).encode())
-            else:
-                digest.update(hashlib.sha256(path.read_bytes()).digest())
-        return digest.hexdigest()
+        return _payload_fingerprint({"spec": spec_contract_digest(project_dir), "ioc": _file_semantics(project_dir, tuple(p for p in inputs if p.name != "spec.md"))})
     return _fingerprint(project_dir, inputs)
 
 
-def _reusable_check_record(
-    project_dir: Path,
-    spec: ProjectSpec,
-    document: StatusDocument,
-    name: str,
-    *,
-    tool_root: Path,
-    force_checks: bool,
-) -> CheckRecord | None:
-    """Return an unchanged passing record when its current inputs still match."""
-    if force_checks:
-        return None
-    record = document.checks.get(name)
-    if record is None or record.outcome != "pass":
-        return None
-    try:
-        inputs = _check_inputs(project_dir, spec, name)
-        if not inputs:
-            return None
-        fingerprint = _check_fingerprint(
-            project_dir,
-            name,
-            inputs,
-            tool_root=tool_root,
-        )
-    except (
-        BuildTestError,
-        CircuitReviewError,
-        InitInputError,
-        PlacementError,
-        PolicyError,
-        OSError,
-    ):
-        return None
-    if record.fingerprint != fingerprint:
-        return None
-    if name == "build-test":
-        report_ok, _ = saved_report_status(project_dir, fingerprint)
-        if not report_ok:
-            return None
-    return record
 
 
-def _phase_artifact_paths(
-    project_dir: Path,
-    spec: ProjectSpec,
-    phase: str,
-) -> tuple[Path, ...]:
-    board = project_dir / f"{spec.name}.kicad_pcb"
-    project = project_dir / f"{spec.name}.kicad_pro"
-    rules = project_dir / f"{spec.name}.kicad_dru"
-    if phase == "spec":
-        candidates = (project_dir / "spec.md", project_dir / POLICY_FILENAME)
-    elif phase == "architect":
-        candidates = (
-            project_dir / "docs" / "architecture.md",
-            project_dir / "src" / "main.ato",
-            *_files(project_dir, ("src/modules/*.ato",)),
-            project_dir / "docs" / "mcu.md",
-            project_dir / "firmware" / f"{spec.name}.ioc",
-            project_dir / "src" / "mcu.ato",
-        )
-    elif phase == "circuit":
-        candidates = (
-            project_dir / "ato.yaml",
-            project_dir / "fp-lib-table",
-            *_files(
-                project_dir,
-                (
-                    "src/**/*.ato",
-                    "src/**/*.kicad_mod",
-                    "src/**/*.kicad_sym",
-                    "src/**/*.step",
-                    "src/**/*.wrl",
-                    "firmware/*.ioc",
-                ),
-            ),
-            project_dir / CIRCUIT_REVIEW_FILENAME,
-            project_dir / "docs" / "circuit-proposal.md",
-            project_dir / "docs" / "circuit-review.md",
-            *_files(
-                project_dir,
-                (
-                    "review/circuit/proposal/**/*",
-                    "review/circuit/final/**/*",
-                ),
-            ),
-            board,
-            *build_test_inputs(project_dir),
-            project_dir / "docs" / "build-test.md",
-        )
-    elif phase == "layout":
-        candidates = (board,)
-    elif phase == "verify":
-        candidates = (board, project, rules)
-    elif phase == "order":
-        candidates = (
-            project_dir / POLICY_FILENAME,
-            project_dir / "build-test.yaml",
-            *tuple(
-                sorted(
-                    path
-                    for path in (project_dir / "fab").rglob("*")
-                    if path.is_file() and path.name != ".gitkeep"
-                )
-            ),
-        )
-    elif phase == "publish":
-        candidates = (
-            *_files(
-                project_dir,
-                (
-                    "src/**/*.ato",
-                    "src/**/*.kicad_mod",
-                    "src/**/*.kicad_sym",
-                    "src/**/*.step",
-                    "src/**/*.wrl",
-                    "docs/**/*.md",
-                ),
-            ),
-        )
-    else:
-        raise AssertionError(f"unknown phase: {phase}")
-    excluded = {
-        project_dir / "spec.md"
-    } if phase in {"architect", "circuit"} else set()
-    if phase == "circuit":
-        excluded.add(project_dir / POLICY_FILENAME)
-    return tuple(
-        sorted(
-            {
-                path
-                for path in candidates
-                if path.is_file() and path not in excluded
-            }
-        )
-    )
+
+
+
+def _phase_artifact_paths(project_dir, spec, phase):
+    patterns = {
+      "spec": ("spec.md", "policy.yaml"),
+      "architect": ("docs/architecture.md", "docs/mcu.md", "firmware/*.ioc"),
+      "circuit": ("*.kicad_sch", "**/*.kicad_sch", "circuit-tests.yaml", "electrical-facts.yaml", "circuit-review.yaml", "circuit_tests*.py", "tests/**/*.py", "docs/circuit-check.md", "review/circuit/evidence.json", "review/circuit/preview/*.svg"),
+      "layout": ("*.kicad_pcb",),
+      "verify": ("*.kicad_pcb", "*.kicad_pro", "*.kicad_dru", "review/circuit/preview/*.svg"),
+      "order": ("policy.yaml", "build/circuit/bom.json", "fab/**/*"),
+      "publish": ("docs/publish.md",),
+    }
+    return tuple(p for p in _files(project_dir, patterns[phase]) if not any(x.endswith("backups") for x in p.parts))
+
 
 
 def _phase_review_artifact_paths(
@@ -1514,26 +1199,14 @@ def _file_semantics(project_dir: Path, paths: Sequence[Path]) -> list[dict[str, 
     return semantics
 
 
-def _implementation_source_semantics(
-    project_dir: Path,
-) -> list[dict[str, str]]:
-    """Bind circuit source while allowing acceptance marker/assert pairs."""
-    semantics = []
-    for path in _files(project_dir, ("src/**/*.ato",)):
-        semantics.append(
-            {
-                "path": path.relative_to(project_dir).as_posix(),
-                "sha256": hashlib.sha256(
-                    ato_source_semantic_bytes(path)
-                ).hexdigest(),
-            }
-        )
-    return semantics
+def _implementation_source_semantics(project_dir):
+    return _file_semantics(project_dir, _files(project_dir, ("firmware/*.ioc",)))
+
 
 
 def _board_phase_semantics(path: Path, phase: str) -> Mapping[str, Any]:
     try:
-        from pcbforge.build_test import _canonical_tokens, _top_level_blocks
+        from pcbforge.circuit_evidence import _canonical_tokens, _top_level_blocks
 
         text = path.read_text(encoding="utf-8")
         board = read_board_evidence(path)
@@ -1557,7 +1230,7 @@ def _board_phase_semantics(path: Path, phase: str) -> Mapping[str, Any]:
             return {"layout": layout, "routing": routing}
         if phase == "verify":
             return {"canonical_board": _canonical_tokens(text)}
-    except (BuildTestError, OSError, UnicodeError, ValueError):
+    except (CircuitEvidenceError, OSError, UnicodeError, ValueError):
         return {
             "invalid_board_sha256": (
                 hashlib.sha256(path.read_bytes()).hexdigest()
@@ -1618,19 +1291,12 @@ def _phase_approval_payload(
             payload["policy_circuit"] = policy_circuit_fingerprint(project_dir)
         except PolicyError as exc:
             payload["policy_circuit"] = f"<invalid:{exc}>"
-        payload["sources"] = _implementation_source_semantics(project_dir)
         try:
-            payload["board_topology_sha256"] = hashlib.sha256(
-                board_topology_bytes(read_board_evidence(board))
-            ).hexdigest()
-        except BuildTestError as exc:
-            payload["board_topology_sha256"] = f"<invalid:{exc}>"
-        payload["artifacts"] = [
-            item
-            for item in payload["artifacts"]
-            if item["path"] != board.name
-            and not item["path"].endswith(".ato")
-        ]
+            from pcbforge.circuit import fingerprint_inputs as native_fingerprint
+            payload["circuit"] = native_fingerprint(project_dir, include_spec=False)
+        except (ValueError, OSError) as exc:
+            payload["circuit"] = f"<invalid:{exc}>"
+        payload["artifacts"] = []
     if phase in {"layout", "verify"}:
         payload["board"] = _board_phase_semantics(board, phase)
         payload["artifacts"] = [
@@ -1654,120 +1320,34 @@ def _phase_approval_fingerprint(
     )
 
 
-def _static_evidence(
-    project_dir: Path,
-    spec: ProjectSpec,
-    document: StatusDocument,
-    phase: str,
-) -> tuple[bool, str, bool]:
-    """Return (satisfied, detail, partial evidence present)."""
-    board = project_dir / f"{spec.name}.kicad_pcb"
+def _static_evidence(project_dir, spec, document, phase):
     if phase == "spec":
-        return True, "valid spec.md", True
+        return True, "valid requirements", True
     if phase == "architect":
-        diagram = project_dir / "docs" / "architecture.md"
-        diagram_ok = diagram.is_file() and ARCHITECTURE_MARKER in _read_text(diagram)
-        source = _files(project_dir, ("src/**/*.ato",))
-        build_ok, build_detail = _current_check(project_dir, spec, document, "build")
-        mcu_doc = project_dir / "docs" / "mcu.md"
-        ioc = project_dir / "firmware" / f"{spec.name}.ioc"
-        mcu_source = project_dir / "src" / "mcu.ato"
-        ioc_ok, ioc_detail = _current_check(project_dir, spec, document, "ioc")
-        missing = []
-        if not diagram_ok:
-            missing.append("tracked architecture diagram")
-        if not mcu_doc.is_file():
-            missing.append("docs/mcu.md")
-        if not ioc.is_file():
-            missing.append(ioc.name)
-        if not mcu_source.is_file():
-            missing.append("src/mcu.ato")
-        if len(source) < 2:
-            missing.append("architecture source modules")
-        if not build_ok:
-            missing.append(build_detail)
-        if not ioc_ok:
-            missing.append(ioc_detail)
-        return (
-            not missing,
-            "architecture, exact MCU plan, IOC, source graph, and audit evidence present"
-            if not missing
-            else "missing: " + ", ".join(missing),
-            diagram.is_file() or mcu_doc.is_file() or len(source) > 1,
-        )
+        paths = [project_dir / "docs/architecture.md", project_dir / "docs/mcu.md", project_dir / f"firmware/{spec.name}.ioc"]
+        missing = [p.relative_to(project_dir).as_posix() for p in paths if not p.is_file()]
+        ok, detail = _current_check(project_dir, spec, document, "ioc")
+        if not ok:
+            missing.append(detail)
+        return not missing, "; ".join(missing) or "architecture and IOC are current", any(p.is_file() for p in paths)
     if phase == "circuit":
-        build_ok, build_detail = _current_check(project_dir, spec, document, "build")
-        parts_ok, parts_detail = _current_check(project_dir, spec, document, "parts")
-        review_ok, review_detail = _current_check(
-            project_dir, spec, document, "circuit-final"
-        )
-        acceptance_ok, acceptance_detail = _current_check(
-            project_dir, spec, document, "build-test"
-        )
-        if acceptance_ok:
-            fingerprint = _check_fingerprint(
-                project_dir,
-                "build-test",
-                _check_inputs(project_dir, spec, "build-test"),
-            )
-            acceptance_ok, acceptance_detail = saved_report_status(
-                project_dir,
-                fingerprint,
-            )
-        modules = _files(project_dir, ("src/modules/*.ato",))
-        satisfied = (
-            build_ok
-            and parts_ok
-            and review_ok
-            and acceptance_ok
-            and bool(modules)
-        )
-        missing = []
-        if not modules:
-            missing.append("project module sources")
-        if not build_ok:
-            missing.append(build_detail)
-        if not parts_ok:
-            missing.append(parts_detail)
-        if not review_ok:
-            missing.append(review_detail)
-        if not acceptance_ok:
-            missing.append(acceptance_detail)
-        return (
-            satisfied,
-            "module sources, compiled circuit parity, parts audit, and deterministic acceptance report are current"
-            if satisfied
-            else "missing: " + ", ".join(missing),
-            bool(modules) or (project_dir / BUILD_TEST_FILENAME).is_file(),
-        )
+        from pcbforge.circuit import read_evidence
+        try:
+            read_evidence(project_dir)
+            return True, "checked native schematic is current", True
+        except (ValueError, OSError) as exc:
+            return False, str(exc), (project_dir / ELECTRICAL_TEST_FILENAME).is_file()
     if phase == "layout":
-        if not board.is_file():
-            return False, f"missing {board.name}", False
-        text = _read_text(board)
-        footprints = text.count("(footprint ")
-        routes = text.count("(segment ") + text.count("(arc ") + text.count("(via ")
-        detail = f"board contains {footprints} footprints and {routes} routed objects"
-        return True, detail, footprints > 0 or routes > 0
+        exists = (project_dir / f"{spec.name}.kicad_pcb").is_file()
+        return exists, "declare placement and routing complete", exists
     if phase == "verify":
-        drc_ok, drc_detail = _current_check(project_dir, spec, document, "drc")
-        return drc_ok, drc_detail, "drc" in document.checks
+        ok, detail = _current_check(project_dir, spec, document, "drc")
+        return ok, detail, "drc" in document.checks
     if phase == "order":
-        sourcing_ok = _current_sourcing_confirmation(project_dir, document)
-        return (
-            sourcing_ok,
-            (
-                "post-FAB sourcing confirmation is current"
-                if sourcing_ok
-                else "missing current post-FAB sourcing confirmation"
-            ),
-            any(
-                event.subject == "sourcing"
-                for event in document.policy_events
-            ),
-        )
-    if phase == "publish":
-        return True, "explicit workflow declaration", False
-    raise AssertionError(f"unknown phase: {phase}")
+        ok = _current_sourcing_confirmation(project_dir, document)
+        return ok, "current sourcing confirmation" if ok else "confirm the post-FAB sourcing snapshot", False
+    return True, "publish or explicitly skip reusable native circuits", False
+
 
 
 def _latest_events(
@@ -1794,19 +1374,14 @@ def _latest_transition_events(
 
 
 def _initialization_transition_complete(project_dir: Path) -> bool:
-    pins = _project_pins(project_dir)
-    if type(pins.get("schema")) is not int or pins.get("schema") != 1:
+    if _project_pins(project_dir).get("schema") != 2:
         return False
     spec = read_spec(project_dir / "spec.md")
-    return all(
-        path.is_file()
-        for path in (
-            project_dir / ".pcbforge",
-            project_dir / "ato.yaml",
-            project_dir / "src" / "main.ato",
-            project_dir / f"{spec.name}.kicad_pcb",
-        )
-    )
+    return all((project_dir / name).is_file() for name in (
+        ".pcbforge", f"{spec.name}.kicad_sch", f"{spec.name}.kicad_pcb",
+        f"{spec.name}.kicad_pro", "circuit-tests.yaml", "electrical-facts.yaml",
+        "circuit-review.yaml"))
+
 
 
 def _layout_handoff_fingerprint(
@@ -1818,40 +1393,15 @@ def _layout_handoff_fingerprint(
     )
 
 
-def _layout_handoff_payload(
-    project_dir: Path,
-    document: StatusDocument,
-) -> Mapping[str, Any]:
+def _layout_handoff_payload(project_dir, document):
     latest, _ = _latest_events(document.events)
     circuit = latest.get("circuit")
-    circuit_approval = (
-        circuit[1].approval_fingerprint
-        if circuit is not None and circuit[1].action == "complete"
-        else ""
-    )
-    paths = tuple(
-        sorted(
-            path
-            for path in (
-                *brief_inputs(project_dir),
-                project_dir / "build-test.yaml",
-                project_dir / "docs" / "build-test.md",
-            )
-            if path.is_file()
-        )
-    )
-    return {
-        "approval_schema": 1,
-        "transition": "layout-handoff",
-        "source_phase": "circuit",
-        "target_phase": "layout",
-        "circuit_approval": circuit_approval,
-        "artifacts": _file_semantics(project_dir, paths),
-        "checks": [
-            {"name": name, "required_outcome": "pass"}
-            for name in ("build-test", "layout-handoff", "policy")
-        ],
-    }
+    return {"approval_schema": 2, "transition": "layout-handoff",
+            "source_phase": "circuit", "target_phase": "layout",
+            "circuit_approval": circuit[1].approval_fingerprint if circuit and circuit[1].action == "complete" else "",
+            "handoff": brief_status_fingerprint(project_dir, include_circuit=False),
+            "checks": [{"name": name, "required_outcome": "pass"} for name in ("circuit", "layout-handoff", "policy")]}
+
 
 
 def layout_assist_is_authorized(project_dir: Path) -> bool:
@@ -1901,7 +1451,7 @@ def _current_layout_handoff(
             )
             or not all(
                 _current_check(project_dir, spec, document, name)[0]
-                for name in ("build-test", "layout-handoff", "policy")
+                for name in ("circuit", "layout-handoff", "policy")
             )
         ):
             return None
@@ -1938,41 +1488,25 @@ def _architecture_baseline_payload(
         ),
         "checks": [
             {"name": name, "required_outcome": "pass"}
-            for name in ("build", "ioc")
+            for name in ("ioc",)
         ],
     }
 
 
-def _current_architecture_baseline(
-    project_dir: Path,
-    document: StatusDocument,
-) -> TransitionEvent | None:
-    event = _latest_transition_events(document.transition_events).get(
-        "architecture-baseline"
-    )
+def _current_architecture_baseline(project_dir, document):
+    event = _latest_transition_events(document.transition_events).get("architecture-baseline")
     if event is None or event.action != "complete" or not event.content_fingerprint:
         return None
     try:
         spec = read_spec(project_dir / "spec.md")
-        circuit_proposal = _current_circuit_proposal(project_dir, document)
-        if (
-            _current_architect_proposal(project_dir, document) is None
-            or not _current_check(project_dir, spec, document, "ioc")[0]
-            or not (project_dir / BASELINE_PATH).is_file()
-        ):
+        if _current_architect_proposal(project_dir, document) is None or not _current_check(project_dir, spec, document, "ioc")[0]:
             return None
-        if circuit_proposal is None:
-            if not _current_check(project_dir, spec, document, "build")[0]:
-                return None
-            baseline_ok, _ = baseline_is_current(project_dir)
-            if not baseline_ok:
-                return None
-        current = _payload_fingerprint(
-            _architecture_baseline_payload(project_dir, document)
-        )
-    except (BuildTestError, CircuitReviewError, StatusError, OSError):
+        if not baseline_is_current(project_dir)[0]:
+            return None
+        return event if event.content_fingerprint == _payload_fingerprint(_architecture_baseline_payload(project_dir, document)) else None
+    except (ValueError, OSError, StatusError):
         return None
-    return event if event.content_fingerprint == current else None
+
 
 
 def _fab_artifact_paths(project_dir: Path) -> tuple[Path, ...]:
@@ -2054,373 +1588,86 @@ def _failed_checks_for_phase(
     return tuple(failures)
 
 
-def _derive_phases(
-    project_dir: Path,
-    spec: ProjectSpec,
-    document: StatusDocument,
-) -> tuple[PhaseResult, ...]:
+def _derive_phases(project_dir, spec, document):
     latest, reopens = _latest_events(document.events)
-    latest_transitions = _latest_transition_events(document.transition_events)
-    results: list[PhaseResult] = []
-    predecessor_invalidation = -1
-
+    results = []
+    invalidated = -1
     for phase in PHASES:
-        event_info = latest.get(phase.key)
-        event_index = event_info[0] if event_info else -1
-        event = event_info[1] if event_info else None
-        evidence_ok, evidence_detail, partial = _static_evidence(
-            project_dir, spec, document, phase.key
-        )
-        failed_checks = _failed_checks_for_phase(project_dir, spec, document, phase.key)
-        approval_checks_ok = all(
-            _current_check(project_dir, spec, document, name)[0]
-            for name in _phase_check_names(project_dir, APPROVAL_CHECKS, phase.key)
-        )
-        predecessors_complete = all(
-            result.complete for result in results if result.phase.required
-        )
-        transition_wait = ""
-        if (
-            phase.key == "architect"
-            and not _initialization_transition_complete(project_dir)
-        ):
-            predecessors_complete = False
-            transition_wait = (
-                "waiting for the SPEC → ARCHITECT initialization transition"
-            )
-        if (
-            phase.key == "circuit"
-            and _current_architecture_baseline(project_dir, document) is None
-        ):
-            predecessors_complete = False
-            transition_wait = (
-                "waiting for the ARCHITECT → CIRCUIT architecture baseline"
-            )
-        if (
-            phase.key == "layout"
-            and _current_layout_handoff(project_dir, document) is None
-        ):
-            predecessors_complete = False
-            transition_wait = "waiting for the CIRCUIT → LAYOUT handoff"
-        if phase.key == "order" and _current_fab_out(project_dir, document) is None:
-            predecessors_complete = False
-            transition_wait = "waiting for the VERIFY → ORDER FAB-OUT transition"
-
-        if phase.key in reopens:
-            predecessor_invalidation = max(predecessor_invalidation, reopens[phase.key])
-
-        circuit_proposal = (
-            _current_circuit_proposal(project_dir, document)
-            if phase.key == "architect"
-            else None
-        )
+        info = latest.get(phase.key)
+        index, event = info if info else (-1, None)
+        invalidated = max(invalidated, reopens.get(phase.key, -1))
+        predecessors = all(p.complete for p in results if p.phase.required)
+        evidence, detail, partial = _static_evidence(project_dir, spec, document, phase.key)
+        current = event is not None and event.action == "complete" and index > invalidated and _approval_is_current(project_dir, phase.key, event, document)
         if phase.key == "architect":
-            manual_complete = _current_architecture_baseline(
-                project_dir,
-                document,
-            ) is not None
-        else:
-            manual_complete = (
-                event is not None
-                and event.action == "complete"
-                and event_index > predecessor_invalidation
-                and _approval_is_current(
-                    project_dir,
-                    phase.key,
-                    event,
-                    document,
-                )
-            )
-        complete = (
-            manual_complete
-            and predecessors_complete
-            and (evidence_ok or circuit_proposal is not None)
-        )
-
-        if event is not None and event.action == "skipped":
-            complete = phase.key == "publish" and predecessors_complete
-            state = "Skipped" if complete else "Blocked"
-            detail = event.note if complete else "publish cannot be skipped yet"
+            current = _current_architecture_baseline(project_dir, document) is not None
+            predecessors = predecessors and _initialization_transition_complete(project_dir)
+        elif phase.key == "circuit":
+            from pcbforge.pcb_update import sync_is_current
+            synced = bool(current and sync_is_current(project_dir, event.approval_fingerprint, document))
+            if current and not synced:
+                detail = "schematic approved; prepare the native PCB update, update in KiCad, then run finish-circuit"
+            current = synced
+        elif phase.key == "layout":
+            predecessors = predecessors and _current_layout_handoff(project_dir, document) is not None
+        elif phase.key == "order":
+            predecessors = predecessors and _current_fab_out(project_dir, document) is not None
+        complete = bool(current and predecessors and evidence)
+        if phase.key == "publish" and event and event.action == "skipped":
+            complete = predecessors
+            state = "Skipped" if complete else "Not started"
         elif complete:
             state = "Complete"
-            detail = evidence_detail
-        elif (
-            phase.key != "spec"
-            and predecessors_complete
-            and not _current_policy_baseline(project_dir, document)
-        ):
-            state = "Blocked"
-            detail = "project policy is not bound to the approved SPEC"
-        elif event is not None and event.action == "blocked":
-            state = "Blocked"
-            detail = event.note
-        elif (
-            phase.key == "architect"
-            and (automatic := latest_transitions.get("architecture-baseline"))
-            is not None
-            and automatic.action == "blocked"
-        ):
-            state = "Blocked"
-            detail = automatic.note
-        elif not predecessors_complete:
-            state = "Not started"
-            detail = transition_wait or "waiting for the previous required phase"
-        elif failed_checks:
-            state = "Blocked"
-            detail = "; ".join(failed_checks)
-        elif event is not None and event.action == "complete" and not evidence_ok:
-            state = "Blocked"
-            detail = f"completion lacks current evidence: {evidence_detail}"
-        elif (
-            event is not None
-            and event.action == "complete"
-            and not _approval_is_current(
-                project_dir,
-                phase.key,
-                event,
-                document,
-            )
-        ):
-            state = "Blocked"
-            detail = (
-                "user approval is stale because its approved artifacts changed; "
-                "renew approval for the current artifacts"
-            )
-        elif event is not None and event.action == "complete":
-            state = "Blocked"
-            detail = "completion is stale after an earlier phase was reopened"
-        elif event is not None and event.action == "proposal-approved":
-            if _approval_is_current(
-                project_dir,
-                phase.key,
-                event,
-                document,
-            ):
-                if (
-                    phase.key == "architect"
-                    and evidence_ok
-                    and approval_checks_ok
-                ):
-                    state = "Ready"
-                    detail = (
-                        "architecture implementation checks passed; record the "
-                        "checked source baseline transition"
-                    )
-                elif (
-                    evidence_ok
-                    and approval_checks_ok
-                    and _phase_requires_approval(
-                        project_dir,
-                        phase.key,
-                    )
-                ):
-                    state = "Awaiting approval"
-                    detail = (
-                        f"checks passed; present the final {phase.label} review "
-                        "packet and wait for explicit user approval"
-                    )
-                else:
-                    state = "In progress"
-                    detail = (
-                        "ARCHITECT proposal approved; complete implementation "
-                        "and checked audits"
-                        if phase.key == "architect"
-                        else (
-                            f"{phase.label} proposal approved; build and present "
-                            "the final audit"
-                        )
-                    )
-            else:
-                state = "Blocked"
-                detail = (
-                    f"{phase.label} proposal approval is stale; present the changed "
-                    "proposal for renewed approval before coding"
-                )
-        elif event is not None and event.action == "reopened":
+        elif not predecessors:
+            state, detail = "Not started", "waiting for the preceding phase or transition"
+        elif event and event.action in {"blocked", "reopened"}:
+            state, detail = "Blocked", event.note
+        elif event and event.action == "complete" and index <= invalidated:
+            state, detail = "Blocked", "approval is stale after an upstream reopen"
+        elif phase.key == "circuit" and event and event.action == "complete" and _approval_is_current(project_dir, phase.key, event, document):
             state = "In progress"
-            detail = event.note
-        elif (
-            phase.key == "architect"
-            and event is None
-            and _architecture_source_started(project_dir)
-        ):
-            state = "Blocked"
-            detail = (
-                "architecture source exists without current proposal approval; "
-                "stop source changes and present docs/architecture.md for approval"
-            )
-        elif (
-            phase.key == "circuit"
-            and _current_circuit_proposal(project_dir, document) is None
-        ):
-            baseline_ok, baseline_detail = baseline_is_current(project_dir)
-            proposal_ok, proposal_detail = _current_check(
-                project_dir,
-                spec,
-                document,
-                "circuit-proposal",
-            )
-            if not baseline_ok:
-                state = "Blocked"
-                detail = (
-                    f"{baseline_detail}; stop physical source changes and return "
-                    "to the pre-circuit baseline"
-                )
-            elif proposal_ok:
-                state = "Awaiting approval"
-                detail = (
-                    "authored circuit overview and exact proposal model are current; "
-                    "present the proposal-stage review packet"
-                )
-            else:
-                state = "Ready"
-                detail = (
-                    "create the review schematic and exact circuit proposal before "
-                    f"physical source edits ({proposal_detail})"
-                )
-        elif (
-            evidence_ok
-            and approval_checks_ok
-            and predecessors_complete
-            and _phase_requires_approval(project_dir, phase.key)
-        ):
+        elif event and event.action == "complete":
+            state, detail = "Stale", "approval is stale: approved content or upstream evidence changed"
+        elif phase.key == "architect":
+            proposal = _current_architect_proposal(project_dir, document)
+            state = "Ready" if proposal and evidence else "In progress" if proposal else "Awaiting approval"
+            if not proposal:
+                detail = "review the architecture and exact MCU proposal"
+                if _architecture_source_started(project_dir) and not _architect_proposal_was_approved(document):
+                    state, detail = "Blocked", "architecture source exists before current proposal approval"
+                elif _architect_proposal_was_approved(document):
+                    state, detail = "Blocked", "architecture approval is stale; review the changed proposal"
+
+        elif phase.key == "spec" and evidence and "policy" not in document.checks:
+            state, detail = "Awaiting approval", "review the requirements and policy baseline"
+        elif evidence and all(_current_check(project_dir, spec, document, n)[0] for n in APPROVAL_CHECKS.get(phase.key, ())):
             state = "Awaiting approval"
-            detail = (
-                "technical evidence is current; present the phase review packet "
-                "and wait for explicit user approval"
-            )
-        elif (
-            phase.key == "architect"
-            and evidence_ok
-            and approval_checks_ok
-            and _current_architect_proposal(project_dir, document) is not None
-        ):
-            state = "Ready"
-            detail = (
-                "architecture implementation checks passed; record the checked "
-                "source baseline transition"
-            )
-        elif partial:
-            state = "In progress"
-            detail = evidence_detail
         else:
-            state = "Ready"
-            detail = evidence_detail
-
+            state = "In progress" if partial else "Ready"
         results.append(PhaseResult(phase, state, detail, complete))
-
     return tuple(results)
 
 
-def _action_for(
-    result: PhaseResult,
-    project_dir: Path,
-    document: StatusDocument,
-) -> NextAction:
+
+def _action_for(result, project_dir, document):
+    if result is None:
+        return None
     phase = result.phase.key
-    if result.state == "Blocked":
-        return NextAction(
-            result.phase.lead,
-            f"Resolve the {result.phase.label} blocker: {result.detail}",
-            "pcbforge status --check --write",
-            True,
-        )
+    if phase == "circuit":
+        latest, _ = _latest_events(document.events)
+        info = latest.get("circuit")
+        if info and info[1].action == "complete" and _approval_is_current(project_dir, "circuit", info[1], document):
+            pending = (project_dir / "review/circuit/pcb-update.json").is_file()
+            return NextAction("User + tool", "Update PCB from Schematic in KiCad, save the board, then verify." if pending else "Prepare the approved native PCB update.",
+                              "pcbforge finish-circuit" if pending else "pcbforge prepare-pcb-update")
+    if phase == "architect":
+        if _current_architect_proposal(project_dir, document):
+            return NextAction("AI + tool", "Validate the IOC and record the architecture baseline.", "pcbforge finish-architect")
+        return NextAction("AI + user", "Present the architecture and exact MCU proposal.", "pcbforge status review architect --stage proposal")
     if result.state == "Awaiting approval":
-        if "proposal" in result.detail.lower():
-            return NextAction(
-                "AI → user",
-                (
-                    "Present the exact proposal packet and wait for explicit "
-                    "user approval."
-                ),
-                f"pcbforge status review {phase} --stage proposal",
-            )
-        return NextAction(
-            "AI → user",
-            (
-                f"Present the exact {result.phase.label} packet and wait for "
-                "explicit user approval."
-            ),
-            f"pcbforge status review {phase}",
-        )
-    actions = {
-        "spec": NextAction(
-            "AI + user",
-            "Review and finalize `spec.md`, then prepare its approval packet.",
-            "pcbforge status review spec",
-            True,
-        ),
-        "architect": NextAction(
-            "AI",
-            "Draft `docs/architecture.md` and the exact MCU plan in `docs/mcu.md`.",
-            "pcbforge status review architect --stage proposal",
-            True,
-        ),
-        "circuit": NextAction(
-            "AI",
-            (
-                "Create the review schematic and exact circuit proposal before "
-                "source edits."
-            ),
-            "pcbforge status review circuit --stage proposal",
-            True,
-        ),
-        "layout": NextAction(
-            "User",
-            (
-                "Complete placement and routing in KiCad 9, then prepare the "
-                "LAYOUT review packet."
-            ),
-            "pcbforge status review layout",
-            True,
-        ),
-        "verify": NextAction(
-            "Tool + AI",
-            "Run DRC and complete the final audits and render review.",
-            "pcbforge status --check --write",
-        ),
-        "order": NextAction(
-            "User",
-            "Review the fabrication package and place the authorized JLCPCB order.",
-            "pcbforge status review order",
-        ),
-        "publish": NextAction(
-            "AI + user",
-            "Publish proven reusable modules, or explicitly skip PUBLISH.",
-            "pcbforge status review publish",
-            True,
-        ),
-    }
-    if (
-        phase == "architect"
-        and _current_architect_proposal(project_dir, document) is not None
-    ):
-        if result.state == "Ready":
-            return NextAction(
-                "AI + tool",
-                "Capture the checked ARCHITECT source baseline and open CIRCUIT.",
-                "pcbforge finish-architect",
-            )
-        return NextAction(
-            "AI + tool",
-            (
-                "Implement and audit the approved architecture skeleton, IOC, "
-                "and MCU boundary."
-            ),
-            "pcbforge status --check --write",
-            True,
-        )
-    if (
-        phase == "circuit"
-        and _current_circuit_proposal(project_dir, document) is not None
-    ):
-        return NextAction(
-            "AI + tool",
-            "Implement and deterministically validate the approved circuit proposal.",
-            "pcbforge status --check --write",
-            True,
-        )
-    return actions[phase]
+        return NextAction("User", "Review and approve the current phase packet.", f"pcbforge status review {phase}")
+    return NextAction(result.phase.lead, result.detail, "pcbforge status --check --write")
+
 
 
 def _derive_transitions(
@@ -2519,7 +1766,7 @@ def _derive_transitions(
             "handoff approval is stale because CIRCUIT or placement artifacts changed"
         )
     else:
-        required_checks = ("build-test", "layout-handoff", "policy")
+        required_checks = ("circuit", "layout-handoff", "policy")
         check_results = [
             _current_check(project_dir, spec, document, name)
             for name in required_checks
@@ -2576,6 +1823,14 @@ def _derive_transitions(
         fab_state = "Ready"
         fab_detail = "generate and validate the fabrication package"
 
+    from pcbforge.pcb_update import sync_is_current
+    circuit_info = _latest_events(document.events)[0].get("circuit")
+    circuit_event = circuit_info[1] if circuit_info else None
+    sync_performed = "circuit-sync" in latest
+    schematic_approved = circuit_event is not None and circuit_event.action == "complete" and _approval_is_current(project_dir, "circuit", circuit_event, document)
+    sync_current = schematic_approved and sync_is_current(project_dir, circuit_event.approval_fingerprint, document)
+    sync_state = "Complete" if sync_current else "Ready" if schematic_approved else "Inactive" if sync_performed else "Not started"
+    sync_detail = "PCB matches the approved schematic" if sync_current else "Prepare, perform and verify the native PCB update" if schematic_approved else "Waiting for current schematic approval"
     return (
         TransitionResult(
             "initialize",
@@ -2599,6 +1854,8 @@ def _derive_transitions(
             baseline_performed,
             baseline_state == "Complete",
         ),
+        TransitionResult("circuit-sync", "CIRCUIT: native PCB synchronization", "circuit", "layout",
+                         "User + tool", sync_state, sync_detail, sync_performed, bool(sync_current)),
         TransitionResult(
             "layout-handoff",
             "CIRCUIT → LAYOUT: layout handoff",
@@ -2625,6 +1882,8 @@ def _derive_transitions(
 
 
 def _transition_action(result: TransitionResult) -> NextAction:
+    if result.key == "circuit-sync":
+        return NextAction("User + tool", result.detail, "pcbforge prepare-pcb-update", True)
     if result.key == "initialize":
         if result.state == "Blocked":
             return NextAction(
@@ -2718,16 +1977,12 @@ def _derive_handoff_summary(
         "initialize": "INITIALIZE transition",
         "architecture-baseline": "ARCHITECTURE BASELINE transition",
         "layout-handoff": "LAYOUT HANDOFF transition",
+        "circuit-sync": "PCB SYNC transition",
         "fab-out": "FAB-OUT transition",
-    }
-    transitions_by_target = {
-        transition.target_phase: transition
-        for transition in transitions
     }
     workflow: list[tuple[str, str, bool, str, str, bool]] = []
     for result in phases:
-        transition = transitions_by_target.get(result.phase.key)
-        if transition is not None:
+        for transition in (t for t in transitions if t.target_phase == result.phase.key):
             compact_label = compact_transition_labels[transition.key]
             workflow.append(
                 (
@@ -2890,7 +2145,7 @@ def inspect_status(
                 name,
                 inputs,
             )
-        except (BuildTestError, PlacementError, PolicyError, OSError):
+        except (CircuitEvidenceError, PlacementError, PolicyError, OSError):
             check_is_current = False
         checks_failed = checks_failed or check_is_current
     return StatusReport(
@@ -2990,409 +2245,64 @@ def _layout_is_complete(project_dir: Path, document: StatusDocument) -> bool:
     )
 
 
-def run_status_checks(
-    project_dir: Path,
-    document: StatusDocument,
-    *,
-    tool_root: Path | None = None,
-    runner: CommandRunner = subprocess.run,
-    checked_at: str | None = None,
-    write_reports: bool = False,
-    force_checks: bool = False,
-) -> StatusDocument:
-    """Run stage-appropriate checks and return a document containing results."""
+def run_status_checks(project_dir, document, *, tool_root=None, runner=subprocess.run, checked_at=None, write_reports=False, force_checks=False):
+    from pcbforge.circuit import check_circuit, read_evidence
     project_dir = _project_dir(project_dir)
     spec = read_spec(project_dir / "spec.md")
-    tool_root = (
-        tool_root.resolve()
-        if tool_root is not None
-        else Path(__file__).resolve().parent.parent
-    )
     checked_at = checked_at or _now()
-    checks = dict(document.checks)
-
-    if (
-        (project_dir / POLICY_FILENAME).is_file()
-        or not (project_dir / ".pcbforge").exists()
-    ):
-        current = next(
-            (
-                result
-                for result in _derive_phases(project_dir, spec, document)
-                if not result.complete and result.phase.required
-            ),
-            None,
-        )
-        through_phase = current.phase.key if current is not None else "verify"
-        baseline_approval, exception_approvals, _ = _policy_approval_context(
-            document
-        )
-        name = "policy"
-        reusable = _reusable_check_record(
-            project_dir,
-            spec,
-            document,
-            name,
-            tool_root=tool_root,
-            force_checks=force_checks,
-        )
-        if reusable is None:
-            try:
-                result = check_policy(
-                    project_dir,
-                    tool_root=tool_root,
-                    through_phase=through_phase,
-                    baseline_approval=baseline_approval,
-                    exception_approvals=exception_approvals,
-                )
-            except (PolicyInputError, PolicyError) as exc:
-                ok = False
-                summary = str(exc).splitlines()[0]
-                try:
-                    fingerprint = policy_status_fingerprint(
-                        project_dir,
-                        tool_root=tool_root,
-                    )
-                except PolicyError:
-                    fingerprint = _fingerprint(
-                        project_dir,
-                        policy_inputs(project_dir),
-                    )
-            else:
-                ok = result.ok
-                summary = result.summary
-                fingerprint = result.fingerprint
-            checks[name] = CheckRecord(
-                checked_at,
-                fingerprint,
-                "pass" if ok else "fail",
-                summary,
-            )
-
-    build_available = False
-    if (project_dir / ".pcbforge").is_file():
-        name = "build"
-        reusable = _reusable_check_record(
-            project_dir,
-            spec,
-            document,
-            name,
-            tool_root=tool_root,
-            force_checks=force_checks,
-        )
-        if reusable is not None:
-            build_available = True
-        else:
-            inputs = _check_inputs(project_dir, spec, name)
-            ok, summary = _run_command(
-                [
-                    str(tool_root / "scripts" / "ato"),
-                    "build",
-                    "--frozen",
-                    "--verbose",
-                ],
-                cwd=project_dir,
-                runner=runner,
-            )
-            checks[name] = CheckRecord(
-                checked_at,
-                _check_fingerprint(project_dir, name, inputs),
-                "pass" if ok else "fail",
-                summary,
-            )
-            build_available = ok
-
-        should_run_build_test = (project_dir / BUILD_TEST_FILENAME).is_file()
-        if should_run_build_test:
-            name = "build-test"
-            reusable = _reusable_check_record(
-                project_dir,
-                spec,
-                document,
-                name,
-                tool_root=tool_root,
-                force_checks=force_checks,
-            )
-            if reusable is None:
-                try:
-                    result = check_build_test(
-                        project_dir,
-                        tool_root=tool_root,
-                        runner=runner,
-                        write_report=write_reports,
-                        skip_build=build_available,
-                    )
-                except (BuildTestInputError, BuildTestError) as exc:
-                    ok = False
-                    summary = str(exc).splitlines()[0]
-                    try:
-                        fingerprint = _check_fingerprint(
-                            project_dir,
-                            name,
-                            _check_inputs(project_dir, spec, name),
-                        )
-                    except (BuildTestError, OSError):
-                        fingerprint = _fingerprint(
-                            project_dir,
-                            _check_inputs(project_dir, spec, name),
-                        )
-                else:
-                    ok = True
-                    summary = result.summary
-                    fingerprint = result.fingerprint
-                checks[name] = CheckRecord(
-                    checked_at,
-                    fingerprint,
-                    "pass" if ok else "fail",
-                    summary,
-                )
-
-        build_test_ok, _ = _current_check(
-            project_dir,
-            spec,
-            replace(document, checks=checks),
-            "build-test",
-        )
-        should_run_brief = (
-            project_dir / PLACEMENT_FILENAME
-        ).is_file() and build_test_ok
-        if should_run_brief:
-            name = "layout-handoff"
-            reusable = _reusable_check_record(
-                project_dir,
-                spec,
-                document,
-                name,
-                tool_root=tool_root,
-                force_checks=force_checks,
-            )
-            if reusable is None:
-                try:
-                    result = check_brief(project_dir, tool_root=tool_root)
-                except (PlacementInputError, PlacementError) as exc:
-                    ok = False
-                    summary = str(exc).splitlines()[0]
-                    fingerprint = brief_status_fingerprint(
-                        project_dir,
-                        tool_root=tool_root,
-                    )
-                else:
-                    ok = True
-                    summary = result.summary
-                    fingerprint = result.fingerprint
-                checks[name] = CheckRecord(
-                    checked_at,
-                    fingerprint,
-                    "pass" if ok else "fail",
-                    summary,
-                )
-
-        name = "parts"
-        reusable = _reusable_check_record(
-            project_dir,
-            spec,
-            document,
-            name,
-            tool_root=tool_root,
-            force_checks=force_checks,
-        )
-        if reusable is None:
-            try:
-                result = check_parts(project_dir)
-            except PartsAuditError as exc:
-                ok = False
-                summary = str(exc).splitlines()[0]
-            else:
-                ok = result.ok
-                summary = result.summary
-            checks[name] = CheckRecord(
-                checked_at,
-                _fingerprint(project_dir, _check_inputs(project_dir, spec, name)),
-                "pass" if ok else "fail",
-                summary,
-            )
-
-        if (project_dir / CIRCUIT_REVIEW_FILENAME).is_file():
-            for stage in ("proposal", "final"):
-                if stage == "final" and not (
-                    project_dir / "docs" / "circuit-review.md"
-                ).is_file():
-                    continue
-                name = f"circuit-{stage}"
-                reusable = _reusable_check_record(
-                    project_dir,
-                    spec,
-                    document,
-                    name,
-                    tool_root=tool_root,
-                    force_checks=force_checks,
-                )
-                if reusable is None:
-                    try:
-                        result = check_circuit_review(
-                            project_dir, stage, write=write_reports
-                        )
-                    except (CircuitReviewInputError, CircuitReviewError) as exc:
-                        ok = False
-                        summary = str(exc).splitlines()[0]
-                        try:
-                            fingerprint = circuit_review_status_fingerprint(
-                                project_dir, stage
-                            )
-                        except CircuitReviewError:
-                            fingerprint = _fingerprint(
-                                project_dir,
-                                tuple(
-                                    path
-                                    for path in (
-                                        project_dir / CIRCUIT_REVIEW_FILENAME,
-                                        project_dir / ".pcbforge",
-                                    )
-                                    if path.is_file()
-                                ),
-                            )
-                    else:
-                        ok = True
-                        summary = result.summary
-                        fingerprint = result.fingerprint
-                    checks[name] = CheckRecord(
-                        checked_at,
-                        fingerprint,
-                        "pass" if ok else "fail",
-                        summary,
-                    )
-
-    ioc_path = project_dir / "firmware" / f"{spec.name}.ioc"
-    if ioc_path.is_file():
-        name = "ioc"
-        reusable = _reusable_check_record(
-            project_dir,
-            spec,
-            document,
-            name,
-            tool_root=tool_root,
-            force_checks=force_checks,
-        )
-        if reusable is None:
-            try:
-                result = check_ioc(project_dir, tool_root=tool_root, runner=runner)
-            except (IocProjectError, IocValidationError, InitInputError) as exc:
-                ok = False
-                summary = str(exc).splitlines()[0]
-            else:
-                ok = True
-                summary = f"{result.part_number} CubeMX round-trip passed"
-            checks[name] = CheckRecord(
-                checked_at,
-                _check_fingerprint(
-                    project_dir,
-                    name,
-                    _check_inputs(project_dir, spec, name),
-                ),
-                "pass" if ok else "fail",
-                summary,
-            )
-
-    if (
-        (project_dir / PLACEMENT_FILENAME).is_file()
-        and (project_dir / f"{spec.name}.kicad_pcb").is_file()
-        and _current_layout_handoff(project_dir, document) is not None
-    ):
-        name = "placement"
-        reusable = _reusable_check_record(
-            project_dir,
-            spec,
-            document,
-            name,
-            tool_root=tool_root,
-            force_checks=force_checks,
-        )
-        if reusable is None:
-            try:
-                result = check_placement(project_dir, write_report=write_reports)
-            except (PlacementCheckError, PlacementError) as exc:
-                ok = False
-                summary = str(exc).splitlines()[0]
-            else:
-                ok = not result.failures
-                summary = result.summary
-            checks[name] = CheckRecord(
-                checked_at,
-                _fingerprint(project_dir, _check_inputs(project_dir, spec, name)),
-                "pass" if ok else "fail",
-                summary,
-            )
-
+    checks = {k: v for k,v in document.checks.items() if k in {"policy","ioc","circuit","layout-handoff","placement","drc","fab"}}
+    current = next((p.phase.key for p in _derive_phases(project_dir,spec,document) if not p.complete and p.phase.required), "verify")
+    base, exceptions, _ = _policy_approval_context(document)
+    jobs = {"policy": lambda: check_policy(project_dir, tool_root=tool_root, through_phase=current, baseline_approval=base, exception_approvals=exceptions)}
+    if (project_dir / f"firmware/{spec.name}.ioc").is_file():
+        jobs["ioc"] = lambda: check_ioc(project_dir, tool_root=tool_root, runner=runner)
+    if _current_architecture_baseline(project_dir, document) is not None:
+        jobs["circuit"] = lambda: check_circuit(project_dir, tool_root=tool_root, runner=runner, write_report=write_reports)
+    if (project_dir / PLACEMENT_FILENAME).is_file():
+        jobs["layout-handoff"] = lambda: check_brief(project_dir, tool_root=tool_root)
+        jobs["placement"] = lambda: check_placement(project_dir, tool_root=tool_root)
     if _layout_is_complete(project_dir, document):
-        name = "drc"
-        board = project_dir / f"{spec.name}.kicad_pcb"
-        reusable = _reusable_check_record(
-            project_dir,
-            spec,
-            document,
-            name,
-            tool_root=tool_root,
-            force_checks=force_checks,
-        )
-        if reusable is None:
-            if board.is_file():
-                with tempfile.TemporaryDirectory(
-                    prefix="pcbforge-status-drc-"
-                ) as temporary:
-                    report = Path(temporary) / "drc.json"
-                    ok, summary = _run_command(
-                        [
-                            str(tool_root / "scripts" / "kicad-cli"),
-                            "pcb",
-                            "drc",
-                            "--format",
-                            "json",
-                            "--output",
-                            str(report),
-                            "--severity-all",
-                            str(board),
-                        ],
-                        cwd=project_dir,
-                        runner=runner,
-                    )
-                    if ok:
-                        ok, summary = _drc_report_status(report)
-            else:
-                ok, summary = False, f"missing {board.name}"
-            checks[name] = CheckRecord(
-                checked_at,
-                _fingerprint(project_dir, _check_inputs(project_dir, spec, name)),
-                "pass" if ok else "fail",
-                summary,
-            )
-
-    if _fab_artifact_paths(project_dir):
-        name = "fab"
-        reusable = _reusable_check_record(
-            project_dir,
-            spec,
-            document,
-            name,
-            tool_root=tool_root,
-            force_checks=force_checks,
-        )
-        if reusable is None:
-            from pcbforge.fab import FabError, check_fab
-
+        def drc():
+            with tempfile.TemporaryDirectory(prefix="pcbforge-drc-") as tmp:
+                output = Path(tmp) / "drc.json"
+                result = runner([str((tool_root or Path(__file__).resolve().parent.parent) / "scripts/kicad-cli"), "pcb", "drc", "--schematic-parity", "--format", "json", "--severity-all", "--output", str(output), str(project_dir / f"{spec.name}.kicad_pcb")], cwd=project_dir, capture_output=True, text=True, check=False)
+                if result.returncode or not output.is_file():
+                    raise StatusCheckError("KiCad DRC did not produce a successful report")
+                ok, summary = _drc_report_status(output)
+                if not ok:
+                    raise StatusCheckError(summary)
+                from types import SimpleNamespace
+                return SimpleNamespace(summary=summary)
+        jobs["drc"] = drc
+    if (project_dir / "fab/manifest.json").is_file():
+        from pcbforge.fab import check_fab
+        jobs["fab"] = lambda: check_fab(project_dir, tool_root=tool_root)
+    for name, callback in jobs.items():
+        inputs = _check_inputs(project_dir, spec, name)
+        try:
+            fingerprint = _check_fingerprint(project_dir, name, inputs, tool_root=tool_root)
+        except (ValueError, OSError):
+            fingerprint = _fingerprint(project_dir, inputs)
+        prior = checks.get(name)
+        reusable = prior and prior.outcome == "pass" and prior.fingerprint == fingerprint and not force_checks
+        if reusable and name == "policy" and PHASE_NUMBER.get(prior.scope, 0) < PHASE_NUMBER[current]:
+            reusable = False
+        if reusable and name == "circuit":
             try:
-                result = check_fab(project_dir, tool_root=tool_root)
-            except FabError as exc:
-                ok, summary = False, str(exc).splitlines()[0]
-            else:
-                ok, summary = True, result.summary
-            checks[name] = CheckRecord(
-                checked_at,
-                _fingerprint(project_dir, _check_inputs(project_dir, spec, name)),
-                "pass" if ok else "fail",
-                summary,
-            )
-
+                read_evidence(project_dir, require_presentation=True)
+            except (ValueError, OSError):
+                reusable = False
+        if reusable:
+            continue
+        try:
+            result = callback()
+            ok = getattr(result, "ok", True)
+            summary = getattr(result, "summary", "check passed")
+        except (ValueError, RuntimeError, OSError) as exc:
+            ok, summary = False, str(exc)
+        checks[name] = CheckRecord(checked_at, fingerprint, "pass" if ok else "fail", summary, current if name == "policy" else "")
     return replace(document, checks=checks)
+
 
 
 def _prepare_phase_review(
@@ -3477,10 +2387,6 @@ def _prepare_phase_review(
         and _current_architect_proposal(project_dir, checked) is None
     ):
         failures.append("current architecture proposal approval is missing")
-    if phase == "circuit" and _current_circuit_proposal(project_dir, checked) is None:
-        failures.append(
-            f"current {phase.upper()} circuit proposal approval is missing"
-        )
     if phase == "layout" and _current_layout_handoff(project_dir, checked) is None:
         failures.append("current CIRCUIT → LAYOUT handoff approval is missing")
     if phase == "order" and _current_fab_out(project_dir, checked) is None:
@@ -3506,6 +2412,13 @@ def _prepare_phase_review(
         "complete",
         checked,
     )
+    if phase == "circuit":
+        from pcbforge.circuit import read_evidence, presentation_fingerprint
+        try:
+            read_evidence(project_dir, require_presentation=True)
+        except (ValueError, OSError) as exc:
+            failures.append(str(exc))
+        fingerprint = _payload_fingerprint({"electrical_approval": fingerprint, "presentation": presentation_fingerprint(project_dir)})
     ready = not failures
     detail = (
         "technical evidence passed; explicit user approval is required"
@@ -3538,7 +2451,7 @@ def _prepare_proposal_review(
 ) -> tuple[PhaseReview, StatusDocument]:
     project_dir = _project_dir(project_dir)
     phase = phase.lower()
-    proposal_phases = {"architect", "circuit"}
+    proposal_phases = {"architect"}
     if phase not in proposal_phases:
         raise StatusInputError(
             "proposal review is only valid for architect or circuit"
@@ -3576,77 +2489,6 @@ def _prepare_proposal_review(
                 mcu_plan,
             )
             if path.is_file()
-        )
-    else:
-        baseline_ok, baseline_detail = baseline_is_current(project_dir)
-        if not baseline_ok:
-            failures.append(baseline_detail)
-        check_name = "circuit-proposal"
-        try:
-            result = check_circuit_review(project_dir, "proposal", write=False)
-        except (CircuitReviewInputError, CircuitReviewError) as exc:
-            result = None
-            failures.append(str(exc).splitlines()[0])
-            try:
-                fingerprint = circuit_review_status_fingerprint(
-                    project_dir, "proposal"
-                )
-            except CircuitReviewError:
-                fingerprint = ""
-            checks.append(
-                PhaseReviewCheck(
-                    check_name,
-                    "fail",
-                    str(exc).splitlines()[0],
-                    fingerprint,
-                )
-            )
-        else:
-            checks.append(
-                PhaseReviewCheck(
-                    check_name,
-                    "pass",
-                    result.summary,
-                    result.fingerprint,
-                )
-            )
-            record = CheckRecord(
-                checked_at or _now(),
-                result.fingerprint,
-                "pass",
-                result.summary,
-            )
-            document = replace(
-                document,
-                checks={**document.checks, check_name: record},
-            )
-        try:
-            proposal_inputs = circuit_review_inputs(project_dir, "proposal")
-        except CircuitReviewError:
-            proposal_inputs = tuple(
-                path
-                for path in (
-                    project_dir / ".pcbforge",
-                    project_dir / CIRCUIT_REVIEW_FILENAME,
-                    project_dir / "review" / "circuit" / "circuit.yaml",
-                    *project_dir.glob("*.kicad_sch"),
-                    project_dir / SCHEMATIC_AUDIT_PATH,
-                    project_dir / "docs" / "circuit-proposal.md",
-                    project_dir / BASELINE_PATH,
-                )
-                if path.is_file()
-            )
-        extra_artifacts = (
-            project_dir / "review" / "circuit" / "proposal" / "evidence.json",
-        )
-        artifacts = tuple(
-            path.relative_to(project_dir).as_posix()
-            for path in sorted(
-                {
-                    *proposal_inputs,
-                    *(path for path in extra_artifacts if path.is_file()),
-                }
-            )
         )
     document = _invalidate_stale_approvals(
         project_dir,
@@ -3732,7 +2574,7 @@ def _prepare_layout_handoff_review(
         failures.append("LAYOUT handoff is already approved")
     spec = report.spec
     check_reviews: list[PhaseReviewCheck] = []
-    for name in ("build-test", "layout-handoff", "policy"):
+    for name in ("circuit", "layout-handoff", "policy"):
         current, detail = _current_check(project_dir, spec, checked, name)
         record = checked.checks.get(name)
         check_reviews.append(
@@ -3750,8 +2592,8 @@ def _prepare_layout_handoff_review(
         path.relative_to(project_dir).as_posix()
         for path in (
             *brief_inputs(project_dir),
-            project_dir / "build-test.yaml",
-            project_dir / "docs" / "build-test.md",
+            project_dir / "circuit-tests.yaml",
+            project_dir / "docs" / "circuit-check.md",
         )
         if path.is_file()
     )
@@ -3778,7 +2620,7 @@ def _prepare_layout_handoff_review(
 def _approval_gate_sequence() -> tuple[_ApprovalGate, ...]:
     gates: list[_ApprovalGate] = []
     for phase in PHASES:
-        if phase.key in {"architect", "circuit"}:
+        if phase.key == "architect":
             gates.append(
                 _ApprovalGate(
                     f"{phase.key}:proposal",
@@ -3922,10 +2764,11 @@ def _gate_artifacts(
 
 def _gate_check_names(gate: _ApprovalGate) -> tuple[str, ...]:
     if gate.stage == "proposal":
-        return ("circuit-proposal",) if gate.phase == "circuit" else ()
+        return ()
     if gate.stage == "handoff":
-        return ("build-test", "layout-handoff", "policy")
+        return ("circuit", "layout-handoff", "policy")
     return APPROVAL_CHECKS.get(gate.phase, ())
+
 
 
 def _gate_check_reviews(
@@ -3939,6 +2782,9 @@ def _gate_check_reviews(
     for name in _gate_check_names(gate):
         current, detail = _current_check(project_dir, spec, document, name)
         record = document.checks.get(name)
+        if name == "policy" and record and PHASE_NUMBER.get(record.scope, 0) < PHASE_NUMBER[gate.phase]:
+            current, detail = False, f"policy check does not cover {gate.phase}; refresh checks"
+
         reviews.append(
             PhaseReviewCheck(
                 name,
@@ -4058,8 +2904,8 @@ def prepare_cascade_review(
                 _gate_payload(project_dir, gate, document)
             )
         except (
-            BuildTestError,
-            CircuitReviewError,
+            CircuitEvidenceError,
+            ArchitectureBaselineError,
             PlacementError,
             PolicyError,
             StatusError,
@@ -4104,8 +2950,8 @@ def prepare_cascade_review(
             content_fingerprint = _content_fingerprint(payload)
             artifacts = _gate_artifacts(project_dir, spec, gate, payload)
         except (
-            BuildTestError,
-            CircuitReviewError,
+            CircuitEvidenceError,
+            ArchitectureBaselineError,
             PlacementError,
             PolicyError,
             StatusError,
@@ -4634,7 +3480,7 @@ def approve_phase(
             phase=phase,
             action=action,
             note=note,
-            approval_fingerprint=review.fingerprint,
+            approval_fingerprint=_payload_fingerprint(payload),
             content_fingerprint=_content_fingerprint(payload),
         )
         checked = replace(checked, events=(*checked.events, event))
@@ -4708,6 +3554,7 @@ def _metadata(document: StatusDocument) -> dict[str, Any]:
                 "fingerprint": record.fingerprint,
                 "outcome": record.outcome,
                 "summary": record.summary,
+                "scope": record.scope,
             }
             for name, record in sorted(document.checks.items())
         },
@@ -4811,13 +3658,8 @@ def render_dashboard(report: StatusReport) -> str:
         "Stale": "🟠",
         "Skipped": "➖",
     }
-    transitions_by_target = {
-        transition.target_phase: transition
-        for transition in report.transitions
-    }
     for result in report.phases:
-        transition = transitions_by_target.get(result.phase.key)
-        if transition is not None:
+        for transition in (t for t in report.transitions if t.target_phase == result.phase.key):
             rows.append(
                 "| "
                 + " | ".join(
@@ -5029,7 +3871,7 @@ def _invalidate_stale_approvals(
                 event,
                 document,
             )
-        except (CircuitReviewError, OSError):
+        except (ArchitectureBaselineError, OSError):
             approval_current = False
         if approval_current:
             continue
@@ -5114,10 +3956,9 @@ def _invalidate_stale_approvals(
                     _architecture_baseline_payload(project_dir, document)
                 )
             )
-            if _current_circuit_proposal(project_dir, document) is None:
-                baseline_ok, _ = baseline_is_current(project_dir)
-                architecture_stale = architecture_stale or not baseline_ok
-        except (BuildTestError, CircuitReviewError, StatusError, OSError):
+            baseline_ok, _ = baseline_is_current(project_dir)
+            architecture_stale = architecture_stale or not baseline_ok
+        except (CircuitEvidenceError, ArchitectureBaselineError, StatusError, OSError):
             architecture_stale = True
         if architecture_stale:
             transition_invalidations.append(
@@ -5294,7 +4135,7 @@ def finish_architect(
     before = None
     try:
         before = read_board_evidence(board)
-    except BuildTestError as exc:
+    except CircuitEvidenceError as exc:
         failures.append(str(exc).splitlines()[0])
     checked = run_status_checks(
         project_dir,
@@ -5306,7 +4147,7 @@ def finish_architect(
     after = None
     try:
         after = read_board_evidence(board)
-    except BuildTestError as exc:
+    except CircuitEvidenceError as exc:
         failures.append(str(exc).splitlines()[0])
     report = inspect_status(project_dir, document=checked)
     spec_phase = next(item for item in report.phases if item.phase.key == "spec")
@@ -5322,7 +4163,7 @@ def finish_architect(
     )
     if not evidence_ok:
         failures.append(evidence_detail)
-    for name in ("build", "ioc"):
+    for name in ("ioc",):
         current, detail = _current_check(project_dir, spec, checked, name)
         if not current:
             failures.append(detail)
@@ -5331,7 +4172,7 @@ def finish_architect(
     if not failures:
         try:
             capture_implementation_baseline(project_dir)
-        except (CircuitReviewError, OSError) as exc:
+        except (ArchitectureBaselineError, OSError) as exc:
             failures.append(str(exc).splitlines()[0])
     if failures:
         note = "; ".join(dict.fromkeys(failures))
@@ -5575,9 +4416,9 @@ def mark_policy(
             raise StatusInputError(
                 "cannot confirm sourcing before the FAB-OUT transition is current"
             )
-        if not (project_dir / BUILD_TEST_FILENAME).is_file():
+        if not (project_dir / ELECTRICAL_TEST_FILENAME).is_file():
             raise StatusInputError(
-                "cannot confirm sourcing without current build-test.yaml"
+                "cannot confirm sourcing without current circuit-tests.yaml"
             )
         fab_outputs = tuple(
             path
@@ -5633,170 +4474,18 @@ def mark_policy(
     )
 
 
-def mark_status(
-    project_dir: Path,
-    phase: str,
-    action: str,
-    note: str,
-    *,
-    tool_root: Path | None = None,
-    runner: CommandRunner = subprocess.run,
-    now: str | None = None,
-) -> StatusResult:
-    """Append a workflow event after validating order and current evidence."""
+def mark_status(project_dir, phase, action, note, *, tool_root=None, runner=subprocess.run, now=None):
     project_dir = _project_dir(project_dir)
-    phase = phase.lower()
-    action = action.lower()
-    note = note.strip()
-    if not note:
-        raise StatusInputError("--note must be a non-empty explanation")
-
+    if action == "complete" and phase in PHASE_BY_KEY:
+        raise StatusInputError(f"use `pcbforge status approve {phase}` after explicit user review")
+    if phase not in PHASE_BY_KEY or action not in {"reopened", "blocked", "skipped", "ai-assisted"} or not note.strip():
+        raise StatusInputError("use a valid phase, non-approval action and explanatory note")
     document = read_status_document(project_dir)
-    if (
-        phase == "layout"
-        and _current_layout_handoff(project_dir, document) is None
-        and action in {"blocked", "reopened"}
-    ):
-        event = TransitionEvent(
-            now or _now(),
-            "layout-handoff",
-            action,
-            note,
-        )
-        return write_status(
-            project_dir,
-            tool_root=tool_root,
-            runner=runner,
-            now=event.at,
-            document=replace(
-                document,
-                transition_events=(
-                    *document.transition_events,
-                    event,
-                ),
-            ),
-        )
-    reopen_approval: StatusEvent | None = None
-    recovered_architecture_baseline: TransitionEvent | None = None
-    if phase == "circuit" and action == "reopened":
-        reopen_approval = next(
-            (
-                event
-                for event in reversed(document.events)
-                if event.phase == "circuit"
-                and event.action == "complete"
-                and event.approval_fingerprint
-            ),
-            None,
-        )
-        approval_is_current = reopen_approval is not None and _approval_is_current(
-            project_dir,
-            "circuit",
-            reopen_approval,
-            document,
-        )
-        reopen_baseline_is_current = False
-        if reopen_approval is not None and not approval_is_current:
-            reopen_path = project_dir / REOPEN_BASELINE_PATH
-            try:
-                reopen_payload = json.loads(reopen_path.read_text(encoding="utf-8"))
-            except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError):
-                reopen_payload = None
-            prior_reopen_recorded = any(
-                event.phase == "circuit"
-                and event.action == "reopened"
-                and not event.note.startswith(
-                    "Approval invalidated automatically because"
-                )
-                for event in document.events
-            )
-            reopen_baseline_is_current = (
-                prior_reopen_recorded
-                and isinstance(reopen_payload, dict)
-                and reopen_payload.get("prior_circuit_approval_fingerprint")
-                == reopen_approval.approval_fingerprint
-                and proposal_baseline_path(project_dir) == reopen_path
-                and baseline_is_current(project_dir)[0]
-            )
-        if reopen_approval is None or not (
-            approval_is_current or reopen_baseline_is_current
-        ):
-            raise StatusInputError(
-                "cannot reopen CIRCUIT after its approved artifacts or physical "
-                "implementation changed; restore the last approved CIRCUIT first"
-            )
-        latest_baseline = _latest_transition_events(document.transition_events).get(
-            "architecture-baseline"
-        )
-        if (
-            latest_baseline is not None
-            and latest_baseline.action == "reopened"
-            and latest_baseline.note.startswith(
-                "Automatic transition invalidated because"
-            )
-        ):
-            prior_baseline = next(
-                (
-                    event
-                    for event in reversed(document.transition_events)
-                    if event.transition == "architecture-baseline"
-                    and event.action == "complete"
-                    and event.content_fingerprint
-                ),
-                None,
-            )
-            current_fingerprint = _payload_fingerprint(
-                _architecture_baseline_payload(project_dir, document)
-            )
-            if (
-                prior_baseline is None
-                or prior_baseline.content_fingerprint != current_fingerprint
-            ):
-                raise StatusInputError(
-                    "cannot recover the ARCHITECT baseline during CIRCUIT reopen; "
-                    "its approved proposal, source baseline, or checks changed"
-                )
-            recovered_architecture_baseline = TransitionEvent(
-                now or _now(),
-                "architecture-baseline",
-                "complete",
-                "Recovered unchanged ARCHITECT baseline while reopening CIRCUIT",
-                content_fingerprint=current_fingerprint,
-            )
-    initial = inspect_status(project_dir, document=document)
-    _validate_transition(initial, phase, action)
-    if (
-        reopen_approval is not None
-        and not (project_dir / REOPEN_BASELINE_PATH).is_file()
-    ):
-        capture_reopen_baseline(
-            project_dir,
-            reopen_approval.approval_fingerprint,
-        )
-    event_time = now or _now()
-    if recovered_architecture_baseline is not None:
-        recovered_architecture_baseline = replace(
-            recovered_architecture_baseline,
-            at=event_time,
-        )
-        document = replace(
-            document,
-            transition_events=(
-                *document.transition_events,
-                recovered_architecture_baseline,
-            ),
-        )
-    event = StatusEvent(
-        event_time,
-        phase,
-        action,
-        note,
-    )
-    document = replace(document, events=(*document.events, event))
-    return write_status(
-        project_dir,
-        tool_root=tool_root,
-        runner=runner,
-        now=event_time,
-        document=document,
-    )
+    if action == "skipped" and phase != "publish":
+        raise StatusInputError("only PUBLISH can be skipped")
+    if action == "ai-assisted" and (phase != "layout" or not layout_assist_is_authorized(project_dir)):
+        raise StatusInputError("spatial assists require an open LAYOUT and current handoff")
+    if action == "skipped" and not all(p.complete for p in inspect_status(project_dir,document=document).phases if p.phase.required):
+        raise StatusInputError("finish required phases before skipping PUBLISH")
+    event = StatusEvent(now or _now(), phase, action, note.strip())
+    return write_status(project_dir, document=replace(document, events=(*document.events,event)), now=now, tool_root=tool_root, runner=runner)

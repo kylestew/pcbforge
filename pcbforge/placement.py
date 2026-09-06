@@ -14,13 +14,12 @@ from typing import Any, Mapping, Sequence
 
 import yaml
 
-from pcbforge.build_test import (
-    BuildTestError,
-    BuildTestInputError,
+from pcbforge.circuit_evidence import (
+    CircuitEvidenceError,
+    CircuitEvidenceInputError,
     BoardEvidence,
     fingerprint_inputs,
     read_board_evidence,
-    schematic_tamper_message,
     require_current_acceptance,
 )
 from pcbforge.board_geometry import BoardGeometryError, read_board_geometry
@@ -39,7 +38,7 @@ from pcbforge.patterns import (
 
 PLACEMENT_SCHEMA = 1
 BRIEF_SCHEMA = 1
-PROJECT_PIN_SCHEMA = 1
+PROJECT_PIN_SCHEMA = 2
 PLACEMENT_FILENAME = "placement.yaml"
 BRIEF_FILENAME = "docs/placement-brief.md"
 OWNED_CLASS_PREFIX = "pcbforge:"
@@ -377,7 +376,7 @@ def _read_project_pins(project_dir: Path) -> Mapping[str, Any]:
         errors.append("guidance: expected a mapping")
     else:
         for key in ("layout_handoff_schema", "approval_schema", "policy_schema"):
-            if type(guidance.get(key)) is not int or guidance.get(key) != 1:
+            if type(guidance.get(key)) is not int or guidance.get(key) != (1 if key == "policy_schema" else 2):
                 errors.append(f"guidance.{key}: unsupported version — restart the project")
     if errors:
         raise PlacementInputError(
@@ -1059,7 +1058,7 @@ def read_placement_contract(
     if board is None:
         try:
             board = read_board_evidence(project_dir / f"{spec.name}.kicad_pcb")
-        except (BuildTestInputError, BuildTestError) as exc:
+        except (CircuitEvidenceInputError, CircuitEvidenceError) as exc:
             raise PlacementInputError(str(exc)) from exc
     rules = read_rules_profile(tool_root, spec.layers, pins)
     _validate_against_board(contract, board, rules, errors)
@@ -1395,6 +1394,7 @@ def brief_status_fingerprint(
     project_dir: Path,
     *,
     tool_root: Path | None = None,
+    include_circuit: bool = True,
 ) -> str:
     """Fingerprint handoff inputs/outputs without board positions or user classes."""
     project_dir = project_dir.expanduser().resolve()
@@ -1410,14 +1410,18 @@ def brief_status_fingerprint(
         digest.update(relative.encode())
         digest.update(b"\0")
         if path.is_file():
-            digest.update(hashlib.sha256(path.read_bytes()).digest())
+            data = path.read_bytes()
+            if not include_circuit and path == brief_document_path(project_dir):
+                data = re.sub(rb"(?m)^fingerprint: [0-9a-f]{64}$", b"fingerprint: <circuit-bound>", data)
+            digest.update(hashlib.sha256(data).digest())
         else:
             digest.update(b"<missing>")
-    digest.update(b"\0circuit-acceptance\0")
-    try:
-        digest.update(fingerprint_inputs(project_dir).encode())
-    except (BuildTestError, OSError) as exc:
-        digest.update(f"<invalid:{exc}>".encode())
+    if include_circuit:
+        digest.update(b"\0circuit-acceptance\0")
+        try:
+            digest.update(fingerprint_inputs(project_dir).encode())
+        except (CircuitEvidenceError, OSError) as exc:
+            digest.update(f"<invalid:{exc}>".encode())
     project_path: Path | None = None
     try:
         spec = read_spec(project_dir / "spec.md")
@@ -1428,7 +1432,7 @@ def brief_status_fingerprint(
         digest.update(hashlib.sha256(rules_path.read_bytes()).digest())
         board = read_board_evidence(board_path)
         topology: Any = _topology_semantics(board)
-    except (InitInputError, BuildTestInputError, BuildTestError, OSError):
+    except (InitInputError, CircuitEvidenceInputError, CircuitEvidenceError, OSError):
         board_paths = sorted(project_dir.glob("*.kicad_pcb"))
         topology = {
             "invalid_board": [
@@ -1671,11 +1675,8 @@ def _project_context(
         raise PlacementInputError(str(exc)) from exc
     try:
         board = read_board_evidence(project_dir / f"{spec.name}.kicad_pcb")
-    except (BuildTestInputError, BuildTestError) as exc:
+    except (CircuitEvidenceInputError, CircuitEvidenceError) as exc:
         raise PlacementInputError(str(exc)) from exc
-    tamper = schematic_tamper_message(board, f"{spec.name}.kicad_pcb")
-    if tamper:
-        raise PlacementInputError(tamper)
     contract = read_placement_contract(
         project_dir,
         tool_root=tool_root,
@@ -1690,7 +1691,7 @@ def _project_context(
 def _require_circuit_acceptance(project_dir: Path) -> None:
     try:
         require_current_acceptance(project_dir)
-    except BuildTestInputError as exc:
+    except CircuitEvidenceInputError as exc:
         raise PlacementInputError(str(exc)) from exc
 
 

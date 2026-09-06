@@ -1,4 +1,4 @@
-"""Canonical hashing for compiler artifacts used in tracked evidence."""
+"""Canonical hashing for derived artifacts used in tracked evidence."""
 
 from __future__ import annotations
 
@@ -17,21 +17,20 @@ PIN_EXECUTION_KEY = "pcbforge"
 
 
 class ArtifactHashError(RuntimeError):
-    """A compiler artifact cannot be represented safely in approval evidence."""
+    """A derived artifact cannot be represented safely in approval evidence."""
 
 
 def semantic_bom_bytes(path: Path) -> bytes:
-    """Return canonical BOM JSON without the volatile top-level build identifier."""
+    """Return canonical BOM JSON with stable JSON formatting."""
     try:
         payload: Any = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
-        raise ArtifactHashError(f"missing compiler BOM: {path}") from exc
+        raise ArtifactHashError(f"missing schematic BOM: {path}") from exc
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise ArtifactHashError(f"invalid compiler BOM {path}: {exc}") from exc
+        raise ArtifactHashError(f"invalid schematic BOM {path}: {exc}") from exc
     if not isinstance(payload, dict):
-        raise ArtifactHashError(f"invalid compiler BOM {path}: expected a JSON object")
+        raise ArtifactHashError(f"invalid schematic BOM {path}: expected a JSON object")
     payload = dict(payload)
-    payload.pop("build_id", None)
     return json.dumps(
         payload,
         ensure_ascii=False,
@@ -41,7 +40,7 @@ def semantic_bom_bytes(path: Path) -> bytes:
 
 
 def semantic_bom_sha256(path: Path) -> str:
-    """Hash the electrically meaningful compiler BOM representation."""
+    """Hash the electrically meaningful schematic BOM representation."""
     return hashlib.sha256(semantic_bom_bytes(path)).hexdigest()
 
 

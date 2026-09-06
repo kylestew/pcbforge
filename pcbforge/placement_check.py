@@ -36,7 +36,7 @@ from pcbforge.board_geometry import (
     to_board,
     to_local,
 )
-from pcbforge.build_test import BuildTestError, BuildTestInputError
+from pcbforge.circuit_evidence import CircuitEvidenceError, CircuitEvidenceInputError
 from pcbforge.fsutil import AtomicWriteError, commit_outputs
 from pcbforge.initialize import InitInputError, ProjectSpec, read_spec
 from pcbforge.markdown_metadata import metadata_trailer, metadata_yaml
@@ -979,7 +979,7 @@ def _read_project(
         contract = read_placement_contract(project_dir)
     except PlacementInputError as exc:
         raise PlacementCheckInputError(str(exc)) from exc
-    except (PlacementError, BuildTestInputError, BuildTestError) as exc:
+    except (PlacementError, CircuitEvidenceInputError, CircuitEvidenceError) as exc:
         raise PlacementCheckInputError(str(exc)) from exc
     try:
         geometry = read_board_geometry(board_path)

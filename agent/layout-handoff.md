@@ -1,4 +1,4 @@
-<!-- pcbforge-layout-handoff-schema: 1 -->
+<!-- pcbforge-layout-handoff-schema: 2 -->
 # CIRCUIT-to-LAYOUT handoff playbook
 
 Use this playbook for the CIRCUIT-to-LAYOUT transition defined in
@@ -229,7 +229,7 @@ every sketch pattern for that reason, and on any role it could not bind.
 
 1. Read `docs/layout-research.md` — written during CIRCUIT, it already holds
    the per-part layout guidance, its citations, and the mechanical facts. Read
-   `spec.md`, `docs/build-test.md`, the exact BOM/designators, and the resolved
+   `spec.md`, `docs/circuit-check.md`, the exact BOM/designators, and the resolved
    PCB nets and pads alongside it. Return to the datasheets only for a part the
    research file does not cover, and add what you find to that file.
 2. Write `placement.yaml` from intent. Do not infer it by merely copying the
@@ -246,7 +246,7 @@ every sketch pattern for that reason, and on any role it could not bind.
    assignments, and the `.kicad_pro` diff. PCBForge may replace its own
    `pcbforge:` entries; it must preserve every non-PCBForge entry.
 5. Present `docs/placement-brief.md` beside the current, approved CIRCUIT
-   review schematic: open `<project>.kicad_pro` in KiCad 9 so eeschema and
+   review schematic: open `<project>.kicad_pro` in KiCad 10 so eeschema and
    pcbnew cross-probe (footprint ↔ symbol, net highlight). Never run Update
    PCB from Schematic; the handoff check refuses a board carrying schematic
    links. PCBForge has already compared its exact approved proposal model with

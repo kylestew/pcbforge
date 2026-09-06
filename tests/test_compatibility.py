@@ -22,25 +22,25 @@ def _tree_hash(root: Path) -> str:
 
 def _pins() -> dict[str, object]:
     return {
-        "schema": 1,
+        "schema": 2,
         "pcbforge": {"revision": "a" * 40, "dirty": False},
         "guidance": {
-            "agents_schema": 1,
-            "architect_schema": 1,
-            "architecture_diagram_schema": 1,
-            "mcu_schema": 1,
-            "circuit_schema": 1,
-            "build_test_schema": 1,
-            "layout_handoff_schema": 1,
-            "approval_schema": 1,
-            "circuit_review_schema": 3,
+            "agents_schema": 2,
+            "architect_schema": 2,
+            "architecture_diagram_schema": 2,
+            "mcu_schema": 2,
+            "circuit_schema": 2,
+            "electrical_test_schema": 2,
+            "layout_handoff_schema": 2,
+            "approval_schema": 2,
+            "circuit_review_schema": 4,
             "policy_schema": 1,
-            "status_schema": 1,
+            "status_schema": 2,
         },
     }
 
 
-def _status(schema: int = 1) -> str:
+def _status(schema: int = 2) -> str:
     return f"""---
 pcbforge_status_schema: {schema}
 updated_at: ''
@@ -73,7 +73,7 @@ class CompatibilityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             project = self._project(Path(temporary))
             pins = _pins()
-            pins["guidance"]["circuit_review_schema"] = 4  # type: ignore[index]
+            pins["guidance"]["circuit_review_schema"] = 3  # type: ignore[index]
             (project / ".pcbforge").write_text(
                 yaml.safe_dump(pins, sort_keys=False),
                 encoding="utf-8",
@@ -90,7 +90,7 @@ class CompatibilityTests(unittest.TestCase):
                 with tempfile.TemporaryDirectory() as temporary:
                     project = self._project(Path(temporary))
                     (project / "STATUS.md").write_text(
-                        _status(2),
+                        _status(1),
                         encoding="utf-8",
                     )
                     before = _tree_hash(project)
@@ -106,7 +106,7 @@ class CompatibilityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             project = self._project(Path(temporary))
             (project / "circuit-review.yaml").write_text(
-                "circuit_review_schema: 4\n",
+                "circuit_review_schema: 3\n",
                 encoding="utf-8",
             )
             before = _tree_hash(project)

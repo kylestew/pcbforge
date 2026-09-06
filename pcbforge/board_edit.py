@@ -1,4 +1,4 @@
-"""Move placed footprints inside a KiCad 9 board, byte by byte.
+"""Move placed footprints inside a KiCad 10 board, byte by byte.
 
 This is the only module in the toolchain that writes a `.kicad_pcb`, and it does
 so under a narrow contract: it changes a footprint's `(at ...)` and the child
@@ -28,9 +28,9 @@ from pathlib import Path
 from typing import Sequence
 
 from pcbforge.board_geometry import BoardGeometryError, read_board_geometry
-from pcbforge.build_test import (
-    BuildTestError,
-    BuildTestInputError,
+from pcbforge.circuit_evidence import (
+    CircuitEvidenceError,
+    CircuitEvidenceInputError,
     board_topology_bytes,
     read_board_evidence,
 )
@@ -82,7 +82,7 @@ def find_footprint_block(text: str, reference: str) -> tuple[int, int]:
         opening = match
     if opening is None:
         raise BoardEditError(f"footprint {reference} has no enclosing block")
-    # KiCad 9 indents with tabs, but never assume it: the block ends at the
+    # KiCad 10 indents with tabs, but never assume it: the block ends at the
     # first line closing at exactly the opening line's indentation, so any
     # deeper-indented `)` inside the footprint is skipped.
     indent = opening.group(1)
@@ -149,7 +149,7 @@ def _verify(board_path: Path, moves: Sequence[Move], topology: bytes) -> list[st
     try:
         geometry = read_board_geometry(board_path)
         evidence = read_board_evidence(board_path)
-    except (BoardGeometryError, BuildTestError, BuildTestInputError) as exc:
+    except (BoardGeometryError, CircuitEvidenceError, CircuitEvidenceInputError) as exc:
         return [f"the edited board no longer reads: {exc}"]
 
     errors = []
@@ -190,7 +190,7 @@ def apply_moves(board_path: Path, moves: Sequence[Move]) -> Path:
         raise BoardEditError(f"cannot read {board_path}: {exc}") from exc
     try:
         topology = board_topology_bytes(read_board_evidence(board_path))
-    except (BuildTestError, BuildTestInputError) as exc:
+    except (CircuitEvidenceError, CircuitEvidenceInputError) as exc:
         raise BoardEditError(str(exc)) from exc
 
     edited = original

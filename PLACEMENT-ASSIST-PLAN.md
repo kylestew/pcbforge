@@ -1,3 +1,5 @@
+> Historical design or process record. The current native workflow is defined in [WORKFLOW.md](WORKFLOW.md).
+
 # Implementation plan — placement assistance (PA1–PA7)
 
 Adds tool and playbook support for PCB placement so the user no longer does

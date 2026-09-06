@@ -1,3 +1,5 @@
+> Historical design or process record. The current native workflow is defined in [WORKFLOW.md](WORKFLOW.md).
+
 # PCBForge process complaints
 
 This register tracks complaints against the current v1 workflow defined in

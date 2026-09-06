@@ -23,12 +23,12 @@ Vendor-neutral: any agent with file read/write follows this document.
 5. **Unknowns become Open risks**, not blockers. Ship the spec with honest
    holes rather than stalling the interview.
 6. **Disagree openly** when a want is infeasible for the constraint set
-   (KiCad 9 flow, JLCPCB 2/4-layer hobby, LCSC parts, one-offs). Say why,
+   (KiCad 10 flow, JLCPCB 2/4-layer hobby, LCSC parts, one-offs). Say why,
    offer the nearest feasible shape.
 7. **The user gates.** They decide when spec is good. Then (and only then)
    the project moves to `init`.
 8. **Hard platform constraints are not options.** JLCPCB fabrication and
-   assembly, STM32, KiCad 9, pinned atopile/CubeMX, 2/4 layers, SWD, spatial
+   assembly, STM32, KiCad 10, native schematics and pinned CubeMX, 2/4 layers, SWD, spatial
    ownership, and human ordering authority require a different future policy
    profile to change; do not create an exception for them.
 

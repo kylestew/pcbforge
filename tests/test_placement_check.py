@@ -16,7 +16,7 @@ from unittest import mock
 
 import yaml
 
-from pcbforge.build_test import fingerprint_inputs
+from pcbforge.circuit_evidence import fingerprint_inputs
 from pcbforge.cli import main
 from pcbforge.compatibility import EXPECTED_GUIDANCE
 from pcbforge.markdown_metadata import metadata_yaml
@@ -38,7 +38,7 @@ from pcbforge.placement_check import (
 from tests.test_placement import TOOL_ROOT, PlacementFixture
 
 BOARD_HEADER = """(kicad_pcb
-  (version 20241229)
+  (version 20260206)
   (generator "pcbnew")
   (layers
     (0 "F.Cu" signal)
@@ -987,17 +987,8 @@ class PatternFixture(CheckFixture):
         )
         # The scaffold fingerprints the board it wrote; this one replaced it, and
         # `generate_brief` refuses a stale CIRCUIT acceptance.
-        (project / "docs" / "build-test.md").write_text(
-            f"""---
-pcbforge_build_test_report_schema: 1
-result: pass
-build: default
-fingerprint: {fingerprint_inputs(project)}
----
-# Pass
-""",
-            encoding="utf-8",
-        )
+        from tests.native_fixture import seed_evidence
+        seed_evidence(project)
         return project
 
 

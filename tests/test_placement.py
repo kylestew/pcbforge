@@ -11,7 +11,7 @@ from unittest import mock
 
 import yaml
 
-from pcbforge.build_test import fingerprint_inputs
+from pcbforge.circuit_evidence import fingerprint_inputs
 from pcbforge.cli import main
 from pcbforge.policy import load_policy_profile, render_default_policy
 from pcbforge.placement import (
@@ -45,7 +45,7 @@ board_mm: [50, 40]
 """
 
 BOARD = """(kicad_pcb
-  (version 20241229)
+  (version 20260206)
   (footprint "Connector:USB_C"
     (layer "F.Cu")
     (at 100 110 0)
@@ -196,46 +196,23 @@ class PlacementFixture(unittest.TestCase):
         )
         _, _, policy_hash = load_policy_profile(TOOL_ROOT)
         (project / ".pcbforge").write_text(
-            f"""schema: 1
+            f"""schema: 2
 toolchain:
-  atopile: 0.15.7
-  kicad: 9.0.9
+  kicad: 10.0.3
   uv_lock_sha256: {TOOLCHAIN_LOCK_HASH}
 guidance:
-  build_test_schema: 1
-  layout_handoff_schema: 1
-  approval_schema: 1
+  electrical_test_schema: 2
+  layout_handoff_schema: 2
+  approval_schema: 2
   policy_schema: 1
 policy:
-  profile: pcbforge-standard-v1
+  profile: pcbforge-native-v2
   profile_sha256: {policy_hash}
   baseline_approval: spec
 rules:
   profile: jlc-2layer-conservative-v1
   profile_sha256: c1435709810dfff76e2b1b727a15ae575449331d7888cc4dc9c13252aece3784
 """,
-            encoding="utf-8",
-        )
-        (project / "ato.yaml").write_text(
-            "builds:\n  default:\n    entry: src/main.ato:App\n",
-            encoding="utf-8",
-        )
-        (project / "build-test.yaml").write_text(
-            """build_test_schema: 1
-build: default
-bom:
-  - lcsc: C1
-    mpn: TEST
-    footprint: Package_QFP:LQFP-32
-    quantity: 1
-board_footprints: 2
-assertions: [test]
-""",
-            encoding="utf-8",
-        )
-        (project / "src").mkdir()
-        (project / "src" / "main.ato").write_text(
-            "module App:\n    pass\n",
             encoding="utf-8",
         )
         (project / "garden-logger.kicad_pcb").write_text(BOARD, encoding="utf-8")
@@ -248,20 +225,13 @@ assertions: [test]
             encoding="utf-8",
         )
         (project / "placement.yaml").write_text(PLACEMENT, encoding="utf-8")
-        if current_step6:
-            fingerprint = fingerprint_inputs(project)
-            (project / "docs").mkdir()
-            (project / "docs" / "build-test.md").write_text(
-                f"""---
-pcbforge_build_test_report_schema: 1
-result: pass
-build: default
-fingerprint: {fingerprint}
----
-# Pass
-""",
-                encoding="utf-8",
-            )
+        from pcbforge.compatibility import EXPECTED_GUIDANCE
+        pin_path = project / ".pcbforge"
+        pins = yaml.safe_load(pin_path.read_text())
+        pins["guidance"] = dict(EXPECTED_GUIDANCE)
+        pin_path.write_text(yaml.safe_dump(pins, sort_keys=False))
+        from tests.native_fixture import seed_native
+        seed_native(project, evidence=current_step6)
         return project
 
 
@@ -335,18 +305,9 @@ class SchemaTests(PlacementFixture):
                 pins.read_text(encoding="utf-8").replace("schema: 1", "schema: 9", 1),
                 encoding="utf-8",
             )
-            report = project / "docs" / "build-test.md"
-            report.write_text(
-                f"""---
-pcbforge_build_test_report_schema: 1
-result: pass
-build: default
-fingerprint: {fingerprint_inputs(project)}
----
-# Pass
-""",
-                encoding="utf-8",
-            )
+            report = project / "docs" / "circuit-check.md"
+            from tests.native_fixture import seed_evidence
+            seed_evidence(project)
             with self.assertRaisesRegex(
                 PlacementInputError,
                 "unsupported version — restart the project",
@@ -391,17 +352,8 @@ class GeneratorTests(PlacementFixture):
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))
             fingerprint = fingerprint_inputs(project)
-            (project / "docs" / "build-test.md").write_text(
-                f"""---
-pcbforge_build_test_report_schema: 1
-result: pass
-build: default
-fingerprint: {fingerprint}
----
-# Pass
-""",
-                encoding="utf-8",
-            )
+            from tests.native_fixture import seed_evidence
+            seed_evidence(project)
 
             result = generate_brief(project, tool_root=TOOL_ROOT)
             brief_exists = (project / result.brief_path).is_file()
@@ -411,7 +363,7 @@ fingerprint: {fingerprint}
         self.assertTrue(brief_exists)
         self.assertFalse(root_alias_exists)
 
-    def test_board_linked_to_a_schematic_blocks_the_handoff(self) -> None:
+    def test_native_schematic_links_are_preserved_by_the_handoff(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self.project(Path(temporary))
             pro = project / "garden-logger.kicad_pro"
@@ -428,10 +380,8 @@ fingerprint: {fingerprint}
                 ),
                 encoding="utf-8",
             )
-            with self.assertRaisesRegex(PlacementInputError, "carry schematic links"):
-                generate_brief(project, tool_root=TOOL_ROOT)
-            with self.assertRaisesRegex(PlacementInputError, "carry schematic links"):
-                check_brief(project, tool_root=TOOL_ROOT)
+            generate_brief(project, tool_root=TOOL_ROOT)
+            check_brief(project, tool_root=TOOL_ROOT)
             board.write_text(clean, encoding="utf-8")
             generate_brief(project, tool_root=TOOL_ROOT)
             check_brief(project, tool_root=TOOL_ROOT)
@@ -563,7 +513,7 @@ fingerprint: {fingerprint}
             )
             with self.assertRaisesRegex(
                 PlacementInputError,
-                "CIRCUIT acceptance is not current",
+                "unknown exact nets",
             ):
                 check_brief(project, tool_root=TOOL_ROOT)
 
@@ -574,24 +524,15 @@ fingerprint: {fingerprint}
             project = self.project(Path(temporary))
             generate_brief(project, tool_root=TOOL_ROOT)
             before = brief_status_fingerprint(project)
-            source = project / "src" / "main.ato"
+            source = project / "circuit_tests.py"
             source.write_text(
                 source.read_text(encoding="utf-8") + "\n# circuit review changed\n",
                 encoding="utf-8",
             )
             step6 = fingerprint_inputs(project)
-            report = project / "docs" / "build-test.md"
-            report.write_text(
-                f"""---
-pcbforge_build_test_report_schema: 1
-result: pass
-build: default
-fingerprint: {step6}
----
-# Pass
-""",
-                encoding="utf-8",
-            )
+            report = project / "docs" / "circuit-check.md"
+            from tests.native_fixture import seed_evidence
+            seed_evidence(project)
             after = brief_status_fingerprint(project)
             with self.assertRaisesRegex(PlacementError, "stale"):
                 check_brief(project, tool_root=TOOL_ROOT)
@@ -634,7 +575,7 @@ fingerprint: {step6}
             project = self.project(Path(temporary), current_step6=False)
             with self.assertRaisesRegex(
                 PlacementInputError,
-                "CIRCUIT acceptance is not current",
+                "circuit acceptance is not current",
             ):
                 generate_brief(project, tool_root=TOOL_ROOT)
 

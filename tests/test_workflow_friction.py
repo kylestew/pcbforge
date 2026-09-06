@@ -213,7 +213,7 @@ class WorkflowFrictionRegressionTests(StatusFixture):
         )
         self.assertEqual(
             [transition.key for transition in report.transitions],
-            ["initialize", "architecture-baseline", "layout-handoff", "fab-out"],
+            ["initialize", "architecture-baseline", "circuit-sync", "layout-handoff", "fab-out"],
         )
         self.assertEqual(
             [
@@ -224,7 +224,6 @@ class WorkflowFrictionRegressionTests(StatusFixture):
             [
                 "spec",
                 "architect:proposal",
-                "circuit:proposal",
                 "circuit",
                 "layout:handoff",
                 "layout",

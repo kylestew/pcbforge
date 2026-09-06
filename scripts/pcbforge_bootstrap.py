@@ -108,6 +108,18 @@ def project_argument(argv: Sequence[str], cwd: Path) -> Path | None:
             project = values[0]
     elif command in {
         "init",
+        "check-circuit",
+        "preview-schematic",
+        "prepare-pcb-update",
+        "check-pcb-update",
+        "finish-circuit",
+        "finish-architect",
+        "fab-out",
+        "check-fab-out",
+        "check-placement",
+        "sketch-placement",
+        "apply-pattern",
+        "apply-floorplan",
         "check-ioc",
         "check-parts",
         "check-circuit-review",

@@ -1,3 +1,5 @@
+> Historical design or process record. The current native workflow is defined in [WORKFLOW.md](WORKFLOW.md).
+
 # Feasibility: CIRCUIT review as a KiCad schematic instead of SVG
 
 Date: 2026-08-20. Question: replace the schemdraw SVG review diagram with a

@@ -29,10 +29,10 @@ from typing import Mapping, Sequence
 import yaml
 
 from pcbforge.board_geometry import BoardGeometry, BoardGeometryError, read_board_geometry
-from pcbforge.build_test import (
+from pcbforge.circuit_evidence import (
     BoardEvidence,
-    BuildTestError,
-    BuildTestInputError,
+    CircuitEvidenceError,
+    CircuitEvidenceInputError,
     read_board_evidence,
 )
 from pcbforge.fsutil import AtomicWriteError, commit_outputs
@@ -746,7 +746,7 @@ def sketch_placement(
     try:
         geometry = read_board_geometry(board_path)
         evidence = read_board_evidence(board_path)
-    except (BoardGeometryError, BuildTestError, BuildTestInputError) as exc:
+    except (BoardGeometryError, CircuitEvidenceError, CircuitEvidenceInputError) as exc:
         raise SketchInputError(str(exc)) from exc
 
     board, origin = _board_size(geometry, spec)

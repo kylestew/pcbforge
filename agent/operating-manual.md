@@ -1,265 +1,93 @@
-# pcbforge — agent operating manual
+# PCBForge agent operating manual
 
-You are an AI agent operating a pcbforge board project. This file is your
-orientation. [WORKFLOW.md](../WORKFLOW.md) is the authoritative process and
-approval contract; [DESIGN.md](../DESIGN.md) records its rationale and
-invariants. Vendor-neutral: any agent with shell + file read/write qualifies.
+Read [WORKFLOW.md](../WORKFLOW.md) for the normative phase order and completion rules.
+Read the project specification, policy and status before resuming work.
+Use `pcbforge status --check --write`, then `pcbforge status --next` to inspect current evidence and the next action.
 
-## What pcbforge is
+## Ownership and authority
 
-AI-driven **circuit-as-code** capture (atopile) + human-owned **layout and
-routing** in KiCad 9, for hobby STM32 boards fabbed/assembled at JLCPCB with
-LCSC parts, one-offs, 2/4 layer.
+The saved native KiCad schematic owns component identity, fields, footprints and connections.
+Independent requirements, sourced facts and Python tests determine electrical acceptance.
+The user owns PCB placement, routing, material design decisions and ordering.
+The agent develops the circuit and review evidence within the approved requirements.
 
-## The actor split (hard rules)
+Use the pinned `scripts/kicad-cli` for KiCad 10.0.3 and `scripts/cubemx` for CubeMX validation.
+Atopile is absent from the current runtime. Existing projects use their historical pinned checkout.
+Never rewrite an old project's pin to bypass compatibility checks.
 
-| Actor | Owns |
-|---|---|
-| **User** | material decision gates, spec intent, optional CubeMX review, **layout + routing**, ordering |
-| **You (agent)** | spec interview, all capture code, exact MCU/pin selection, part selection, layout spotting/audits, requested layout/routing attempts, review |
-| **Compiler/scripts** | netlist/BOM emission, assertions, checks, fab outputs |
+Present materially different design choices when the existing requirements do not resolve them.
+Explain the recommendation, tradeoffs and affected artifacts. Continue independent work while awaiting the decision.
+Carry out decisions that the user already authorized. Do not ask for the same permission again.
 
-Non-negotiable rules:
+Never originate a user approval. A passing check, silence or a general request to continue does not approve a phase packet.
+Record approval only when the user has explicitly approved the relevant artifacts.
+Generate fabrication files within the workflow. Ordering and payments remain user actions.
 
-1. **Never place, route, or "fix" copper unasked.** Layout/routing is the
-   user's art. Unrequested, your layout role is words + measurements: briefs,
-   audits, render review. Spotter, not painter. When the user *explicitly asks*
-   you to attempt placement or routing, do it under the LAYOUT-assist rules
-   below — that ask covers the named task only and expires with it.
-2. **Ownership invariant:** circuit source owns identity, footprints,
-   fields, connectivity; `.kicad_pcb` owns everything spatial. Modify spatial
-   data only inside LAYOUT on explicit request; never in SPEC, ARCHITECT,
-   CIRCUIT, or the handoff, whose evidence requires an unchanged board. Never
-   let a build clobber artwork, whoever authored it.
-3. **KiCad 9 only.** Use the tool repo's `scripts/kicad-cli` (pinned 9.0.9)
-   and `scripts/ato` (pinned atopile 0.15.7). Never a global `ato`, never
-   PATH `kicad-cli` (KiCad 10 is installed but banned — it produces boards
-   the compiler cannot read; DESIGN.md decision record). Use
-   `scripts/cubemx` for pinned CubeMX 6.18 command-line validation.
-4. **Ordering/money is human.** Generate `fab/` outputs; stop there.
-5. The user reviews capture at their chosen depth — surface meaningful
-   diffs; don't bury decisions in bulk edits.
-6. **The current workflow and its policy are binding.** Read `policy.yaml`; run
-   `pcbforge check-policy`; never invent or self-approve an exception.
+## Standard review and approval protocol
 
-## Decision authority (global constraint)
+Prepare the complete, reviewable result before asking for approval.
+Run `pcbforge status review <phase>`, then present its artifacts, checks, material changes and unresolved assessments.
+After the user explicitly approves that packet, record it with:
 
-The agent may derive consequences of approved requirements, but it may not
-choose between materially different reasonable designs. If two viable options
-satisfy the current contract and differ in topology, public interfaces,
-connector behavior, resource allocation, cost, risk, reversibility, or user
-experience, present the options, recommendation, tradeoffs, and consequences,
-then stop for the user before changing the affected artifact.
-
-User approval is explicit, artifact-specific, and one-time:
-
-- never infer approval from silence, a general request to continue, or a broad
-  request to implement a plan;
-- the agent may record approval already expressed by the user, but may never
-  originate or self-approve it;
-- proposal approval happens before affected implementation work;
-- required final approval happens after the resulting artifact and checks are
-  presented;
-- approval is bound to the approved artifact fingerprint; a material change
-  invalidates it, and rerunning checks cannot revive it;
-- checked dashboard writes durably reopen changed approved phases.
-
-Fingerprints bind each phase's owned contract, even when review packets show
-whole shared files. The exact `## Decisions log` section of `spec.md` is
-non-normative; every other SPEC body byte and its canonicalized frontmatter is
-normative. SPEC owns policy declarations plus assurance status/rationale;
-final CIRCUIT adds assurance evidence and exceptions; sourcing is ORDER-owned.
-Thus CIRCUIT evidence and decision-log notes do not reopen SPEC/ARCHITECT.
-
-Use the current gates and checked transitions exactly as defined in
-[WORKFLOW.md](../WORKFLOW.md). Tool success or agent ownership never grants a
-human approval.
-
-When uncertain whether a choice is material, treat it as material and ask. Only
-local, reversible details with no effect outside the already-approved contract
-may be selected autonomously, and those assumptions must be stated.
-
-## Workflow authority
-
-Read [WORKFLOW.md](../WORKFLOW.md) before acting. It alone defines phase order,
-gate count, transition semantics, ownership, and completion contracts. Use the
-phase-specific playbooks for artifact and validation details; if a playbook and
-the workflow ever disagree, stop and follow `WORKFLOW.md`.
-
-## Session resume (run this on every cold start in a project)
-
-1. Read this manual, then the project's `spec.md`, `policy.yaml`, and tracked
-   `STATUS.md`.
-2. Run `pcbforge status --check --write`. The dashboard combines live file
-   evidence, compiler, build-test, parts-policy, technology-policy,
-   layout-handoff, IOC, and DRC check fingerprints, and explicit human gates;
-   a note never overrides missing evidence. Current passing checks are reused
-   without changing their timestamps; failed or stale checks rerun. Use
-   `--force-checks` only when an explicit full rerun is needed.
-3. Run `pcbforge status --next` when you need the concise handoff view. Report
-   the latest valid milestone, any previously performed transition that is now
-   inactive, the current state, next owner, one primary action, and its command.
-   Then wait for the user where the workflow requires a gate.
-
-`Complete` means a gate currently authorizes forward progress. `Performed,
-inactive` means a transition ran previously but its upstream phase was
-reopened; preserve that history, return to the upstream phase, and do not
-present the transition as current completion. `Stale` means the upstream phase
-is current but the transition evidence or fingerprint must be refreshed.
-
-## Review and approval protocol
-
-Refresh `STATUS.md` after meaningful transitions. When a phase's evidence is
-ready, run `pcbforge status review <phase>` and present its exact artifacts,
-checks, and fingerprint. Stop. Users grant approval in conversation; only
-after receiving an unambiguous approval of that packet, record it with
-`pcbforge status approve <phase> --last-reviewed --note "<reason>"`.
-The command persists approval but never constitutes it. Never use
-`status mark <phase> complete`, and never infer approval for any phase. Use
-`blocked` for an actionable blocker, `reopened` when earlier work changes,
-`skipped` only for optional publish, and `ai-assisted` only to log spatial
-layout work the user explicitly requested. ARCHITECT and CIRCUIT proposals use
-`status review <phase> --stage proposal` and
-`status approve <phase> --stage proposal --last-reviewed` before affected
-source coding begins.
-
-The CIRCUIT-to-LAYOUT transfer uses the same protocol with
-`status review layout --stage handoff` and
-`status approve layout --stage handoff --last-reviewed`. The phase playbooks
-define what must be in each packet; they do not change this approval ceremony.
-
-After a root artifact change, refresh the dashboard checks, then run
-`pcbforge status review --cascade` before presenting separate phase packets.
-The packet labels each prior gate `eligible`, `delta`, `blocked`, or `deferred`
-and provides one fingerprint for the unchanged eligible prefix. It does not run
-checks; stale or failed saved evidence blocks renewal. Present the complete
-packet and stop. Only after the user explicitly approves the root change and
-listed unchanged gates may you record:
-
-```text
-pcbforge status renew --last-reviewed --note "<approval>"
+```sh
+pcbforge status approve <phase> --last-reviewed --note "<user approval>"
 ```
 
-Renewal reuses the existing proposal/final/handoff actions and cites each old
-approval fingerprint. Never use it across a `delta`, a failed check, or a gate
-the user explicitly reopened. Events without content fingerprints require the
-normal per-gate review ceremony.
+ARCHITECT uses `status review architect --stage proposal` and the matching approval command with `--stage proposal`.
+CIRCUIT uses a single final schematic review. Its checked PCB synchronization step does not need a second human approval.
+The placement brief uses `status review layout --stage handoff` and the matching approval command with `--stage handoff`.
 
-When an approved CIRCUIT needs a material part or topology change, record the
-reopen before editing its proposal or physical implementation:
+Review records bind the artifacts that were presented. `--last-reviewed` fails if they change before approval.
+The explicit `--fingerprint <sha256>` form is also available.
+Never use `status mark <phase> complete`. Checks cannot grant or revive a human approval.
 
-```text
-pcbforge status mark circuit reopened --note "<user-requested change>"
+After an upstream change, refresh checks and run `pcbforge status review --cascade`.
+Present the root change and every eligible unchanged gate. After the user approves the packet, record:
+
+```sh
+pcbforge status renew --last-reviewed --note "<user approval>"
 ```
 
-The command first verifies the last CIRCUIT approval is still byte-current,
-then captures that approved implementation as the baseline for the replacement
-proposal. It fails closed if proposal artifacts, source, or board topology were
-already changed. After it succeeds, repeat the normal CIRCUIT proposal and
-final gates; do not rerun `finish-architect` for a CIRCUIT-only change.
+Renewal stops at changed content, failed checks or an explicit reopen. It preserves the previous approval fingerprints in history.
+For a circuit revision, record `status mark circuit reopened` with the reason.
+Edit the saved schematic, repeat its checks and approval, then prepare and verify a new native PCB update.
+Do not recapture the architecture baseline for a circuit-only change.
 
-Review commands save the latest ready packet in `STATUS.md`.
-`--last-reviewed` recomputes it before approval and fails closed if artifacts
-changed. The explicit `--fingerprint <sha256>` form remains available for
-debugging and automation.
+A checked status write records stale approvals durably. Preserve completed work and backups when a transition becomes inactive.
+A drawing-only edit preserves electrical approval but requires fresh presentation checks and review of the changed sheets.
 
-`policy.yaml` requests exceptions but never approves them. After the user
-explicitly accepts one, record it with
-`pcbforge policy approve-exception <id> --note "<decision>"`. A changed
-exception fingerprint becomes stale and reopens its profile-mapped phase.
-After the checked FAB-OUT transition, refresh live sourcing evidence and
-record the user's final review with `pcbforge policy confirm-sourcing`; ORDER
-remains blocked without it.
+`policy.yaml` requests exceptions. It does not approve them.
+After the user approves an exact exception, record `pcbforge policy approve-exception <id> --note "<decision>"`.
+After fabrication output, refresh sourcing and record the user's review with `pcbforge policy confirm-sourcing`.
+ORDER remains blocked until that sourcing confirmation is current.
 
-## LAYOUT assist (only when the user asks)
+## LAYOUT assist
 
-Default is spotter. A request like "place the decoupling caps", "route the
-power rails", or "try a first placement pass" authorizes spatial edits for that
-task. A general "continue", plan approval, or silence does not, and no request
-grants standing permission — after the task you are a spotter again.
+Perform a spatial edit only when the user explicitly requests it during open LAYOUT with a current handoff.
+That authorization covers the named task. Preserve the schematic-owned circuit data.
+Ensure KiCad has no unsaved PCB changes before applying edits.
 
-Preconditions: LAYOUT is open and its handoff approval is current; the user has
-KiCad closed for that board; the material-choice rule still applies, so present
-options and stop when the ask hides a material decision.
+Use `apply-pattern` or `apply-floorplan` when the request matches those tools.
+Use their dry run to inspect the proposed moves. They create backups and verify the result.
+For other authorized edits, create a PCB backup and state its path before editing.
 
-Prefer a tool over freehand editing. Where the requested work is exactly what a
-command already does, run that command:
+Change only the requested positions, sides, rotations, tracks, vias, zones or graphics.
+Keep reference identity, footprint assignments, fields, pad nets and board rules intact.
+Report the actual changes, DRC results and unresolved work.
+Record `pcbforge status mark layout ai-assisted --note "<request and result>"` as append-only history.
+The user still declares layout complete and approves verification.
 
-| Request | Command |
-|---|---|
-| place the parts a vendor reference layout calls for | `pcbforge apply-pattern --group <id>` |
-| coarse first-pass placement from an adopted floorplan | `pcbforge apply-floorplan --groups <id>` |
+## Engineering review
 
-Both take the `layout-backups/` copy themselves, refuse to run without a current
-handoff approval, verify the result and restore the backup if it does not check
-out, and print the delta. They do not record the `ai-assisted` event: that note
-is yours to write, because only you know what the user actually asked for. Run
-either with `--dry-run` first and show the user the moves.
+Use official symbols and footprints first, including MCU and connector libraries.
+Check actual pin functions and package dimensions against manufacturer sources.
+Use custom assets only when the official library cannot represent the part, and record the search rationale.
+Prefer JLC basic parts where the specification and policy permit them. Record exact supplier identity and research dates.
 
-Procedure:
+Readability lint uses approximate text extents. Inspect the saved schematic previews yourself.
+Check continuous functional paths, power direction, labels, crossings, hierarchy and field placement.
+Review independent test coverage and calculations. ERC alone is insufficient.
 
-1. Copy `<project>.kicad_pcb` into `layout-backups/` (git-ignored) with a
-   UTC-stamped name, and say where it is. Skip this step when you are using
-   `apply-pattern` or `apply-floorplan`; they do it, and say where.
-2. State the exact intended edits — which references move where, which nets get
-   routed, layer and width choices from `placement.yaml` net classes.
-3. Edit spatial objects only: positions, sides, rotations, tracks, vias, zones,
-   graphics. Never touch component identity, footprint assignment, fields,
-   pad-to-net binding, or net names; those stay circuit-source-owned and a
-   rebuild would overwrite them anyway.
-4. Report the concrete delta: references moved, tracks and vias added, DRC
-   state, and anything you could not resolve. Be honest about heuristics; you
-   have no autorouter.
-5. Record the work as append-only history:
-
-   ```text
-   pcbforge status mark layout ai-assisted \
-     --note "<what the user requested; what changed>"
-   ```
-
-   The event never advances, blocks, or approves a phase; it makes AI-produced
-   geometry visible in the LAYOUT review packet.
-6. The LAYOUT done-declaration remains the user's. Never treat your own
-   geometry as reviewed, and expect it to be discarded or reworked.
-
-## Current build state (honest — board 1 carries scaffolding debt)
-
-Exists today: pinned toolchain (`scripts/ato`, `scripts/kicad-cli`,
-`scripts/cubemx`), `pcbforge init`, SPEC + combined ARCHITECT/MCU + CIRCUIT
-playbooks, `pcbforge check-ioc`, `pcbforge check-parts`,
-`pcbforge check-build-test`, the tracked CIRCUIT acceptance report, an explicit
-empty module catalog, `pcbforge prepare-layout` /
-`pcbforge check-layout-handoff`, the placement schema and handoff gate,
-`pcbforge check-placement` (advisory placement measurement),
-authored circuit schematic/model,
-compiled-parity, deterministic acceptance, and the v1 decision gates,
-`policy.yaml`, `pcbforge check-policy`, explicit policy approval commands, and
-`pcbforge fab-out` / `pcbforge check-fab-out`.
-
-Not built yet (do manually, per DESIGN.md, and say you're doing it manually):
-`ioc2code` (derive `src/mcu.ato` from the checked `.ioc` yourself and perform
-the one-to-one audit in `agent/mcu.md`), `verify` audits beyond DRC,
-automated live `verify-stock` lookup. Live sourcing research is performed
-during CIRCUIT and again after FAB-OUT, then recorded through the policy
-gate. The module catalog is empty — propose architecture from
-scratch and say so; don't invent library modules.
-
-Board-1 gates you must respect (DESIGN.md → Pilot): CIRCUIT establishes
-circuit comprehension before implementation and the LAYOUT handoff confirms the
-same approved evidence before layout; run the
-sync drill after first placement (no-op rebuild + controlled deltas must
-preserve placement — fingerprint scripts in `pilots/*/scripts/`).
-
-## Registry / parts notes
-
-- atopile's component API was unreachable during the pilot, so registry
-  availability remains unreliable. This may justify local source wrappers, but
-  never redundant local KiCad assets for commodity parts.
-- Parts: prefer JLC **basic** library; pin the LCSC# in source/BOM metadata.
-  Use official KiCad symbols and footprints first, for every part including
-  MCUs and connectors, checked pin for pin with unused pins counted; keep the
-  exact MPN even when the official symbol name ends in a wildcard. Use
-  `easyeda2kicad` only when the exact package or pin mapping is missing,
-  record why, and always verify generated assets against the datasheet.
-  `pcbforge check-parts` enforces the commodity subset of this rule;
-  `pcbforge render-circuit` enforces it for the review schematic.
+Live stock lookup and engineering audits beyond the implemented checks remain manual research tasks.
+The native PCB update and final visual acceptance remain user-operated steps.
+Do not describe simulated updates or command-line exports as successful GUI validation.

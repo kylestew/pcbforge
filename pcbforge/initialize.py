@@ -27,21 +27,20 @@ from pcbforge.policy import (
     load_policy_profile,
 )
 
-ATO_VERSION = "0.15.7"
-KICAD_VERSION = "9.0.9"
+from pcbforge.kicad_tools import VERSION as KICAD_VERSION
 SPEC_SCHEMA = 1
-PIN_SCHEMA = 1
-AGENTS_SCHEMA = 1
-ARCHITECT_GUIDE_SCHEMA = 1
-ARCHITECTURE_DIAGRAM_SCHEMA = 1
-MCU_GUIDE_SCHEMA = 1
-CIRCUIT_GUIDE_SCHEMA = 1
-BUILD_TEST_GUIDE_SCHEMA = 1
-LAYOUT_HANDOFF_GUIDE_SCHEMA = 1
-APPROVAL_GUIDE_SCHEMA = 1
-CIRCUIT_REVIEW_SCHEMA = 3
+PIN_SCHEMA = 2
+AGENTS_SCHEMA = 2
+ARCHITECT_GUIDE_SCHEMA = 2
+ARCHITECTURE_DIAGRAM_SCHEMA = 2
+MCU_GUIDE_SCHEMA = 2
+CIRCUIT_GUIDE_SCHEMA = 2
+ELECTRICAL_TEST_GUIDE_SCHEMA = 2
+LAYOUT_HANDOFF_GUIDE_SCHEMA = 2
+APPROVAL_GUIDE_SCHEMA = 2
+CIRCUIT_REVIEW_SCHEMA = 4
 POLICY_GUIDE_SCHEMA = POLICY_SCHEMA
-STATUS_SCHEMA = 1
+STATUS_SCHEMA = 2
 BOARD_ORIGIN_MM = 100.0
 
 REQUIRED_KEYS = {
@@ -368,17 +367,6 @@ def _run_checked(
 
 
 def _tool_metadata(tool_root: Path, runner: CommandRunner) -> dict[str, Any]:
-    ato_version = _run_checked(
-        [str(tool_root / "scripts" / "ato"), "self-check"],
-        cwd=tool_root,
-        runner=runner,
-        purpose="atopile version check",
-    ).splitlines()[-1]
-    if ato_version != ATO_VERSION:
-        raise InitError(
-            f"atopile version mismatch: expected {ATO_VERSION}, got {ato_version}"
-        )
-
     kicad_version = _run_checked(
         [str(tool_root / "scripts" / "kicad-cli"), "version"],
         cwd=tool_root,
@@ -413,7 +401,6 @@ def _tool_metadata(tool_root: Path, runner: CommandRunner) -> dict[str, Any]:
     return {
         "revision": revision,
         "dirty": dirty,
-        "atopile": ato_version,
         "kicad": kicad_version,
         "toolchain_lock_sha256": _sha256(lockfile),
     }
@@ -434,32 +421,10 @@ def _number(value: float) -> str:
     return f"{value:.6f}".rstrip("0").rstrip(".")
 
 
-def _render_ato_yaml(spec: ProjectSpec) -> str:
-    return f"""requires-atopile: "{ATO_VERSION}"
-
-paths:
-  src: ./src
-  layout: ./
-
-builds:
-  default:
-    entry: src/main.ato:App
-    keep_designators: true
-    paths:
-      layout: ./{spec.name}.kicad_pcb
-"""
 
 
-def _render_main_ato(spec: ProjectSpec) -> str:
-    return f'''"""Top-level circuit architecture for {spec.name}.
 
-Populate this module during the ARCHITECT phase; the user approves the module
-graph before component implementation begins.
-"""
 
-module App:
-    pass
-'''
 
 
 def _layers(layers: int) -> str:
@@ -669,325 +634,34 @@ def _render_dru(profile: Mapping[str, Any]) -> str:
 
 
 def _render_agents(spec: ProjectSpec, tool_root: Path) -> str:
-    return f"""<!-- pcbforge-agents-schema: {AGENTS_SCHEMA} -->
-# pcbforge project: {spec.name}
+    return f"""<!-- pcbforge-agents-schema: 2 -->
+# {spec.name}
 
-This is a pcbforge circuit-as-code board project. Read `spec.md` and
-`policy.yaml` first on every cold start, then refresh `STATUS.md` from source,
-saved workflow gates, compiler output, and the KiCad board.
+Read `{tool_root}/agent/operating-manual.md` before work.
+This is a native KiCad 10.0.3 project. The saved schematic owns the circuit.
+Read spec.md, policy.yaml and STATUS.md to resume. Run pcbforge status --check --write.
 
-## Required reading
+The agent authors and edits real schematics with pcbforge.schematic_edit.SchematicDocument.
+Preserve existing symbol UUIDs and unrelated user drawing work. Validate saved files.
+Use official KiCad libraries first. Keep exact MPN, LCSC, Datasheet and pcbforge_purpose fields.
+Keep reviewed electrical facts and executable requirements separate from circuit implementation.
 
-1. This file, `spec.md`, `policy.yaml`, and `STATUS.md`.
-2. `{tool_root}/agent/operating-manual.md`.
-3. `{tool_root}/agent/architect.md` before doing ARCHITECT work.
-4. `{tool_root}/agent/mcu.md` for the MCU workstream inside ARCHITECT.
-5. `{tool_root}/agent/circuit.md` before doing CIRCUIT work.
-6. `{tool_root}/agent/layout-handoff.md` before preparing LAYOUT.
+The user approves the architecture and exact MCU plan before implementation.
+The user approves the checked circuit once before its native PCB update.
+Run prepare-pcb-update, ask the user to update the PCB in KiCad, then run finish-circuit.
+Never infer approvals. Changed electrical intent requires renewed circuit approval.
 
-## Ownership
-
-- The user owns the eight decision gates: SPEC, ARCHITECT proposal, CIRCUIT
-  proposal and final, LAYOUT handoff and done-declaration, VERIFY, and ORDER;
-  they also own intent, optional CubeMX review, layout, routing, and ordering.
-- The agent owns circuit code, exact MCU and pin selection, part selection,
-  checks, written layout audits, and preparation of review packets. Tool or
-  agent ownership of work never grants completion authority.
-- Never place, route, move, or “fix” copper unasked. Rewrite spatial board data
-  only inside an open LAYOUT, only for work the user explicitly requested, and
-  never in SPEC, ARCHITECT, CIRCUIT, or the handoff.
-- Circuit source owns identity, footprints, fields, and connectivity.
-- `{spec.name}.kicad_pcb` owns all spatial work.
-
-## Decision authority
-
-- Derive consequences of approved requirements, but never silently choose
-  between materially different reasonable designs.
-- A choice is material when alternatives affect topology, public interfaces,
-  connectors, resource allocation, cost, risk, reversibility, or user
-  experience. Present options, recommendation, tradeoffs, and consequences,
-  then stop before changing the affected artifact.
-- Silence, general permission to continue, and a broad implementation request
-  are not approval.
-- You may record approval already expressed by the user; never originate,
-  infer, self-approve, or reuse it.
-- Proposal approval precedes implementation. Required final approvals follow
-  artifact presentation and validation.
-- Initialization, the ARCHITECT source baseline, and FAB-OUT are checked tool
-  transitions rather than user approvals. The LAYOUT handoff has its own
-  explicit approval.
-- Before requesting approval, run `pcbforge status review <phase>` and present
-  its exact artifacts, check results, and fingerprint. After an unambiguous
-  approval of that packet, record the saved review with
-  `pcbforge status approve <phase> --last-reviewed --note "<approval>"`.
-- Approvals are phase-specific and fingerprint-bound. A changed approved
-  artifact requires renewed approval; rerunning checks cannot revive an old
-  gate.
-- ARCHITECT and CIRCUIT proposals use
-  `status review <phase> --stage proposal` followed, only after explicit user
-  approval, by `status approve <phase> --stage proposal --last-reviewed`.
-- Only local, reversible details that do not alter an approved contract may be
-  chosen autonomously, and their assumptions must be stated.
-
-## Toolchain
-
-- KiCad 9 only; KiCad 10 is incompatible with the pinned compiler.
-- Use `{tool_root}/scripts/ato`, never a global `ato`.
-- Use `{tool_root}/scripts/kicad-cli`, never a PATH `kicad-cli`.
-- Use `{tool_root}/scripts/cubemx` for command-line CubeMX 6.18 validation.
-- Ordering and spending remain human actions.
-
-## Manufacturing and technology policy
-
-- `{tool_root}/policies/{POLICY_PROFILE_ID}.yaml` is the tool-owned profile;
-  `.pcbforge` pins its identity and hash. `policy.yaml` records this project's
-  declarations, sourcing evidence, and requested exceptions.
-- JLCPCB fabrication and assembly, STM32, 2/4 layers, SWD, pinned tools, exact
-  part identity, official commodity libraries, spatial ownership, and human
-  ordering authority are hard constraints. They cannot be excepted.
-- FR4 1.6 mm / 1 oz, conventional vias, no controlled impedance, 0603 minimum
-  commodity packages, and avoidance of BGA/WLCSP/sub-0.5-mm QFN are defaults.
-  Deviations require a declared exception and explicit user approval.
-- Record protection, ESD, test-point, polarity, and pin-1 applicability and
-  evidence in `policy.yaml`. Record sourcing evidence for every selected LCSC
-  item. Do not infer approval or current availability.
-- Run `{tool_root}/scripts/pcbforge check-policy`. Approval commands persist
-  decisions already made in conversation; they never constitute approval.
-
-## Resume
-
-1. Read this file, `spec.md`, `policy.yaml`, and `STATUS.md`.
-2. Run `{tool_root}/scripts/pcbforge status --check --write` from this directory.
-3. Use `{tool_root}/scripts/pcbforge status --next` for the compact handoff view.
-4. Report the latest valid milestone, any previously performed transition that
-   is now inactive, the current state, next owner, one primary action, and its
-   command. If the phase is technically ready, present
-   `status review <phase>` and stop for explicit user approval.
-
-## Status dashboard
-
-- `STATUS.md` is the tracked, user-facing workflow dashboard. Its trailing YAML
-  metadata contains append-only workflow events and check fingerprints; its
-  Markdown body is generated. Never edit the body manually.
-- Use `{tool_root}/scripts/pcbforge status --write` after meaningful project
-  changes. Use `--check` when compiler, build-test, parts-policy,
-  layout-handoff, IOC, or DRC evidence must be refreshed.
-- `Complete` means a transition currently authorizes forward progress.
-  `Performed, inactive` preserves a transition that ran before its upstream
-  phase reopened; return to that phase instead of treating the transition as
-  current completion. `Stale` means its upstream phase is current but its
-  evidence must be refreshed.
-- Never use `status mark <phase> complete`. After checks pass, run
-  `{tool_root}/scripts/pcbforge status review <phase>`, present the packet, and
-  stop. Only after explicit user approval, run
-  `{tool_root}/scripts/pcbforge status approve <phase> --last-reviewed --note "<approval>"`.
-  The command persists approval already expressed; it never constitutes it.
-- Use `blocked` with a concrete reason, `reopened` when an approved phase
-  changes, `skipped` only for optional publish, and `ai-assisted` only to log
-  requested spatial layout work. Never infer user approval, layout completion,
-  routing completion, or ordering.
-- Record a declared exception with `pcbforge policy approve-exception <id>` and
-  the final post-FAB review with `pcbforge policy confirm-sourcing`, always
-  after the user explicitly approves or confirms it.
-
-## ARCHITECT gate
-
-After SPEC approval, immediately run `pcbforge init`. A successful atomic
-initialization opens ARCHITECT directly without another approval. ARCHITECT
-combines the functional graph, exact MCU plan, code skeleton, IOC, and MCU
-audit:
-
-1. Map every spec requirement to a functional block and typed interface:
-   power input and every rail, MCU family, SWD, optional debug UART, every
-   peripheral, every connector, and every special constraint.
-2. Inspect `{tool_root}/modules/index.md`. The catalog is currently empty:
-   say so, propose project-local modules from scratch, and never invent module
-   imports or renders. Treat unmatched `modules_planned` entries as unverified.
-3. Keep `src/main.ato` as a thin `App`. Put functional interface skeletons in
-   `src/modules/*.ato`; reserve `src/mcu.ato` for the per-project MCU boundary.
-4. Prefer `ElectricPower`, `I2C`, `SPI`, `UART`, `USB2_0_IF`, `CAN`, `SWD`,
-   and `ElectricSignal`/`Electrical` over raw nets. Clarify `other` interfaces.
-5. Draft `docs/architecture.md` with marker
-   `pcbforge-architecture-diagram-schema: {ARCHITECTURE_DIAGRAM_SCHEMA}` and a
-   Mermaid `flowchart LR`. Also draft `docs/mcu.md` with the exact
-   STM32/package, peripheral allocation, provisional pin/resource plan,
-   sourcing, and material tradeoffs. Do both before writing source or the IOC.
-6. Run `pcbforge status review architect --stage proposal`, present the exact
-   packet, and stop. After approval, record
-   `{tool_root}/scripts/pcbforge status approve architect --stage proposal --last-reviewed --note "<approved choices>; diagram: docs/architecture.md"`.
-   A spec, diagram, or MCU-plan change invalidates this approval.
-7. Only after proposal approval, write the module skeleton, create
-   `firmware/{spec.name}.ioc`, and derive `src/mcu.ato` from it.
-8. Follow `{tool_root}/agent/mcu.md`; preserve SWD, check every pin/resource,
-   offer optional CubeMX review, and run `pcbforge check-ioc`.
-9. Do not choose non-MCU parts, footprints, LCSC numbers, passive values, or
-   layout geometry. Build with the pinned compiler and preserve spatial data.
-10. Audit every functional `App` instance, typed top-level connection, and
-   external boundary against the approved diagram, including the one-to-one
-   IOC-to-`src/mcu.ato` audit. Run `pcbforge status --check --write` and resolve
-   every build or IOC failure without changing spatial board data.
-11. Run `{tool_root}/scripts/pcbforge finish-architect`. It verifies the
-   current proposal and checks, proves the board stayed spatially unchanged,
-   captures the pre-CIRCUIT source baseline, and opens CIRCUIT without another
-   user approval.
-
-## CIRCUIT gate
-
-Before adding physical parts, follow `{tool_root}/agent/circuit.md`:
-
-1. Do not edit physical Atopile source yet. Create `circuit-review.yaml`, the
-   exact `review/circuit/circuit.yaml` proposal model, the authored
-   `review/circuit/circuit_schematic.py` script that `pcbforge render-circuit`
-   turns into the review-only `{spec.name}.kicad_sch` beside the KiCad
-   project (so eeschema and pcbnew cross-probe it during layout), and
-   `docs/circuit-proposal.md`. Draw the schematic as connected paths a
-   reader can follow (supply chain, MCU to peripherals with their support
-   branches, debug to MCU); net-label jumps only where wires would tangle. The review schematic is a derived artifact:
-   never hand-edit or save it from KiCad, never use "Update PCB from
-   Schematic" or "Update Schematic from PCB" — Atopile owns the board and
-   the gates refuse a board carrying schematic links.
-2. Run `pcbforge check-circuit-review --stage proposal --write`, then
-   `pcbforge status review circuit --stage proposal`. Present the review
-   schematic, narrative, exact model summary, and fingerprint, then stop.
-   Record the proposal fingerprint only after explicit user approval.
-3. After proposal approval, implement the circuit in Atopile. Search the
-   pinned official KiCad libraries first for every part — MCUs, ICs,
-   connectors, passives — and use the official symbol and footprint when pin
-   numbers, functions, unused pins, and package all match; resolve symbol and
-   footprint independently. A selected MPN or LCSC number is supplier
-   metadata that stays exact even when the official symbol name carries a
-   wildcard suffix; it is not a reason to generate another library asset.
-4. Generate project-local KiCad assets only when the exact required package or
-   pin mapping is absent from the official libraries, record the search and
-   the mismatch, then verify the generated geometry against the datasheet.
-   The review schematic follows the same rule and refuses an avoidable
-   generic box.
-5. Give every resolved PCB net a concise human-readable name owned by Atopile
-   source, and record the same exact `compiler_name` in the approved proposal
-   model. Reject generic `hv`, `lv`, `line`, numeric-only, and
-   hierarchy-generated routing labels; name intentional single-pad unused
-   nets `NC_<REF>_<PIN>`. Never rename nets only in the KiCad PCB.
-6. Run `{tool_root}/scripts/pcbforge check-parts` during part selection and
-   before presenting CIRCUIT for completion.
-7. After part selection, write `docs/layout-research.md`: one `## REF — MPN`
-   section per IC, regulator, connector, crystal, antenna, and power inductor,
-   each carrying `### Sources`, `### Guidance`, `### Pattern`, and
-   `### Mechanical`. Cite the datasheet sections you actually read and never
-   invent one. The LAYOUT handoff reads this file instead of re-reading
-   datasheets.
-8. Complete protection/testability evidence and sourcing entries in
-   `policy.yaml`; run `{tool_root}/scripts/pcbforge check-policy` and stop for
-   explicit user approval of every required exception.
-9. Write `docs/circuit-review.md`, then run
-   `pcbforge check-circuit-review --stage final --write`. Exact part identity,
-   physical pins, and endpoint topology must match both the approved model and
-   compiled Atopile design. Electrical differences return to proposal approval.
-10. Create the exact, tracked `build-test.yaml` acceptance contract.
-11. Give every required atopile assertion a unique `pcbforge-test` marker and
-    list the same IDs in the contract.
-12. Run
-    `{tool_root}/scripts/pcbforge status --check --write`.
-13. Inspect the generated `docs/build-test.md` evidence report. CIRCUIT cannot
-    become ready while build, IOC, parts, policy, circuit parity, assertions,
-    exact BOM/PCB, or spatial-preservation evidence is failed or stale.
-14. Present one final `pcbforge status review circuit` packet and stop. Record
-    `status approve circuit` only after the user explicitly accepts that exact
-    implementation-and-test fingerprint.
-
-## CIRCUIT-to-LAYOUT handoff
-
-After CIRCUIT completes, follow `{tool_root}/agent/layout-handoff.md`:
-
-1. Read `docs/layout-research.md` and write the exact qualitative placement
-   contract in `placement.yaml`. Cite research with `source:` on each measurable
-   constraint and `guidance:` notes on each group.
-2. Assign every PCB footprint to exactly one group and reference only current
-   PCB references, pads, and exact net names.
-3. Run `{tool_root}/scripts/pcbforge prepare-layout`; it generates
-   `docs/placement-brief.md` and merges only `pcbforge:` net classes into the
-   KiCad project. It never edits the PCB.
-4. Run `{tool_root}/scripts/pcbforge check-layout-handoff` and present
-   `docs/placement-brief.md` beside the already-approved CIRCUIT explanatory
-   SVG and final parity evidence.
-5. Run `pcbforge status review layout --stage handoff` and present its packet.
-   Record `status approve layout --stage handoff` only after the user approves
-   `docs/placement-brief.md` beside the current CIRCUIT overview. If that
-   evidence is missing, stale, or
-   inadequate for placement decisions, block the handoff and do not begin
-   LAYOUT.
-
-## LAYOUT gate
-
-- Placement and routing remain distinct user tasks, both performed in KiCad 9.
-  The agent spots and audits by default and never edits spatial board data on
-  its own initiative.
-- Before detailed placement on a board over roughly 20 footprints, run
-  `{tool_root}/scripts/pcbforge sketch-placement`. It proposes coarse floorplan
-  variants in `docs/placement-sketch.md` and changes nothing; present them, and
-  paste the chosen `floorplan:` block into `placement.yaml`.
-- Measure placement against the contract at any time with
-  `{tool_root}/scripts/pcbforge check-placement --write-report`. It writes
-  `docs/placement-check.md` and never touches the board. The result is advisory:
-  it never blocks a phase, gates an approval, or changes project health.
-- When the user explicitly asks the agent to attempt placement or routing, that
-  request authorizes spatial edits for that task only and expires with it.
-  Where a command already does the requested work, run it rather than editing
-  by hand: `{tool_root}/scripts/pcbforge apply-pattern --group <id>` places the
-  footprints a vendor reference layout binds around an anchor the user placed.
-  It backs the board up, verifies the result, restores it on any doubt, and
-  refuses a sketch-fidelity pattern. Use `--dry-run` first and show the moves.
-  `{tool_root}/scripts/pcbforge apply-floorplan --groups <id>` does a coarse
-  first pass from an adopted floorplan; it moves every footprint of those
-  groups, including ones already positioned, so it belongs before careful work.
-  Before editing by hand, copy `{spec.name}.kicad_pcb` into `layout-backups/`,
-  state the exact intended edits, and stop for the user on any material choice.
-  Afterwards report the delta and run
-  `{tool_root}/scripts/pcbforge status mark layout ai-assisted --note "<request; changes>"`.
-  That event is history, never approval. See
-  `{tool_root}/agent/operating-manual.md` for the full assist rules.
-- After the user declares both tasks done, run `pcbforge status review layout`
-  and present the lightweight packet. Record `status approve layout` only
-  after explicit confirmation of that exact board fingerprint.
-- The single LAYOUT fingerprint binds placements, board geometry, tracks,
-  vias, and zones. Later spatial edits reopen LAYOUT; VERIFY carries the
-  detailed DRC, audit, and render scrutiny.
-
-## FAB-OUT and order policy
-
-- After VERIFY is approved, run
-  `{tool_root}/scripts/pcbforge fab-out`. It plots Gerbers and drills for the
-  pinned stackup, exports placements and DRC evidence, derives the JLC BOM and
-  CPL, writes `fab/manifest.json` and `fab/{spec.name}-fab.zip`, and records
-  the checked transition. It never edits the PCB and never orders.
-- A refusal is a real defect: missing layer, absent drill file, an assembly
-  part with no placement, a BOM that disagrees with `build-test.yaml`, or a
-  board that no longer passes DRC. Fix the cause; never hand-edit `fab/`.
-- Use `{tool_root}/scripts/pcbforge check-fab-out` to re-prove an existing
-  packet. It also runs as the ORDER-stage `fab` check.
-- After the checked FAB-OUT transition is complete, refresh live JLC
-  availability and lifecycle
-  evidence for the exact BOM.
-- Present the result to the user and, only after explicit confirmation, record
-  `{tool_root}/scripts/pcbforge policy confirm-sourcing --note "<review>"`.
-- ORDER cannot complete unless that confirmation fingerprints the current
-  policy sourcing records, exact build-test BOM, and fabrication outputs.
-- The generator records its own transition after validating the packet. ORDER
-  retains the explicit user review and approval.
+The user owns layout and routing. Agent spatial edits require a specific request,
+a current layout handoff and an open LAYOUT phase. Back up before spatial edits.
+Record each requested assist. Placement measurements remain advisory.
+Ordering remains human-owned. Never send orders or messages without authorization.
 """
+
 
 
 def _render_gitignore() -> str:
-    return """.ato/
-build/
-fab/*
-!fab/.gitkeep
-bom/*
-!bom/.gitkeep
-*-backups/
-_autosave-*
-*.kicad_prl
-review/circuit/preview/
-"""
+    return "build/\nfab/*\n!fab/.gitkeep\nbom/*\n!bom/.gitkeep\n*-backups/\n_autosave-*\n*.kicad_prl\nreview/circuit/preview/\n"
+
 
 
 def _render_pins(
@@ -1005,7 +679,6 @@ def _render_pins(
             "dirty": metadata["dirty"],
         },
         "toolchain": {
-            "atopile": metadata["atopile"],
             "kicad": metadata["kicad"],
             "uv_lock_sha256": metadata["toolchain_lock_sha256"],
         },
@@ -1024,7 +697,7 @@ def _render_pins(
             "architecture_diagram_schema": ARCHITECTURE_DIAGRAM_SCHEMA,
             "mcu_schema": MCU_GUIDE_SCHEMA,
             "circuit_schema": CIRCUIT_GUIDE_SCHEMA,
-            "build_test_schema": BUILD_TEST_GUIDE_SCHEMA,
+            "electrical_test_schema": ELECTRICAL_TEST_GUIDE_SCHEMA,
             "layout_handoff_schema": LAYOUT_HANDOFF_GUIDE_SCHEMA,
             "approval_schema": APPROVAL_GUIDE_SCHEMA,
             "circuit_review_schema": CIRCUIT_REVIEW_SCHEMA,
@@ -1049,10 +722,17 @@ def _render_scaffold(
     profile_path: Path,
     policy_profile_hash: str,
 ) -> None:
-    _write(stage / "ato.yaml", _render_ato_yaml(spec))
-    _write(stage / "src" / "main.ato", _render_main_ato(spec))
+    from pcbforge.schematic import empty_schematic
+    root_uuid = str(uuid.uuid4())
+    _write(stage / f"{spec.name}.kicad_sch", empty_schematic(spec.name, uid=root_uuid))
+    _write(stage / "sym-lib-table", "(sym_lib_table\n  (version 7)\n)\n")
+    _write(stage / "circuit-review.yaml", "circuit_review_schema: 4\nerc_exclusions: []\nreadability_exclusions: []\n")
+    _write(stage / "circuit-tests.yaml", "circuit_tests_schema: 1\nrequirements: []\ntests: []\n")
+    _write(stage / "electrical-facts.yaml", "electrical_facts_schema: 1\nvalues: {}\nparts: {}\nmcu: {}\n")
     _write(stage / f"{spec.name}.kicad_pcb", _render_board(spec))
-    _write(stage / f"{spec.name}.kicad_pro", _render_project(spec, profile))
+    project = json.loads(_render_project(spec, profile))
+    project["sheets"] = [[root_uuid, "Root"]]
+    _write(stage / f"{spec.name}.kicad_pro", json.dumps(project, indent=2) + "\n")
     _write(stage / f"{spec.name}.kicad_dru", _render_dru(profile))
     _write(stage / "fp-lib-table", "(fp_lib_table\n  (version 7)\n)\n")
     _write(stage / "AGENTS.md", _render_agents(spec, tool_root))
@@ -1074,8 +754,11 @@ def _render_scaffold(
 
 def _generated_paths(spec: ProjectSpec) -> list[Path]:
     return [
-        Path("ato.yaml"),
-        Path("src"),
+        Path(f"{spec.name}.kicad_sch"),
+        Path("sym-lib-table"),
+        Path("circuit-review.yaml"),
+        Path("circuit-tests.yaml"),
+        Path("electrical-facts.yaml"),
         Path(f"{spec.name}.kicad_pcb"),
         Path(f"{spec.name}.kicad_pro"),
         Path(f"{spec.name}.kicad_dru"),
@@ -1106,16 +789,18 @@ def _preflight_destination(project_dir: Path, spec: ProjectSpec) -> None:
 
 
 def _smoke_build(stage: Path, tool_root: Path, runner: CommandRunner) -> None:
-    _run_checked(
-        [str(tool_root / "scripts" / "ato"), "build", "--verbose"],
-        cwd=stage,
-        runner=runner,
-        purpose="atopile scaffold smoke test",
-    )
+    schematic = next(stage.glob("*.kicad_sch"))
+    _run_checked([str(tool_root / "scripts/kicad-cli"), "sch", "export", "netlist",
+                  "--output", str(stage / "smoke.net"), str(schematic)],
+                 cwd=stage, runner=runner, purpose="native schematic smoke test")
+    _run_checked([str(tool_root / "scripts/kicad-cli"), "pcb", "export", "svg", "--layers", "F.Cu,B.Cu,Edge.Cuts", "--mode-multi",
+                  "--output", str(stage / "smoke-pcb"), str(schematic.with_suffix(".kicad_pcb"))],
+                 cwd=stage, runner=runner, purpose="native PCB smoke test")
+
 
 
 def _discard_build_outputs(stage: Path) -> None:
-    for path in (stage / "build", stage / ".ato"):
+    for path in (stage / "smoke.net", stage / "smoke-pcb"):
         if path.is_dir():
             shutil.rmtree(path)
         elif path.exists():
@@ -1286,7 +971,7 @@ def initialize_project(
                     _now(),
                     "initialize",
                     "complete",
-                    "Validated create-only scaffold and compiler smoke test passed",
+                    "Validated create-only scaffold and native KiCad smoke test passed",
                 ),
             ),
         )

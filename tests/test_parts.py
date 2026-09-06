@@ -1,197 +1,46 @@
-from __future__ import annotations
-
+import dataclasses
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
-
-from pcbforge.cli import main
+import yaml
+from pcbforge.circuit import load_graph, check_component_parts
 from pcbforge.parts import check_parts, render_parts_audit
+from pcbforge.kicad_fp import footprint_pads
+from tests.native_fixture import seed_native
+from tests.test_pcb_update import SPEC
 
+ROOT=Path(__file__).resolve().parents[1]
 
-SPEC = """---
-spec_schema: 1
-name: parts-audit
-layers: 2
-stm32_family: G0
-power_in: usb-c
-rails: [+3V3]
-peripherals: []
-board_mm: [20, 20]
----
-# Parts audit
-"""
+class NativePartsTests(unittest.TestCase):
+    def setUp(self):
+        t=tempfile.TemporaryDirectory();self.addCleanup(t.cleanup);self.project=Path(t.name).resolve();(self.project/'spec.md').write_text(SPEC)
+        seed_native(self.project,evidence=False);self.graph=load_graph(self.project)
+        self.facts={'electrical_facts_schema':1,'values':{},'mcu':{},'parts':{'R1':{'mpn':'TEST-R','source':'test source',
+                    'footprint':'Resistor_SMD:R_0603_1608Metric','pins':{'1':'','2':''}}}}
+        (self.project/'electrical-facts.yaml').write_text(yaml.safe_dump(self.facts))
 
+    def test_official_commodity_assets_pass(self):
+        self.assertEqual(check_component_parts(self.graph,self.facts,self.project,ROOT),())
+        result=check_parts(self.project);self.assertTrue(result.ok);self.assertIn('1 schematic parts',render_parts_audit(result))
 
-def atomic_part(
-    name: str,
-    *,
-    prefix: str,
-    footprint: str,
-    symbol: str,
-    description: str = "",
-    pins: int = 2,
-) -> str:
-    pin_lines = "\n".join(f"    pin {index}" for index in range(1, pins + 1))
-    return f"""#pragma experiment("TRAITS")
-import has_designator_prefix
-import is_atomic_part
+    def test_custom_commodity_symbol_fails_even_with_a_rationale(self):
+        component=dataclasses.replace(self.graph.components[0],symbol='Vendor:Custom0603')
+        graph=dataclasses.replace(self.graph,components=(component,));self.facts['parts']['R1']['library_rationale']='Test search'
+        self.assertIn('part-commodity',{f.code for f in check_component_parts(graph,self.facts,self.project,ROOT)})
 
-component {name}:
-    \"\"\"{description}\"\"\"
-    trait is_atomic_part<manufacturer="Example", partnumber="{name}", footprint="{footprint}", symbol="{symbol}">
-    trait has_designator_prefix<prefix="{prefix}">
-{pin_lines}
-"""
+    def test_project_table_precedence_cannot_hide_custom_commodity_footprint(self):
+        library=self.project/'parts/Resistor_SMD.pretty';library.mkdir(parents=True)
+        (library/'R_0603_1608Metric.kicad_mod').write_text('(footprint "R" (pad "1" smd rect) (pad "2" smd rect))')
+        (self.project/'fp-lib-table').write_text('(fp_lib_table (version 7) (lib (name "Resistor_SMD") (type "KiCad") (uri "${KIPRJMOD}/parts/Resistor_SMD.pretty")))')
+        self.assertIn('part-commodity',{f.code for f in check_component_parts(self.graph,self.facts,self.project,ROOT)})
 
+    def test_local_pad_discovery_updates_after_file_edit(self):
+        library=self.project/'parts/Test.pretty';library.mkdir(parents=True);path=library/'Part.kicad_mod'
+        (self.project/'fp-lib-table').write_text('(fp_lib_table (version 7) (lib (name "Test") (type "KiCad") (uri "${KIPRJMOD}/parts/Test.pretty")))')
+        path.write_text('(footprint "Part" (pad "1" smd rect))');self.assertEqual(footprint_pads('Test:Part',None,self.project)[0],{'1'})
+        path.write_text('(footprint "Part" (pad "2" smd rect))');self.assertEqual(footprint_pads('Test:Part',None,self.project)[0],{'2'})
 
-class PartsAuditTests(unittest.TestCase):
-    def project(self, root: Path) -> Path:
-        project = root / "parts-audit"
-        (project / "src" / "parts").mkdir(parents=True)
-        (project / "spec.md").write_text(SPEC, encoding="utf-8")
-        return project
-
-    def add_part(self, project: Path, name: str, source: str) -> None:
-        directory = project / "src" / "parts" / name
-        directory.mkdir()
-        (directory / f"{name}.ato").write_text(source, encoding="utf-8")
-
-    def test_blocks_local_assets_for_standard_0603_resistor(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            project = self.project(Path(temporary))
-            self.add_part(
-                project,
-                "R_10K_0603",
-                atomic_part(
-                    "R_10K_0603",
-                    prefix="R",
-                    footprint="R0603.kicad_mod",
-                    symbol="R_10K_0603.kicad_sym",
-                    description="10 kohm 0603 resistor",
-                ),
-            )
-            result = check_parts(project)
-            rendered = render_parts_audit(result)
-
-        self.assertFalse(result.ok)
-        self.assertEqual(result.scanned_parts, 1)
-        self.assertEqual(len(result.violations), 1)
-        self.assertEqual(result.violations[0].expected_symbol, "Device:R")
-        self.assertEqual(
-            result.violations[0].expected_footprint,
-            "Resistor_SMD:R_0603_1608Metric",
-        )
-        self.assertIn("keep the exact MPN/LCSC selection", rendered)
-
-    def test_blocks_capacitor_and_led_but_allows_official_library_refs(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            project = self.project(Path(temporary))
-            self.add_part(
-                project,
-                "C_4U7_0805",
-                atomic_part(
-                    "C_4U7_0805",
-                    prefix="C",
-                    footprint="C0805.kicad_mod",
-                    symbol="C_4U7_0805.kicad_sym",
-                    description="ceramic capacitor",
-                ),
-            )
-            self.add_part(
-                project,
-                "LED_GREEN_0603",
-                atomic_part(
-                    "LED_GREEN_0603",
-                    prefix="D",
-                    footprint="LED0603-RD.kicad_mod",
-                    symbol="LED_GREEN_0603.kicad_sym",
-                    description="green LED",
-                ),
-            )
-            self.add_part(
-                project,
-                "R_OFFICIAL_0603",
-                atomic_part(
-                    "R_OFFICIAL_0603",
-                    prefix="R",
-                    footprint="Resistor_SMD:R_0603_1608Metric",
-                    symbol="Device:R",
-                    description="exact MPN C25804 0603 resistor",
-                ),
-            )
-            result = check_parts(project)
-
-        self.assertEqual(result.scanned_parts, 3)
-        self.assertEqual(
-            {violation.component for violation in result.violations},
-            {"C_4U7_0805", "LED_GREEN_0603"},
-        )
-        expected = {
-            violation.component: violation.expected_footprint
-            for violation in result.violations
-        }
-        self.assertEqual(
-            expected["C_4U7_0805"],
-            "Capacitor_SMD:C_0805_2012Metric",
-        )
-        self.assertEqual(
-            expected["LED_GREEN_0603"],
-            "LED_SMD:LED_0603_1608Metric",
-        )
-
-    def test_allows_noncommodity_and_multipin_local_parts(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            project = self.project(Path(temporary))
-            self.add_part(
-                project,
-                "SENSOR_DFN8",
-                atomic_part(
-                    "SENSOR_DFN8",
-                    prefix="U",
-                    footprint="DFN8.kicad_mod",
-                    symbol="SENSOR_DFN8.kicad_sym",
-                    pins=8,
-                ),
-            )
-            self.add_part(
-                project,
-                "R_ARRAY_0603",
-                atomic_part(
-                    "R_ARRAY_0603",
-                    prefix="R",
-                    footprint="R_ARRAY_0603.kicad_mod",
-                    symbol="R_ARRAY_0603.kicad_sym",
-                    pins=4,
-                ),
-            )
-            result = check_parts(project)
-
-        self.assertTrue(result.ok)
-        self.assertEqual(result.scanned_parts, 2)
-
-    def test_cli_returns_one_for_policy_violations(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            project = self.project(Path(temporary))
-            self.add_part(
-                project,
-                "R_0603",
-                atomic_part(
-                    "R_0603",
-                    prefix="R",
-                    footprint="R0603.kicad_mod",
-                    symbol="R_0603.kicad_sym",
-                ),
-            )
-            with mock.patch("builtins.print") as output:
-                exit_code = main(["check-parts", str(project)])
-
-        self.assertEqual(exit_code, 1)
-        self.assertIn(
-            "Resistor_SMD:R_0603_1608Metric",
-            "\n".join(str(call.args[0]) for call in output.call_args_list),
-        )
-
-
-if __name__ == "__main__":
-    unittest.main()
+    def test_sourced_package_pin_map_is_required(self):
+        self.facts['parts']['R1']['pins']['1']='VCC'
+        self.assertIn('part-pin-functions',{f.code for f in check_component_parts(self.graph,self.facts,self.project,ROOT)})

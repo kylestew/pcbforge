@@ -53,7 +53,7 @@ board_mm: [50, 40]
 """
 
 BOARD_0603 = """(kicad_pcb
-  (version 20241229)
+  (version 20260206)
   (layers
     (0 "F.Cu" signal)
     (31 "B.Cu" signal)
@@ -68,7 +68,7 @@ BOARD_0603 = """(kicad_pcb
 )
 """
 
-BUILD_TEST = """build_test_schema: 1
+BUILD_TEST = """electrical_test_schema: 2
 build: default
 bom:
   - lcsc: C25804
@@ -85,7 +85,7 @@ class PolicyFixture(unittest.TestCase):
         self,
         root: Path,
         *,
-        schema: int = 1,
+        schema: int = 2,
         board: str = BOARD_0603,
         complete_evidence: bool = True,
         include_build_test: bool = True,
@@ -114,7 +114,7 @@ class PolicyFixture(unittest.TestCase):
         )
         _, _, policy_hash = load_policy_profile(TOOL_ROOT)
         policy_pin = f"""policy:
-  profile: pcbforge-standard-v1
+  profile: pcbforge-native-v2
   profile_sha256: {policy_hash}
   baseline_approval: spec
 """
@@ -122,25 +122,24 @@ class PolicyFixture(unittest.TestCase):
   revision: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
   dirty: false
 """
-        guidance = """  agents_schema: 1
-  architect_schema: 1
-  architecture_diagram_schema: 1
-  mcu_schema: 1
-  circuit_schema: 1
-  circuit_review_schema: 3
+        guidance = """  agents_schema: 2
+  architect_schema: 2
+  architecture_diagram_schema: 2
+  mcu_schema: 2
+  circuit_schema: 2
+  circuit_review_schema: 4
   policy_schema: 1
-  build_test_schema: 1
-  layout_handoff_schema: 1
-  approval_schema: 1
-  status_schema: 1
+  electrical_test_schema: 2
+  layout_handoff_schema: 2
+  approval_schema: 2
+  status_schema: 2
 """
         (project / ".pcbforge").write_text(
             f"""schema: {schema}
 project: garden-logger
 {pcbforge_pin}\
 toolchain:
-  atopile: "0.15.7"
-  kicad: "9.0.9"
+  kicad: "10.0.3"
   uv_lock_sha256: {TOOLCHAIN_LOCK_HASH}
 rules:
   profile: jlc-2layer-conservative-v1
@@ -151,25 +150,15 @@ guidance:
 """,
             encoding="utf-8",
         )
-        (project / "ato.yaml").write_text(
-            "builds:\n  default:\n    entry: src/main.ato:App\n",
-            encoding="utf-8",
-        )
-        (project / "src").mkdir()
-        (project / "src" / "main.ato").write_text(
-            "module App:\n    pass\n",
-            encoding="utf-8",
-        )
         (project / "garden-logger.kicad_pcb").write_text(
             board,
             encoding="utf-8",
         )
         (project / "fab").mkdir()
+        (project / "garden-logger.kicad_pro").write_text("{}\n")
         if include_build_test:
-            (project / "build-test.yaml").write_text(
-                BUILD_TEST,
-                encoding="utf-8",
-            )
+            from tests.native_fixture import seed_native
+            seed_native(project, [{"ref":"R1","value":"10k","mpn":"0603WAF1002T5E","lcsc":"C25804","footprint":"Resistor_SMD:R_0603_1608Metric"}])
         return project
 
 
@@ -406,7 +395,7 @@ class PolicyCheckerTests(PolicyFixture):
             project = self.project(Path(temporary))
             pins_path = project / ".pcbforge"
             pins = yaml.safe_load(pins_path.read_text(encoding="utf-8"))
-            pins["toolchain"]["atopile"] = "unreviewed"
+            pins["toolchain"]["kicad"] = "unreviewed"
             pins["rules"]["profile_sha256"] = "unreviewed"
             pins_path.write_text(
                 yaml.safe_dump(pins, sort_keys=False),
@@ -499,7 +488,7 @@ class PolicyApprovalTests(PolicyFixture):
             stale = inspect_status(project)
             reopened = write_status(project)
 
-        self.assertEqual(stale.phases[0].state, "Blocked")
+        self.assertEqual(stale.phases[0].state, "Stale")
         self.assertIn("approval is stale", stale.phases[0].detail)
         self.assertEqual(reopened.report.document.events[-1].action, "reopened")
 
@@ -514,6 +503,8 @@ class PolicyApprovalTests(PolicyFixture):
                 board=board,
                 include_build_test=False,
             )
+            from tests.native_fixture import seed_native
+            seed_native(project, [{"ref":"R1", "mpn":"TEST-0402", "lcsc":"C25804", "footprint":"Resistor_SMD:R_0402_1005Metric"}])
             policy_path = project / "policy.yaml"
             policy = yaml.safe_load(policy_path.read_text(encoding="utf-8"))
             policy["exceptions"] = [
@@ -545,7 +536,7 @@ class PolicyApprovalTests(PolicyFixture):
             ), mock.patch(
                 "pcbforge.status._current_architecture_baseline",
                 return_value=mock.sentinel.current_baseline,
-            ):
+            ), mock.patch("pcbforge.pcb_update.sync_is_current", return_value=True):
                 write_status(project, document=StatusDocument("", events, {}))
                 marked = mark_policy(
                     project,
@@ -651,7 +642,7 @@ class PolicyApprovalTests(PolicyFixture):
             ), mock.patch(
                 "pcbforge.status._current_fab_out",
                 return_value=mock.sentinel.current_fab,
-            ):
+            ), mock.patch("pcbforge.pcb_update.sync_is_current", return_value=True):
                 written = write_status(
                     project,
                     document=StatusDocument("", events, {}),
@@ -682,16 +673,18 @@ class PolicyApprovalTests(PolicyFixture):
                         events=(*confirmed.report.document.events, order_event),
                     ),
                 )
-                (project / "build-test.yaml").write_text(
-                    BUILD_TEST.replace("quantity: 1", "quantity: 2"),
-                    encoding="utf-8",
-                )
+                from pcbforge.schematic_edit import SchematicDocument
+                from tests.native_fixture import seed_evidence
+                doc = SchematicDocument.load(project / "garden-logger.kicad_sch")
+                doc.set_field("R1", "LCSC", "C25803")
+                doc.save()
+                seed_evidence(project)
                 invalidated = write_status(project)
 
             restored = inspect_status(project)
 
-        self.assertIn("post-FAB sourcing confirmation", blocked.current.detail)
-        self.assertTrue(written.report.transitions[3].complete)
+        self.assertIn("post-FAB sourcing", blocked.current.detail)
+        self.assertTrue(written.report.transitions[4].complete)
         self.assertTrue(ordered.report.phases[5].complete)
         self.assertEqual(
             invalidated.report.document.policy_events[-1].action,

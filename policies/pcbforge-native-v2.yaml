@@ -1,0 +1,57 @@
+policy_profile_schema: 1
+id: pcbforge-native-v2
+
+hard:
+  fabricator: jlcpcb
+  assembler: jlcpcb
+  allowed_layers: [2, 4]
+  mcu_vendor: STMicroelectronics
+  debug_interface: swd
+  eda: kicad-10
+  circuit_language: kicad-schematic
+
+defaults:
+  material: FR4
+  thickness_mm: 1.6
+  copper_oz: 1
+  controlled_impedance: false
+  advanced_vias: false
+  commodity_min_package: "0603"
+  qfn_min_pitch_mm: 0.5
+  prefer_jlc_class: basic
+  prefer_active_lifecycle: true
+  prefer_second_source: true
+
+exception_rules:
+  manufacturing.material:
+    earliest_phase: spec
+  manufacturing.thickness:
+    earliest_phase: spec
+  manufacturing.copper:
+    earliest_phase: spec
+  manufacturing.controlled-impedance:
+    earliest_phase: spec
+  manufacturing.advanced-vias:
+    earliest_phase: spec
+  components.commodity-package:
+    earliest_phase: circuit
+  components.advanced-package:
+    earliest_phase: circuit
+  assurance.reverse-polarity:
+    earliest_phase: circuit
+  assurance.overcurrent:
+    earliest_phase: circuit
+  assurance.connector-esd:
+    earliest_phase: circuit
+  assurance.test-points:
+    earliest_phase: circuit
+  assurance.polarity-marking:
+    earliest_phase: layout
+  assurance.pin1-marking:
+    earliest_phase: layout
+  sourcing.unavailable:
+    earliest_phase: circuit
+  sourcing.lifecycle:
+    earliest_phase: circuit
+  sourcing.unknown:
+    earliest_phase: circuit
