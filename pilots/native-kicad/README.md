@@ -10,7 +10,7 @@ The output directory must not exist. The pilot creates disposable two- and four-
 Their SPEC approval records are synthetic regression fixtures. They do not represent a user's hardware approval.
 
 The representative schematic comes from the frozen Roamer release already retained in this repository.
-It has an STM32 MCU, power conversion, USB and two motor channels across four native sheets.
+It has an STM32 MCU, power conversion, USB and two motor channels across three connected native sheets.
 The pilot checks extraction, unchanged saves, cosmetic edits, backups, electrical changes and independent motor-supply requirements.
 A deliberately incorrect bypass capacitor must fail the requirement test. Source files and the routed PCB must retain their original hashes.
 

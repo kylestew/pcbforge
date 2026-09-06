@@ -91,6 +91,24 @@ class CircuitChecks(unittest.TestCase):
         path=self.project/'circuit-review.yaml';data=yaml.safe_load(path.read_text());data['erc_exclusions']=[{'id':'nonexistent','rationale':'Test stale exclusion'}];path.write_text(yaml.safe_dump(data))
         with self.assertRaisesRegex(SchematicError,'stale or unknown'):self.check()
 
+    def test_native_top_level_field_visibility_is_respected(self):
+        doc=SchematicDocument.load(self.path)
+        symbol=next(n for n in sx.children(doc.root,'symbol') if any(sx.atom(p)=='Reference' and sx.atom(p,2)=='R1' for p in sx.children(n,'property')))
+        symbol.append(['property',sx.Quoted('Hidden data'),sx.Quoted('HIDDEN OVERLAP'),['at','50.8','50.8','0'],['hide','yes'],['effects',['font',['size','1.27','1.27']]]])
+        self.path.write_text(doc.serialize())
+        self.assertFalse(any('HIDDEN OVERLAP' in f.message for f in lint_saved(self.path)))
+        sx.child(symbol[-1],'hide')[1]='no'
+        self.path.write_text(doc.serialize())
+        self.assertTrue(any('HIDDEN OVERLAP' in f.message for f in lint_saved(self.path)))
+
+    def test_bottom_justified_wire_label_does_not_overlap_its_wire(self):
+        from pcbforge.schematic_lint import _text
+        from pcbforge.sch_lint import SheetGeometry, lint
+        node=['label',sx.Quoted('SIGNAL'),['at','0','0','0'],['effects',['font',['size','1.27','1.27']],['justify','left','bottom']]]
+        text=_text(node,'SIGNAL')
+        geometry=SheetGeometry((text,),{}, {}, (((0,0),(20,0)),),frozenset(),frozenset({(0,0),(20,0)}),frozenset(),{}, {},())
+        self.assertFalse(any(f.code=='text-wire-overlap' for f in lint(geometry)))
+
     def test_helper_and_declared_data_changes_stale_acceptance(self):
         helper=self.project/'helpers.py';helper.write_text('LIMIT = 1\n')
         datafile=self.project/'limits.csv';datafile.write_text('voltage,3.3\n')

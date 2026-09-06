@@ -12,6 +12,7 @@ import uuid
 from pcbforge import sexpr as sx
 from pcbforge.circuit import load_graph, read_evidence, fingerprint_inputs
 from pcbforge.fsutil import commit_outputs
+from pcbforge.kicad_tools import BOARD_FORMAT
 from pcbforge.schematic import SchematicError, canonical, digest, project_schematic, properties, from_payload, semantic_diff
 
 UPDATE_PATH = Path("review/circuit/pcb-update.json")
@@ -50,6 +51,8 @@ def board_state(path: Path, renames=None) -> dict:
         raise SchematicError(f"cannot inspect PCB: {exc}") from exc
     if sx.head(root) != "kicad_pcb":
         raise SchematicError("expected a KiCad PCB")
+    if sx.atom(sx.child(root, "version")) != BOARD_FORMAT:
+        raise SchematicError("save the PCB with the pinned KiCad 10.0.3 before synchronization")
     footprints = {}
     for fp in sx.children(root, "footprint"):
         props = properties(fp)

@@ -68,6 +68,11 @@ class PCBUpdateTests(unittest.TestCase):
         self.graph=seed_evidence(self.project);self.approval.approval_fingerprint='b'*64
         prepare_pcb_update(self.project);self.write(board_for(self.graph,copper=True))
 
+    def test_old_board_format_cannot_enter_native_synchronization(self):
+        raw=self.board.read_text();self.board.write_text(raw.replace('20260206','20241229'))
+        with self.assertRaisesRegex(SchematicError,'KiCad 10.0.3'):prepare_pcb_update(self.project)
+        self.assertFalse((self.project/UPDATE_PATH).exists())
+
     def test_initial_update_uses_native_identity_fields_and_pad_nets(self):
         raw=self.board.read_bytes();path=prepare_pcb_update(self.project);data=json.loads(path.read_text())
         self.assertEqual((self.project/data['backup']).read_bytes(),raw)

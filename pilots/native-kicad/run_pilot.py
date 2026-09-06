@@ -2,7 +2,8 @@
 """Native workflow regression pilot. Writes only to a new output directory."""
 from __future__ import annotations
 import argparse
-from dataclasses import replace
+from dataclasses import asdict
+from collections import Counter
 import hashlib
 import json
 from pathlib import Path
@@ -130,11 +131,14 @@ This disposable project tests initialization. It is not a hardware design.
     previews = output/'previews'; previews.mkdir()
     subprocess.run([str(ROOT/'scripts/kicad-cli'),'sch','export','svg','--output',str(previews),str(path)],check=True,capture_output=True,text=True)
     findings = lint_saved(path)
+    (output/"readability-findings.json").write_text(json.dumps([dict(asdict(f), id=f.identifier) for f in findings],indent=2)+"\n")
     results['representative_round_trip'] = {'source_revision':'3bc3361573dd21070efe9f76bba473947e2a0c21',
         'components':len(initial.components),'nets':len(initial.nets),'sheets':len(source_files(path)),
-        'graph_sha256':initial.fingerprint,'measurements':checks,'no_op_bytes_preserved':True,
+        'graph_sha256':initial.fingerprint,'source_sha256':source_hashes,'measurements':checks,'no_op_bytes_preserved':True,
         'cosmetic_graph_preserved':True,'source_and_routed_pcb_preserved':True,
         'deliberate_fault_rejected':fault,'fault_delta':delta,'lint_findings':len(findings),
+        'lint_summary':dict(Counter(f.code for f in findings)),
+        'preview_sha256':{p.name:sha(p) for p in previews.glob('*.svg')},
         'full_circuit_acceptance':'not claimed: historical design lacks the new sourced-facts contract'}
     (output/'results.json').write_text(json.dumps(results,indent=2)+'\n')
     print(json.dumps(results,indent=2))

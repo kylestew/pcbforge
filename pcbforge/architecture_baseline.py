@@ -31,4 +31,3 @@ def baseline_is_current(project_dir):
         return current, "architecture baseline is current" if current else "architecture baseline is stale"
     except (OSError, ValueError) as exc:
         return False, str(exc)
-

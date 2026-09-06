@@ -41,7 +41,10 @@ def _transform(x, y, node):
 
 def _text(node, text, owner=None):
     effects = sx.child(node, "effects") or []
-    if sx.child(effects, "hide") is not None or "hide" in sx.atoms(effects) or not text:
+    def hidden(parent):
+        flag = sx.child(parent, "hide")
+        return "hide" in sx.atoms(parent) or flag is not None and sx.atom(flag, default="yes") == "yes"
+    if hidden(node) or hidden(effects) or not text:
         return None
     font = sx.child(effects, "font") or []
     size = sx.child(font, "size")
@@ -55,7 +58,8 @@ def _text(node, text, owner=None):
         w, h = h, w
     justify = sx.atoms(sx.child(effects, "justify") or [])
     left = x if "left" in justify else x - w if "right" in justify else x - w / 2
-    return TextBox(text, Box(left, y-h/2, left+w, y+h/2), owner)
+    top = y if "top" in justify else y-h if "bottom" in justify else y-h/2
+    return TextBox(text, Box(left, top, left+w, top+h), owner)
 
 
 def lint_saved(path: Path) -> tuple[Finding, ...]:

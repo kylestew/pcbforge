@@ -276,4 +276,3 @@ def require_current_acceptance(project_dir: Path) -> None:
         read_evidence(project_dir)
     except (SchematicError, ElectricalError, OSError) as exc:
         raise CircuitEvidenceInputError(str(exc)) from exc
-

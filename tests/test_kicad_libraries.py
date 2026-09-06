@@ -218,4 +218,3 @@ class LintTests(unittest.TestCase):
             texts=(TextBox("R1", Box(13, 12, 16, 14), "R1"),),
         )
         self.assertEqual(lint(geometry), [])
-
