@@ -49,7 +49,7 @@ Vendor-neutral: any agent with file read/write follows this document.
 6. Once the draft validates, you run `pcbforge status --write`; refresh the
    dashboard after material revisions. Do not ask the user to run this command.
 7. Once technically ready, follow the
-   [standard review and approval protocol](operating-manual.md#review-and-approval-protocol)
+   [standard review and approval protocol](operating-manual.md#standard-review-and-approval-protocol)
    for the final SPEC gate. Present the exact packet and stop; record it only
    after the user explicitly approves it in conversation.
 8. Remind: `spec.md` and `policy.yaml` are **living contracts**. Later
@@ -220,12 +220,12 @@ special: []
 ## Output — `policy.yaml`
 
 Start from the tracked schema-1 project contract below. The tool-owned
-`policies/pcbforge-standard-v1.yaml` profile defines rule severity and the
+`policies/pcbforge-native-v2.yaml` profile defines rule severity and the
 earliest phase affected by an exception.
 
 ```yaml
 policy_schema: 1
-profile: pcbforge-standard-v1
+profile: pcbforge-native-v2
 manufacturing:
   fabricator: jlcpcb
   assembler: jlcpcb
