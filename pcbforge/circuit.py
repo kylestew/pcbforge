@@ -253,9 +253,21 @@ def check_mcu(graph: CircuitGraph, facts: dict, project_dir: Path, *, tool_root=
         pin = graph.pin(component.reference + "." + str(assignment["pin"]))
         # CubeMX decorates some GPIO names with oscillator/RTC functions.
         import re
-        physical = re.match(r"^(P[A-K][0-9]+)(?:-|$)", name)
+        physical = re.match(r"^(P[A-K][0-9]+)(?:-|\s|$)", name)
         aliases = {name, physical.group(1)} if physical else {name}
-        if not aliases.intersection(pin.name.split("/")) or assignment["signal"] != actual[name].signal or assignment["net"] != pin.net or pin.no_connect:
+        if not aliases.intersection(pin.name.split("/")) or assignment["signal"] != actual[name].signal:
+            raise SchematicError(f"{name}: schematic pin function, signal or net differs from the checked IOC assignment")
+        if pin.no_connect:
+            # CubeMX assigns unused GPIO to analog mode to reduce leakage.
+            # An empty fact net explicitly records that no connection is intended.
+            endpoints = graph.nets.get(pin.net, ())
+            spare = (actual[name].signal == "GPIO_Analog"
+                     and not getattr(actual[name], "label", "")
+                     and assignment["net"] == ""
+                     and not (set(endpoints) - {component.reference + "." + pin.number}))
+            if not spare:
+                raise SchematicError(f"{name}: no-connect is allowed only for an unlabeled, unused analog GPIO")
+        elif not assignment["net"] or assignment["net"] != pin.net:
             raise SchematicError(f"{name}: schematic pin function, signal or net differs from the checked IOC assignment")
 
 
