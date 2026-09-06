@@ -216,8 +216,10 @@ def _validate_ioc(
         for key, value in values.items()
         if key.endswith(".Signal")
     )
-    if "SYS_JTMS-SWDIO" not in signals or "SYS_JTCK-SWCLK" not in signals:
-        errors.append("SWD requires SYS_JTMS-SWDIO and SYS_JTCK-SWCLK")
+    swdio_signals = {"SYS_JTMS-SWDIO", "SYS_SWDIO"}
+    swclk_signals = {"SYS_JTCK-SWCLK", "SYS_SWCLK"}
+    if not (signals & swdio_signals) or not (signals & swclk_signals):
+        errors.append("SWD requires both SWDIO and SWCLK pin signals")
 
     labels = [
         assignment.label

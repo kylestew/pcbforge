@@ -166,6 +166,28 @@ class IocCheckTests(unittest.TestCase):
         )
         return project
 
+    def test_accepts_native_stm32g0_swd_signal_names(self) -> None:
+        contents = valid_ioc().replace("SYS_JTMS-SWDIO", "SYS_SWDIO").replace(
+            "SYS_JTCK-SWCLK", "SYS_SWCLK"
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self._project(Path(temporary), contents=contents)
+            result = check_ioc(project, tool_root=TOOL_ROOT, runner=FakeCubeMxRunner())
+        self.assertIn("SYS_SWDIO", {pin.signal for pin in result.pins})
+        self.assertIn("SYS_SWCLK", {pin.signal for pin in result.pins})
+
+    def test_rejects_each_missing_native_swd_signal(self) -> None:
+        contents = valid_ioc().replace("SYS_JTMS-SWDIO", "SYS_SWDIO").replace(
+            "SYS_JTCK-SWCLK", "SYS_SWCLK"
+        )
+        for missing in ("SYS_SWDIO", "SYS_SWCLK"):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as temporary:
+                project = self._project(
+                    Path(temporary), contents=contents.replace(missing, "GPIO_Input")
+                )
+                with self.assertRaisesRegex(IocValidationError, "SWD requires"):
+                    check_ioc(project, tool_root=TOOL_ROOT, runner=FakeCubeMxRunner())
+
     def test_validates_and_reports_without_mutating_source(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = self._project(Path(temporary))
