@@ -65,6 +65,19 @@ class NativeWorkflowTests(StatusFixture):
         self.assertEqual(len(approvals), 1)
         self.assertEqual(finished.report.document.transition_events[-1].transition, 'circuit-sync')
 
+    def test_layout_status_calls_real_placement_checker(self):
+        from pcbforge.placement_check import check_placement
+        self.approve_circuit()
+        self.simulate_update()
+        (self.directory/'placement.yaml').write_text('placement_schema: 1\n')
+        with mock.patch('pcbforge.status.check_placement', wraps=check_placement) as measured:
+            document = run_status_checks(self.directory, read_status_document(self.directory),
+                                         tool_root=Path(__file__).resolve().parents[1],
+                                         runner=FakeRunner())
+        measured.assert_called_once()
+        self.assertEqual(document.checks['placement'].outcome, 'fail')
+        self.assertIn('invalid placement.yaml', document.checks['placement'].summary)
+
     def test_drawing_change_between_review_and_approval_rejects_packet(self):
         review = self.review()
         doc = SchematicDocument.load(self.directory/'garden-logger.kicad_sch')

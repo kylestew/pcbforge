@@ -954,6 +954,8 @@ Measured against board sha256 `{board_sha256}`.
 
 def _read_project(
     project_dir: Path,
+    *,
+    tool_root: Path | None = None,
 ) -> tuple[ProjectSpec, PlacementContract, BoardGeometry, Path, bytes]:
     project_dir = project_dir.expanduser().resolve()
     if not project_dir.is_dir():
@@ -976,7 +978,7 @@ def _read_project(
     except OSError as exc:
         raise PlacementCheckInputError(f"cannot read {board_path}: {exc}") from exc
     try:
-        contract = read_placement_contract(project_dir)
+        contract = read_placement_contract(project_dir, tool_root=tool_root)
     except PlacementInputError as exc:
         raise PlacementCheckInputError(str(exc)) from exc
     except (PlacementError, CircuitEvidenceInputError, CircuitEvidenceError) as exc:
@@ -992,10 +994,11 @@ def check_placement(
     project_dir: Path,
     *,
     write_report: bool = False,
+    tool_root: Path | None = None,
 ) -> PlacementCheckResult:
     """Measure the board against placement.yaml. Never changes the board."""
     project_dir = Path(project_dir).expanduser().resolve()
-    spec, contract, geometry, board_path, board_bytes = _read_project(project_dir)
+    spec, contract, geometry, board_path, board_bytes = _read_project(project_dir, tool_root=tool_root)
 
     findings: list[Finding] = []
     for constraint in contract.constraints:
