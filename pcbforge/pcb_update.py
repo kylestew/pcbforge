@@ -44,6 +44,73 @@ def _normal(node, renames=None):
     return str(node)
 
 
+# Defaults emitted by an unchanged KiCad 10.0.3 load/save of the scaffold.
+# Expand only known defaults; explicit non-default values remain significant.
+_SETUP_DEFAULTS = sx.parse(r"""(setup
+	(covering
+		(front no)
+		(back no)
+	)
+	(plugging
+		(front no)
+		(back no)
+	)
+	(capping no)
+	(filling no)
+	(pcbplotparams
+		(layerselection 0x00000000_00000000_55555555_5755f5ff)
+		(plot_on_all_layers_selection 0x00000000_00000000_00000000_00000000)
+		(disableapertmacros no)
+		(usegerberextensions no)
+		(usegerberattributes yes)
+		(usegerberadvancedattributes yes)
+		(creategerberjobfile yes)
+		(dashed_line_dash_ratio 12)
+		(dashed_line_gap_ratio 3)
+		(svgprecision 4)
+		(plotframeref no)
+		(mode 1)
+		(useauxorigin no)
+		(pdf_front_fp_property_popups yes)
+		(pdf_back_fp_property_popups yes)
+		(pdf_metadata yes)
+		(pdf_single_document no)
+		(dxfpolygonmode yes)
+		(dxfimperialunits yes)
+		(dxfusepcbnewfont yes)
+		(psnegative no)
+		(psa4output no)
+		(plot_black_and_white yes)
+		(sketchpadsonfab no)
+		(plotpadnumbers no)
+		(hidednponfab no)
+		(sketchdnponfab yes)
+		(crossoutdnponfab yes)
+		(subtractmaskfromsilk no)
+		(outputformat 1)
+		(mirror no)
+		(drillshape 1)
+		(scaleselection 1)
+		(outputdirectory "")
+	)
+)""")
+
+
+def _settings_node(node):
+    if sx.head(node) != "setup":
+        return node
+    node = list(node)
+    tenting = sx.child(node, "tenting")
+    if tenting is not None and not any(isinstance(v, list) for v in tenting):
+        node[node.index(tenting)] = ["tenting", *[
+            [side, "yes" if side in sx.atoms(tenting) else "no"]
+            for side in ("front", "back")]]
+    for default in _SETUP_DEFAULTS[1:]:
+        if sx.child(node, sx.head(default)) is None:
+            node.append(default)
+    return node
+
+
 def board_state(path: Path, renames=None) -> dict:
     try:
         root = sx.parse(path.read_text())
@@ -83,7 +150,7 @@ def board_state(path: Path, renames=None) -> dict:
                                 "fields": props, "field_geometry": field_geometry, "pads": pad_nets, "spatial": _normal(["spatial", *spatial], renames)}
     artwork = [n for n in root if isinstance(n, list) and
                (sx.head(n).startswith("gr_") or sx.head(n) in {"segment", "arc", "via", "zone", "dimension", "image", "target", "group"})]
-    settings = [n for n in root if isinstance(n, list) and sx.head(n) in {"layers", "setup", "general"}]
+    settings = [_settings_node(n) for n in root if isinstance(n, list) and sx.head(n) in {"layers", "setup", "general"}]
     return {"footprints": footprints, "artwork": _normal(["artwork", *artwork], renames),
             "settings": _normal(["settings", *settings], renames)}
 
@@ -139,7 +206,19 @@ def prepare_pcb_update(project_dir: Path) -> Path:
 
 
 def _parity(graph, state):
-    expected = {c.identity: c for c in graph.components if not c.exclude_board}
+    # KiCad PCB paths are relative to the root sheet. The graph keeps the
+    # root UUID for project-scoped identity; retain every child-sheet segment.
+    prefix = "/" + graph.root_uuid + "/"
+    expected = {}
+    for component in graph.components:
+        if component.exclude_board:
+            continue
+        if not component.identity.startswith(prefix):
+            raise SchematicError(f"{component.reference}: identity is outside the schematic root")
+        identity = "/" + component.identity[len(prefix):]
+        if identity in expected:
+            raise SchematicError("duplicate native schematic identity")
+        expected[identity] = component
     actual = state["footprints"]
     if expected.keys() != actual.keys():
         missing = [expected[k].reference for k in expected.keys()-actual.keys()]
@@ -153,7 +232,7 @@ def _parity(graph, state):
             raise SchematicError(f"{component.reference}: PCB value differs from schematic")
         if fp["dnp"] != component.dnp or fp["exclude_bom"] != component.exclude_bom:
             raise SchematicError(f"{component.reference}: PCB DNP or BOM flag differs from schematic")
-        for field in set(component.fields) - {"dnp", "exclude_from_bom", "exclude_from_board"}:
+        for field in set(component.fields) - {"Footprint", "dnp", "exclude_from_bom", "exclude_from_board"}:
             if component.fields.get(field, "") != fp["fields"].get(field, ""):
                 raise SchematicError(f"{component.reference}: PCB field {field} differs; enable footprint field updates in KiCad")
         expected_pins = {p.number: p for p in component.pins}

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from dataclasses import replace
 import copy
 import json
 import tempfile
@@ -31,10 +32,10 @@ def board_for(graph, *, copper=False):
     for i,c in enumerate(graph.components):
         if c.exclude_board:continue
         fp=['footprint',sx.Quoted(c.footprint),['layer',sx.Quoted('F.Cu')],['at',str(10+i*10),'20','0'],
-            ['uuid',sx.Quoted('fp-'+c.reference)],['path',sx.Quoted(c.identity)]]
+            ['uuid',sx.Quoted('fp-'+c.reference)],['path',sx.Quoted('/' + '/'.join(c.identity.strip('/').split('/')[1:]))]]
         fp.append(['attr','smd',*(['dnp'] if c.dnp else []),*(['exclude_from_bom'] if c.exclude_bom else [])])
         for name,value in {'Reference':c.reference,'Value':c.value,**c.fields}.items():
-            if name in {'dnp','exclude_from_bom','exclude_from_board'}:continue
+            if name in {'Footprint','dnp','exclude_from_bom','exclude_from_board'}:continue
             fp.append(['property',sx.Quoted(name),sx.Quoted(value),['at','0','0','0'],['layer',sx.Quoted('F.Fab')]])
         for j,p in enumerate(c.pins):
             fp.append(['pad',sx.Quoted(p.number),'smd','rect',['at',str(j),'0'],['size','1','1'],['layers',sx.Quoted('F.Cu')],
@@ -78,6 +79,62 @@ class PCBUpdateTests(unittest.TestCase):
         self.assertEqual((self.project/data['backup']).read_bytes(),raw)
         self.write(board_for(self.graph));result=check_pcb_update(self.project)
         self.assertIn('preservation passed',result.summary)
+
+    def test_nested_sheet_paths_keep_instance_identity(self):
+        component = self.graph.components[0]
+        root = '/' + self.graph.root_uuid
+        symbol = component.uuids[0]
+        graph = replace(self.graph, components=(
+            replace(component, identity=root + '/sheet-a/nested/' + symbol),
+            replace(component, reference='R2', identity=root + '/sheet-b/nested/' + symbol),
+        ))
+        self.write(board_for(graph))
+        _parity(graph, board_state(self.board))
+        base = sx.parse(self.board.read_text())
+        for bad_path in ['/' + symbol, '/wrong/nested/' + symbol,
+                         root + '/sheet-a/nested/' + symbol]:
+            with self.subTest(path=bad_path):
+                changed = copy.deepcopy(base)
+                sx.child(sx.child(changed, 'footprint'), 'path')[1] = sx.Quoted(bad_path)
+                self.write(changed)
+                with self.assertRaisesRegex(SchematicError, 'identities differ'):
+                    _parity(graph, board_state(self.board))
+
+    def test_native_save_defaults_preserve_settings_but_real_edits_fail(self):
+        self.first_update()
+        base = board_for(self.graph)
+        base.append(['setup', ['pad_to_mask_clearance', '0'],
+                     ['allow_soldermask_bridges_in_footprints', 'no'],
+                     ['tenting', 'front', 'back'], ['aux_axis_origin', '100', '100']])
+        self.write(base)
+        self.approval.approval_fingerprint = 'b'*64
+        prepare_pcb_update(self.project)
+        saved = copy.deepcopy(base)
+        saved.remove(sx.child(saved, 'setup'))
+        saved.append(sx.parse((Path(__file__).parent/'fixtures/native-saved-setup.sexpr').read_text()))
+        self.write(saved)
+        check_pcb_update(self.project)
+        for tag in ['tenting', 'covering', 'plugging', 'capping', 'filling',
+                    'pad_to_mask_clearance', 'pcbplotparams']:
+            with self.subTest(setting=tag):
+                changed = copy.deepcopy(saved)
+                node = sx.child(sx.child(changed, 'setup'), tag)
+                if tag in {'tenting', 'covering', 'plugging'}:
+                    sx.child(node, 'front')[1] = 'no' if tag == 'tenting' else 'yes'
+                elif tag == 'pcbplotparams':
+                    sx.child(node, 'mirror')[1] = 'yes'
+                else:
+                    node[1] = '0.1' if tag == 'pad_to_mask_clearance' else 'yes'
+                self.write(changed)
+                with self.assertRaisesRegex(SchematicError, 'board settings'):
+                    check_pcb_update(self.project)
+
+    def test_wrong_package_fails_without_a_footprint_property(self):
+        root = board_for(self.graph)
+        sx.child(root, 'footprint')[1] = sx.Quoted('Wrong:Package')
+        self.write(root)
+        with self.assertRaisesRegex(SchematicError, 'footprint differs'):
+            _parity(self.graph, board_state(self.board))
 
     def test_electrical_revision_preserves_routed_board(self):
         self.revision();before=self.board.read_bytes();check_pcb_update(self.project);self.assertEqual(self.board.read_bytes(),before)
