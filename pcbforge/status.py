@@ -1163,13 +1163,17 @@ def _phase_artifact_paths(project_dir, spec, phase):
     patterns = {
       "spec": ("spec.md", "policy.yaml"),
       "architect": ("docs/architecture.md", "docs/mcu.md", "firmware/*.ioc"),
-      "circuit": ("*.kicad_sch", "**/*.kicad_sch", "circuit-tests.yaml", "electrical-facts.yaml", "circuit-review.yaml", "circuit_tests*.py", "tests/**/*.py", "docs/circuit-check.md", "review/circuit/evidence.json", "review/circuit/preview/*.svg"),
+      "circuit": ("circuit-tests.yaml", "electrical-facts.yaml", "circuit-review.yaml", "circuit_tests*.py", "tests/**/*.py", "docs/circuit-check.md", "review/circuit/evidence.json", "review/circuit/preview/*.svg"),
       "layout": ("*.kicad_pcb",),
       "verify": ("*.kicad_pcb", "*.kicad_pro", "*.kicad_dru", "review/circuit/preview/*.svg"),
       "order": ("policy.yaml", "build/circuit/bom.json", "fab/**/*"),
       "publish": ("docs/publish.md",),
     }
-    return tuple(p for p in _files(project_dir, patterns[phase]) if not any(x.endswith("backups") for x in p.parts))
+    paths = set(_files(project_dir, patterns[phase]))
+    if phase == "circuit":
+        from pcbforge.schematic import project_schematic, source_files
+        paths.update(source_files(project_schematic(project_dir)))
+    return tuple(sorted(p for p in paths if not any(x.endswith("backups") for x in p.parts)))
 
 
 

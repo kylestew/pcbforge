@@ -190,13 +190,29 @@ def prepare_pcb_update(project_dir: Path) -> Path:
             raise SchematicError("PCB changed after update preparation; check the pending update before replacing its baseline")
     if before["footprints"] and old_graph is None:
         raise SchematicError("existing PCB has no native synchronization baseline; fresh projects only")
+    already_removed = []
     if old_graph is not None:
-        _parity(old_graph, before)
+        # A prior user edit can already have removed footprints that the current
+        # approved schematic also removes. Preserve the actual PCB as baseline.
+        current_ids = {c.identity for c in graph.components if not c.exclude_board}
+        prefix = "/" + old_graph.root_uuid + "/"
+        remaining = []
+        for component in old_graph.components:
+            native_id = "/" + component.identity[len(prefix):]
+            if (not component.exclude_board
+                    and component.identity.startswith(prefix)
+                    and component.identity not in current_ids
+                    and native_id not in before["footprints"]):
+                already_removed.append(component.reference)
+            else:
+                remaining.append(component)
+        _parity(replace(old_graph, components=tuple(remaining)), before)
     backup = project_dir / "pcb-update-backups" / f"{board.stem}-{uuid.uuid4().hex}.kicad_pcb"
     backup.parent.mkdir(parents=True, exist_ok=True)
     data = {"schema": 1, "approval": approval.approval_fingerprint, "circuit": graph.fingerprint,
             "before_sha256": hashlib.sha256(raw).hexdigest(), "backup": backup.relative_to(project_dir).as_posix(),
             "before": before, "graph": graph.payload(), "previous_graph": old_graph.payload() if old_graph else None,
+            "already_removed": sorted(already_removed),
             "changes": semantic_diff(old_graph, graph) if old_graph else [f"Add {c.reference}" for c in graph.components if not c.exclude_board]}
     existing.parent.mkdir(parents=True, exist_ok=True)
     if board.read_bytes() != raw:
