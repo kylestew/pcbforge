@@ -52,6 +52,35 @@ Only exact finding IDs with a rationale can be excluded in `circuit-review.yaml`
 Stale exclusions fail. Electrical test failures cannot be excluded there.
 Warnings about fragmented paths or ambiguous crossings require visual review.
 
+### Human-readable schematic capture
+
+Apply these rules during capture, not only during final cleanup:
+
+- Use direct wires for the main signal path and local connections within each functional block.
+- Arrange each block with a clear input-to-output flow.
+- Place supporting components beside the circuit they serve.
+- Show local supply and decoupling connections together, with clear ground returns.
+- Draw pull-ups, protection, filters and termination as visible branches of their associated paths.
+- Use net labels primarily between functional blocks and sheets.
+- Keep power symbols and labels where direct wires create clutter or obscure the circuit.
+- Do not replace useful local connections with isolated components that share net labels.
+- Preserve net names, pin connections and component identity during drawing-only changes.
+
+For example, draw an RS-485 transceiver with its decoupling capacitor beside the supply pin.
+Show A/B as continuous paths, protection as branches, and switchable termination across the pair.
+Keep encoder supply bypassing in the encoder block, distinct from transceiver decoupling.
+
+Before requesting CIRCUIT approval, inspect every changed rendered sheet:
+
+- Trace each main signal path through its functional block.
+- Check that each supporting component has a visible relationship to the circuit it serves.
+- Check that local operation is understandable without a search for matching labels elsewhere on the sheet.
+- Check junctions and unconnected crossings for visual ambiguity.
+- Explain necessary label-only connections in the review when their purpose is not clear.
+
+ERC establishes connectivity checks, not human comprehension. Readability lint provides advisory evidence, not acceptance by label or wire count.
+A passing automated check does not replace this visual review. This review belongs to the existing CIRCUIT approval, not another gate.
+
 ## Native PCB update
 
 After the user approves the schematic:

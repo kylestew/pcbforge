@@ -11,9 +11,13 @@ Start after the checked architecture baseline.
 5. Put supplier/BOM metadata in native fields. Record MPN, LCSC, Datasheet and `pcbforge_purpose` on every fitted component.
 6. Put reviewed limits and package pin functions in `electrical-facts.yaml`. Keep sources specific enough to audit.
 7. Edit the native schematic with KiCad or the transactional API in [circuit-kicad.md](circuit-kicad.md).
+   Apply the [human-readable capture rules](../WORKFLOW.md#human-readable-schematic-capture) while constructing each functional block.
+   Use direct local wires to show signal flow and the purpose of supporting components.
 8. Write Python acceptance tests against extracted connectivity and values. Use the checks described in [electrical-tests.md](electrical-tests.md).
 9. Run `pcbforge check-parts` and `pcbforge check-circuit --write-report`. Resolve every blocking finding.
 10. Inspect the previews. Check readable paths, power direction, labels, reference positions and sheet interfaces.
+    Complete the visual review in the capture rules before requesting approval.
+    Correct fragmented local paths even when ERC passes.
 
 Present the electrical requirements, exact parts, calculations, semantic delta and every changed sheet to the user.
 Explain remaining engineering assessments and finding exclusions. Use the standard review and approval protocol.

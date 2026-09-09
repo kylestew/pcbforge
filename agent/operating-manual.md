@@ -85,6 +85,11 @@ Use custom assets only when the official library cannot represent the part, and 
 Prefer JLC basic parts where the specification and policy permit them. Record exact supplier identity and research dates.
 
 Readability lint uses approximate text extents. Inspect the saved schematic previews yourself.
+Apply the [human-readable capture rules](../WORKFLOW.md#human-readable-schematic-capture) during schematic capture and review.
+Use direct wires within functional blocks and labels primarily between blocks or sheets.
+Show supporting components beside their associated circuit, with visible local connections.
+Check that a reader can understand each block without a search for matching net labels.
+Do not treat ERC success or label counts as proof of human comprehension.
 Check continuous functional paths, power direction, labels, crossings, hierarchy and field placement.
 Review independent test coverage and calculations. ERC alone is insufficient.
 
