@@ -195,3 +195,37 @@ class PCBUpdateTests(unittest.TestCase):
         doc.save();self.graph=seed_evidence(self.project);self.approval.approval_fingerprint='b'*64;prepare_pcb_update(self.project)
         root=board_for(self.graph,copper=True);sx.child(sx.child(root,'segment'),'net')[1]=sx.Quoted('VDD');self.write(root)
         check_pcb_update(self.project)
+
+
+import pcbforge.pcb_update as mod
+
+class SupersededUpdateTests(PCBUpdateTests):
+ def next_revision(self):
+  self.revision()
+  pending=(self.project/mod.UPDATE_PATH).read_bytes()
+  doc=SchematicDocument.load(self.project/'test.kicad_sch');doc.set_field('R1','Value','33k');doc.save()
+  self.graph=seed_evidence(self.project);self.approval.approval_fingerprint='c'*64
+  event=SimpleNamespace(phase='circuit',action='complete',approval_fingerprint='b'*64)
+  document=SimpleNamespace(events=[event])
+  patch=mock.patch('pcbforge.pcb_update._approved',return_value=(document,self.approval));patch.start();self.addCleanup(patch.stop)
+  return pending,document
+ def test_accepts_prior_approved_circuit_and_keeps_current_layout(self):
+  pending,document=self.next_revision();sync=(self.project/mod.SYNC_PATH).read_bytes()
+  root=sx.parse(self.board.read_text());sx.child(sx.child(root,'footprint'),'at')[1]='99';self.write(root);raw=self.board.read_bytes()
+  data=json.loads(mod.prepare_pcb_update(self.project).read_text())
+  self.assertEqual((self.project/data['backup']).read_bytes(),raw)
+  self.assertEqual((self.project/data['superseded_update']['archive']).read_bytes(),pending)
+  self.assertEqual((self.project/mod.SYNC_PATH).read_bytes(),sync)
+  self.assertEqual(self.board.read_bytes(),raw)
+  root=board_for(self.graph,copper=True);sx.child(sx.child(root,'footprint'),'at')[1]='99';self.write(root)
+  mod.check_pcb_update(self.project)
+ def test_rejects_unapproved_predecessor(self):
+  pending,doc=self.next_revision();doc.events=[]
+  with self.assertRaises(SchematicError):mod.prepare_pcb_update(self.project)
+  self.assertEqual((self.project/mod.UPDATE_PATH).read_bytes(),pending)
+ def test_rejects_corrupt_prior_backup(self):
+  pending,doc=self.next_revision();p=json.loads(pending);(self.project/p['backup']).write_text('corrupt')
+  with self.assertRaisesRegex(SchematicError,'backup'):mod.prepare_pcb_update(self.project)
+ def test_rejects_board_with_unapproved_electrical_change(self):
+  pending,doc=self.next_revision();root=sx.parse(self.board.read_text());fp=sx.child(root,'footprint');next(p for p in sx.children(fp,'property') if sx.atom(p)=='Value')[2]=sx.Quoted('wrong');self.write(root)
+  with self.assertRaises(SchematicError):mod.prepare_pcb_update(self.project)

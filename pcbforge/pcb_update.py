@@ -173,7 +173,7 @@ def _approved(project_dir):
 def prepare_pcb_update(project_dir: Path) -> Path:
     project_dir = project_dir.resolve()
     read_evidence(project_dir, require_presentation=True)
-    _, approval = _approved(project_dir)
+    document, approval = _approved(project_dir)
     graph = load_graph(project_dir)
     board = project_schematic(project_dir).with_suffix(".kicad_pcb")
     raw = board.read_bytes()
@@ -183,6 +183,8 @@ def prepare_pcb_update(project_dir: Path) -> Path:
         previous = json.loads((project_dir / SYNC_PATH).read_text())
     old_graph = from_payload(previous["graph"]) if previous else None
     existing = project_dir / UPDATE_PATH
+    superseded = None
+    pending = None
     if existing.is_file():
         pending = json.loads(existing.read_text())
         consumed = previous and previous.get("update_sha256") == hashlib.sha256(existing.read_bytes()).hexdigest()
@@ -206,7 +208,35 @@ def prepare_pcb_update(project_dir: Path) -> Path:
                 already_removed.append(component.reference)
             else:
                 remaining.append(component)
-        _parity(replace(old_graph, components=tuple(remaining)), before)
+        try:
+            _parity(replace(old_graph, components=tuple(remaining)), before)
+        except SchematicError:
+            # A separately approved revision can already be on the board when a
+            # newer circuit revision is approved. This starts a NEW preservation
+            # interval; it must not manufacture a completed synchronization receipt.
+            if (not pending or pending.get("schema") != 1
+                    or pending.get("approval") == approval.approval_fingerprint
+                    or document is None
+                    or not any(e.phase == "circuit" and e.action == "complete"
+                               and e.approval_fingerprint == pending.get("approval")
+                               for e in document.events)):
+                raise
+            candidate = from_payload(pending["graph"])
+            predecessor = from_payload(pending["previous_graph"])
+            if candidate.fingerprint != pending.get("circuit") or predecessor.fingerprint != old_graph.fingerprint:
+                raise SchematicError("pending PCB revision has an invalid graph or predecessor")
+            prior_backup = (project_dir / pending["backup"]).resolve()
+            if (not prior_backup.is_relative_to(project_dir / "pcb-update-backups")
+                    or not prior_backup.is_file()
+                    or hashlib.sha256(prior_backup.read_bytes()).hexdigest() != pending.get("before_sha256")):
+                raise SchematicError("pending PCB revision backup is missing or changed")
+            _parity(candidate, before)
+            prior_raw = existing.read_bytes()
+            prior_sha = hashlib.sha256(prior_raw).hexdigest()
+            archive = project_dir / "review/circuit" / f"pcb-update-superseded-{prior_sha}.json"
+            superseded = (archive, prior_raw)
+            old_graph = candidate
+            already_removed = []
     backup = project_dir / "pcb-update-backups" / f"{board.stem}-{uuid.uuid4().hex}.kicad_pcb"
     backup.parent.mkdir(parents=True, exist_ok=True)
     data = {"schema": 1, "approval": approval.approval_fingerprint, "circuit": graph.fingerprint,
@@ -217,7 +247,13 @@ def prepare_pcb_update(project_dir: Path) -> Path:
     existing.parent.mkdir(parents=True, exist_ok=True)
     if board.read_bytes() != raw:
         raise SchematicError("PCB changed during preparation; retry")
-    commit_outputs([(backup, raw), (existing, canonical(data))], label="PCB update baseline")
+    if superseded:
+        data["superseded_update"] = {
+            "archive": superseded[0].relative_to(project_dir).as_posix(),
+            "sha256": hashlib.sha256(superseded[1]).hexdigest(),
+            "summary": "Current PCB matches the prior approved circuit. Prior spatial preservation was not certified; this backup starts a new preservation interval.",
+        }
+    commit_outputs(([superseded] if superseded else []) + [(backup, raw), (existing, canonical(data))], label="PCB update baseline")
     return existing
 
 
