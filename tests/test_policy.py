@@ -142,7 +142,7 @@ toolchain:
   kicad: "10.0.3"
   uv_lock_sha256: {TOOLCHAIN_LOCK_HASH}
 rules:
-  profile: jlc-2layer-conservative-v1
+  profile: jlc-2layer-conservative-v2
   profile_sha256: {RULES_2L_HASH}
 {policy_pin}\
 guidance:

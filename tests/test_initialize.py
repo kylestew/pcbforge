@@ -259,6 +259,18 @@ class InitializeTests(unittest.TestCase):
             self.assertEqual(pins["guidance"]["circuit_review_schema"],4)
             data=json.loads((project/"garden-logger.kicad_pro").read_text())
             self.assertEqual(data["board"]["design_settings"]["rules"]["min_clearance"],.2)
+            generated_rules = data["board"]["design_settings"]["rules"]
+            self.assertEqual(generated_rules["min_groove_width"], 1.0)
+            self.assertEqual(generated_rules["min_silk_clearance"], 0.15)
+            self.assertEqual(generated_rules["solder_mask_min_width"], 0.2)
+            self.assertEqual(
+                generated_rules["solder_mask_to_copper_clearance"], 0.1
+            )
+            dru = (project / "garden-logger.kicad_dru").read_text()
+            self.assertIn("pcbforge: plated through-hole annular ring", dru)
+            self.assertIn("pcbforge: non-plated slot width", dru)
+            self.assertIn("pcbforge: minimum SMD pad size", dru)
+            self.assertIn("pcbforge: ordinary same-net copper spacing", dru)
             self.assertEqual(len(data["sheets"]),1)
             self.assertIn("pcbforge-agents-schema: 2",(project/"AGENTS.md").read_text())
         self.assertEqual(len([c for c,_ in runner.calls if "export" in c]),2)
@@ -275,7 +287,7 @@ class InitializeTests(unittest.TestCase):
             self.assertIn('(4 "In1.Cu" power)', board)
             self.assertIn('(6 "In2.Cu" power)', board)
             pins = (project / ".pcbforge").read_text(encoding="utf-8")
-            self.assertIn("jlc-4layer-conservative-v1", pins)
+            self.assertIn("jlc-4layer-conservative-v2", pins)
 
     def test_refuses_dirty_tool_checkout_without_writing_scaffold(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

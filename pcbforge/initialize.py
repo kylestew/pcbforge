@@ -550,14 +550,22 @@ def _render_project(spec: ProjectSpec, profile: Mapping[str, Any]) -> str:
                 "rules": {
                     "min_clearance": rules["min_clearance_mm"],
                     "min_copper_edge_clearance": rules["min_copper_edge_clearance_mm"],
+                    "min_groove_width": rules["min_groove_width_mm"],
                     "min_hole_clearance": rules["min_hole_copper_clearance_mm"],
                     "min_hole_to_hole": rules["min_hole_to_hole_mm"],
+                    "min_silk_clearance": rules["min_silk_clearance_mm"],
                     "min_text_height": defaults["silk_text_height_mm"],
                     "min_text_thickness": defaults["silk_width_mm"],
+                    "min_through_hole_diameter": rules["min_via_drill_mm"],
                     "min_track_width": rules["min_track_width_mm"],
                     "min_via_annular_width": rules["min_via_annular_width_mm"],
                     "min_via_diameter": rules["min_via_diameter_mm"],
                     "min_via_drill": rules["min_via_drill_mm"],
+                    "solder_mask_clearance": rules["solder_mask_expansion_mm"],
+                    "solder_mask_min_width": rules["min_solder_mask_web_mm"],
+                    "solder_mask_to_copper_clearance": rules[
+                        "min_solder_mask_to_copper_mm"
+                    ],
                 },
                 "track_widths": [0.0, defaults["track_width_mm"]],
                 "via_dimensions": [
@@ -630,6 +638,30 @@ def _render_dru(profile: Mapping[str, Any]) -> str:
 (rule "pcbforge: drilled holes"
     (constraint hole_clearance (min {rules["min_hole_copper_clearance_mm"]}mm))
     (constraint hole_to_hole (min {rules["min_hole_to_hole_mm"]}mm)))
+
+(rule "pcbforge: plated through-hole annular ring"
+    (condition "A.Type == 'Pad' && A.Pad_Type == 'Through-hole'")
+    (constraint annular_width (min {rules["min_pth_annular_width_mm"]}mm)))
+
+(rule "pcbforge: plated slot width"
+    (condition "A.Type == 'Pad' && A.Pad_Type == 'Through-hole' && A.Hole_Size_X != A.Hole_Size_Y")
+    (constraint hole_size (min {rules["min_plated_slot_width_mm"]}mm)))
+
+(rule "pcbforge: non-plated hole size"
+    (condition "A.Type == 'Pad' && A.Pad_Type == 'NPTH, mechanical' && A.Hole_Size_X == A.Hole_Size_Y")
+    (constraint hole_size (min {rules["min_npth_diameter_mm"]}mm)))
+
+(rule "pcbforge: non-plated slot width"
+    (condition "A.Type == 'Pad' && A.Pad_Type == 'NPTH, mechanical' && A.Hole_Size_X != A.Hole_Size_Y")
+    (constraint hole_size (min {rules["min_npth_slot_width_mm"]}mm)))
+
+(rule "pcbforge: minimum SMD pad size"
+    (condition "A.Type == 'Pad' && A.Pad_Type == 'SMD'")
+    (constraint assertion "A.Size_X >= {rules["min_smd_pad_size_mm"]}mm && A.Size_Y >= {rules["min_smd_pad_size_mm"]}mm"))
+
+(rule "pcbforge: ordinary same-net copper spacing"
+    (condition "A.Net == B.Net && A.Net != 0 && A.Type != 'Pad' && B.Type != 'Pad'")
+    (constraint clearance (min {rules["min_same_net_copper_spacing_mm"]}mm)))
 """
 
 

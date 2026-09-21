@@ -149,7 +149,7 @@ toolchain:
   kicad: "10.0.3"
   uv_lock_sha256: {lock_hash}
 rules:
-  profile: jlc-2layer-conservative-v1
+  profile: jlc-2layer-conservative-v2
   profile_sha256: {rules_hash}
 policy:
   profile: pcbforge-native-v2

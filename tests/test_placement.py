@@ -30,6 +30,9 @@ TOOL_ROOT = Path(__file__).resolve().parents[1]
 TOOLCHAIN_LOCK_HASH = hashlib.sha256(
     (TOOL_ROOT / "toolchain" / "uv.lock").read_bytes()
 ).hexdigest()
+RULES_HASH = hashlib.sha256(
+    (TOOL_ROOT / "rules" / "jlc-2layer.json").read_bytes()
+).hexdigest()
 
 SPEC = """---
 spec_schema: 1
@@ -210,8 +213,8 @@ policy:
   profile_sha256: {policy_hash}
   baseline_approval: spec
 rules:
-  profile: jlc-2layer-conservative-v1
-  profile_sha256: c1435709810dfff76e2b1b727a15ae575449331d7888cc4dc9c13252aece3784
+  profile: jlc-2layer-conservative-v2
+  profile_sha256: {RULES_HASH}
 """,
             encoding="utf-8",
         )
@@ -320,7 +323,7 @@ class SchemaTests(PlacementFixture):
             pins = project / ".pcbforge"
             pins.write_text(
                 pins.read_text(encoding="utf-8").replace(
-                    "c1435709810dfff76e2b1b727a15ae575449331d7888cc4dc9c13252aece3784",
+                    RULES_HASH,
                     "stale",
                 ),
                 encoding="utf-8",

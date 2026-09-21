@@ -260,7 +260,7 @@ policy:
   profile_sha256: {policy_hash}
   baseline_approval: spec
 rules:
-  profile: jlc-2layer-conservative-v1
+  profile: jlc-2layer-conservative-v2
   profile_sha256: {RULES_HASH}
 """,
             encoding="utf-8",
@@ -344,7 +344,7 @@ class GenerationTests(FabFixture):
         ):
             self.assertIn(expected, names)
         self.assertEqual(manifest["pcbforge_fab_schema"], 2)
-        self.assertEqual(manifest["rules_profile"], "jlc-2layer-conservative-v1")
+        self.assertEqual(manifest["rules_profile"], "jlc-2layer-conservative-v2")
         self.assertEqual(manifest["sources"]["board_sha256"], hashlib.sha256(
             board_before
         ).hexdigest())

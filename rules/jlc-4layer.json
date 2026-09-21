@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "name": "jlc-4layer-conservative-v1",
+  "name": "jlc-4layer-conservative-v2",
   "layers": 4,
   "construction": {
     "material": "FR4",
@@ -11,7 +11,7 @@
   },
   "source": {
     "url": "https://jlcpcb.com/capabilities/pcb-capabilities/",
-    "checked": "2026-07-24"
+    "checked": "2026-09-21"
   },
   "rules": {
     "min_track_width_mm": 0.2,
@@ -21,7 +21,18 @@
     "min_via_annular_width_mm": 0.15,
     "min_copper_edge_clearance_mm": 0.3,
     "min_hole_copper_clearance_mm": 0.35,
-    "min_hole_to_hole_mm": 0.5
+    "min_hole_to_hole_mm": 0.5,
+    "min_groove_width_mm": 1.0,
+    "min_pth_annular_width_mm": 0.2,
+    "min_plated_slot_width_mm": 0.5,
+    "min_npth_diameter_mm": 0.5,
+    "min_npth_slot_width_mm": 1.0,
+    "min_smd_pad_size_mm": 0.25,
+    "min_same_net_copper_spacing_mm": 0.25,
+    "solder_mask_expansion_mm": 0.0,
+    "min_solder_mask_web_mm": 0.2,
+    "min_solder_mask_to_copper_mm": 0.1,
+    "min_silk_clearance_mm": 0.15
   },
   "defaults": {
     "track_width_mm": 0.25,
