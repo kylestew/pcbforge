@@ -52,6 +52,69 @@ Only exact finding IDs with a rationale can be excluded in `circuit-review.yaml`
 Stale exclusions fail. Electrical test failures cannot be excluded there.
 Warnings about fragmented paths or ambiguous crossings require visual review.
 
+### Functional net colors
+
+The native `.kicad_pro` file stores netclass colors for schematic capture and PCB layout.
+The standard palette provides consistent functional colors across projects.
+Existing projects can retain the theme defaults.
+
+| Role | Color |
+|---|---|
+| `power` | Orange-red `#D55E00` |
+| `ground` | Gray `#808080` |
+| `usb` | Purple `#AA66CC` |
+| `digital` | Blue `#0072B2` |
+| `analog` | Teal `#009E73` |
+
+After connectivity exists, assign exact nets before you export review previews:
+
+```sh
+pcbforge set-netclass . --name power --role power --net +3V3 --net VBUS
+pcbforge set-netclass . --name ground --role ground --net GND
+pcbforge set-netclass . --name usb --role usb --net USB_D+ --net USB_D-
+```
+
+Replace the example nets with names from the extracted circuit.
+Include hierarchy prefixes for local sheet nets.
+Save and close the KiCad project before these commands.
+Reopen the project afterward to load its new settings.
+
+Choose assignments from circuit intent.
+Assign USB VBUS to power and both USB data lines to the same USB class.
+Keep ordinary signals at the theme default.
+Use separate classes for power rails that require different colors or routing dimensions.
+Keep labels and net names readable without color.
+
+The command adds the `pcbforge:` prefix to each class ID.
+New classes copy Default routing dimensions until the layout handoff supplies reviewed values.
+Repeated calls add exact net assignments and preserve existing colors.
+Conflicting assignments cause an error without a project change.
+The command rejects unknown nets and names that contain wildcard characters (`*` or `?`).
+
+For a custom color, use an explicit override:
+
+```sh
+pcbforge set-netclass . --name power --color '#CC5533' --net +3V3
+```
+
+This override replaces both schematic and PCB colors.
+You can also edit colors separately in KiCad netclass settings.
+Palette initialization preserves those native edits.
+The workflow does not store a second color definition in YAML.
+
+Use the same class IDs in `placement.yaml` during layout handoff.
+The handoff updates routing dimensions and preserves colors.
+Classes omitted from the placement contract remain in the project.
+Remove obsolete classes and assignments explicitly in KiCad.
+
+After schematic color changes, regenerate the circuit report and review previews.
+Color changes alone do not invalidate electrical acceptance or PCB synchronization.
+The circuit report and layout brief include a net color legend.
+
+In the PCB Appearance panel, use **Nets → Net colors → Ratsnest** to retain copper layer colors.
+Select **All** to show functional colors on pads, tracks, vias, and zones.
+The workflow preserves your editor display preferences.
+
 ### Human-readable schematic capture
 
 Apply these rules during capture, not only during final cleanup:

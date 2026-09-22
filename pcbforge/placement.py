@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import fnmatch
 import hashlib
 import json
 import math
@@ -13,6 +12,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 import yaml
+from pcbforge.netclasses import assignments, color_legend, matches_pattern
 
 from pcbforge.circuit_evidence import (
     CircuitEvidenceError,
@@ -1174,22 +1174,23 @@ def _validate_user_class_conflicts(
         net for net_class in contract.net_classes for net in net_class.nets
     }
     conflicts = []
+    updated_names = {item.kicad_name for item in contract.net_classes}
     for pattern in settings["netclass_patterns"]:
         netclass = str(pattern.get("netclass", ""))
         value = pattern.get("pattern")
-        if not netclass.startswith(OWNED_CLASS_PREFIX) and isinstance(value, str):
+        if netclass not in updated_names and netclass != "Default" and isinstance(value, str):
             for net in contract_nets:
-                if fnmatch.fnmatchcase(net, value):
+                if matches_pattern(net, value):
                     conflicts.append(
                         f"{net} matches {value!r} ({netclass or 'unnamed class'})"
                     )
-    assignments = settings.get("netclass_assignments")
-    if isinstance(assignments, dict):
-        for net, netclass in assignments.items():
+    if isinstance(settings.get("netclass_assignments"), dict):
+        for net, netclass in assignments(settings):
             if (
                 isinstance(net, str)
                 and net in contract_nets
-                and not str(netclass).startswith(OWNED_CLASS_PREFIX)
+                and netclass not in updated_names
+                and netclass != "Default"
             ):
                 conflicts.append(f"{net} ({netclass})")
     if conflicts:
@@ -1242,10 +1243,11 @@ def _merged_project(
         for item in classes
         if str(item.get("name", "")).startswith(OWNED_CLASS_PREFIX)
     }
+    updated_names = {item.kicad_name for item in contract.net_classes}
     user_classes = [
         item
         for item in classes
-        if not str(item.get("name", "")).startswith(OWNED_CLASS_PREFIX)
+        if str(item.get("name", "")) not in updated_names
     ]
     priority_enabled = "priority" in default_template or any(
         "priority" in item for item in existing_owned.values()
@@ -1258,6 +1260,10 @@ def _merged_project(
         and item["priority"] >= 0
     }
     owned_classes = []
+    reserved_priorities = {
+        item["priority"] for name, item in existing_owned.items()
+        if name in updated_names and type(item.get("priority")) is int and item["priority"] >= 0
+    }
     for net_class in sorted(contract.net_classes, key=lambda item: item.name):
         existing = existing_owned.get(net_class.kicad_name)
         existing_priority = existing.get("priority") if existing is not None else None
@@ -1272,9 +1278,9 @@ def _merged_project(
             priority = next(
                 candidate
                 for candidate in range(
-                    len(used_priorities) + len(contract.net_classes) + 1
+                    len(used_priorities) + len(reserved_priorities) + len(contract.net_classes) + 1
                 )
-                if candidate not in used_priorities
+                if candidate not in used_priorities and candidate not in reserved_priorities
             )
         else:
             priority = None
@@ -1291,7 +1297,7 @@ def _merged_project(
     user_patterns = [
         item
         for item in settings["netclass_patterns"]
-        if not str(item.get("netclass", "")).startswith(OWNED_CLASS_PREFIX)
+        if str(item.get("netclass", "")) not in updated_names
     ]
     owned_patterns = [
         {"netclass": net_class.kicad_name, "pattern": net}
@@ -1536,6 +1542,7 @@ def _render_brief(
     project_name: str,
     contract: PlacementContract,
     fingerprint: str,
+    project: Mapping[str, Any] | None = None,
 ) -> str:
     metadata = yaml.safe_dump(
         {
@@ -1634,6 +1641,7 @@ begin with `pcbforge:`; user-created classes remain untouched.
 | KiCad class | Exact nets | Track mm | Clearance mm | Via/drill mm | Diff width/gap/via-gap mm | Rationale |
 |---|---|---:|---:|---:|---|---|
 {net_rows}
+{color_legend(project or {})}
 
 ## Layout review checklist
 
@@ -1714,7 +1722,7 @@ def generate_brief(
         raise PlacementError(f"cannot read {board_path}: {exc}") from exc
     merged = _merged_project(project, contract)
     fingerprint = _contract_fingerprint(project_dir, board, merged, contract.patterns)
-    brief_text = _render_brief(spec.name, contract, fingerprint)
+    brief_text = _render_brief(spec.name, contract, fingerprint, merged)
     project_text = _json_text(merged)
     brief_path = brief_document_path(project_dir)
     brief_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1771,7 +1779,7 @@ def check_brief(
         expected_project,
         contract.patterns,
     )
-    expected_brief = _render_brief(spec.name, contract, fingerprint)
+    expected_brief = _render_brief(spec.name, contract, fingerprint, expected_project)
     brief_path = brief_document_path(project_dir)
     try:
         actual_brief = brief_path.read_text(encoding="utf-8")

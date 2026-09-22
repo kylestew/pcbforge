@@ -19,6 +19,9 @@ A failed validation leaves the source unchanged. A successful edit keeps a backu
 Reload after a human or KiCad saves the file.
 
 The API provides symbol insertion, field edits, movement, wires, labels, junctions, no-connects and child sheets.
+After connectivity exists, use `pcbforge set-netclass` to assign functional colors in the native project.
+Use exact names from the extracted nets, including hierarchy prefixes.
+Save and close the KiCad project before the command, then reopen it to load the new settings.
 `pin_position` uses the embedded symbol definition, unit, rotation and mirror.
 Use `bind_instance` to give each repeated child sheet its native project path and reference mapping.
 Use `add_sheet` and native hierarchical labels for sheet interfaces.

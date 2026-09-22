@@ -13,6 +13,8 @@ Start after the checked architecture baseline.
 7. Edit the native schematic with KiCad or the transactional API in [circuit-kicad.md](circuit-kicad.md).
    Apply the [human-readable capture rules](../WORKFLOW.md#human-readable-schematic-capture) while constructing each functional block.
    Use direct local wires to show signal flow and the purpose of supporting components.
+   Assign functional net colors with `pcbforge set-netclass` before the visual review.
+   Use the [net color procedure](../WORKFLOW.md#functional-net-colors) for the standard palette and native overrides.
 8. Write Python acceptance tests against extracted connectivity and values. Use the checks described in [electrical-tests.md](electrical-tests.md).
 9. Run `pcbforge check-parts` and `pcbforge check-circuit --write-report`. Resolve every blocking finding.
 10. Inspect the previews. Check readable paths, power direction, labels, reference positions and sheet interfaces.

@@ -132,12 +132,16 @@ def fingerprint_inputs(project_dir: Path, *, graph=None, tool_root=None, runner=
 
 
 def presentation_fingerprint(project_dir: Path) -> str:
+    from pcbforge.kicad_project import read_project
+    from pcbforge.netclasses import presentation_settings
     project_dir = project_dir.resolve()
     files = source_files(project_schematic(project_dir))
     values = [(p.relative_to(project_dir).as_posix(), hashlib.sha256(p.read_bytes()).hexdigest()) for p in files]
     contract = project_dir / "circuit-review.yaml"
     if contract.is_file():
         values.append((contract.name, hashlib.sha256(contract.read_bytes()).hexdigest()))
+    for path in sorted(project_dir.glob("*.kicad_pro")):
+        values.append((path.name, digest(presentation_settings(read_project(path)))))
     return digest(values)
 
 
@@ -329,6 +333,11 @@ def check_circuit(project_dir: Path, *, tool_root=None, runner=subprocess.run, w
         lines.append(f"| {test['id']} | {test['outcome']} | {json.dumps(test['measurements']).replace('|', '/')} |")
     lines += ["", "## Drawing review", "", "Review every changed sheet in review/circuit/preview before approval.", ""]
     lines += [f"- [{f.identifier}] {f.code}: {f.message}" for f in findings]
+    from pcbforge.kicad_project import read_project
+    from pcbforge.netclasses import color_legend
+    project_path = project_schematic(project_dir).with_suffix(".kicad_pro")
+    if project_path.is_file():
+        lines.append(color_legend(read_project(project_path)))
     lines += ["", f"Electrical fingerprint: `{fingerprint}`", f"Presentation fingerprint: `{presentation}`", ""]
     report = "\n".join(lines)
     bom_csv = io.StringIO()

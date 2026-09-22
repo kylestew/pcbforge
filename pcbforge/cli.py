@@ -9,6 +9,8 @@ from pathlib import Path
 from pcbforge.compatibility import CompatibilityError, validate_project_compatibility
 from pcbforge.circuit import check_circuit, export_preview
 from pcbforge.schematic import SchematicError
+from pcbforge.netclasses import PALETTE, NetclassError, set_netclass
+from pcbforge.kicad_project import KicadProjectError
 from pcbforge.electrical import ElectricalError
 from pcbforge.pcb_update import prepare_pcb_update, check_pcb_update, finish_circuit
 from pcbforge.fab import (
@@ -171,6 +173,14 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("project_dir", nargs="?", default=".", metavar="PROJECT_DIR")
         if name == "check-circuit":
             command.add_argument("--write-report", action="store_true")
+
+    netclass_parser = subcommands.add_parser("set-netclass", help="assign native netclass colors during schematic capture")
+    netclass_parser.add_argument("project_dir", nargs="?", default=".", metavar="PROJECT_DIR")
+    netclass_parser.add_argument("--name", required=True, help="class ID without the pcbforge: prefix")
+    netclass_parser.add_argument("--net", action="append", required=True, help="exact net name; repeat for each net")
+    colors = netclass_parser.add_mutually_exclusive_group(required=True)
+    colors.add_argument("--role", choices=tuple(PALETTE), help="initialize colors from the standard palette")
+    colors.add_argument("--color", help="replace schematic and PCB colors with #RRGGBB")
 
     prepare_layout_parser = subcommands.add_parser(
         "prepare-layout",
@@ -811,6 +821,16 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
         print("pcbforge: CubeMX 6.18 semantic round-trip passed")
+        return 0
+
+    if args.command == "set-netclass":
+        try:
+            changed = set_netclass(Path(args.project_dir), name=args.name, nets=args.net,
+                                   role=args.role, color=args.color)
+        except (NetclassError, KicadProjectError, SchematicError, InitInputError, OSError) as exc:
+            print(f"pcbforge set-netclass: {exc}", file=sys.stderr)
+            return 2
+        print(f"pcbforge:{args.name}: {'updated' if changed else 'unchanged'}")
         return 0
 
     if args.command == "check-parts":

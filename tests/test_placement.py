@@ -437,12 +437,12 @@ class GeneratorTests(PlacementFixture):
         classes = project_after["net_settings"]["classes"]
         self.assertEqual(
             [item["name"] for item in classes],
-            ["Default", "User RF", "pcbforge:power", "pcbforge:usb"],
+            ["Default", "User RF", "pcbforge:old", "pcbforge:power", "pcbforge:usb"],
         )
         self.assertEqual(classes[1]["custom"], "preserve")
         self.assertEqual(
             [item["priority"] for item in classes],
-            [2147483647, 0, 1, 2],
+            [2147483647, 0, 1, 2, 3],
         )
         self.assertEqual(
             project_after["net_settings"]["netclass_assignments"],
@@ -456,6 +456,34 @@ class GeneratorTests(PlacementFixture):
             project_after["board"]["unknown_user_setting"],
             {"keep": True},
         )
+
+    def test_capture_colors_survive_routing_handoff(self) -> None:
+        from pcbforge.netclasses import rgba
+        from pcbforge.circuit import presentation_fingerprint
+        with tempfile.TemporaryDirectory() as temporary:
+            project = self.project(Path(temporary))
+            path = project / "garden-logger.kicad_pro"
+            data = json.loads(path.read_text())
+            settings = data["net_settings"]
+            settings["classes"].append({"name": "pcbforge:usb", "priority": 2,
+                "schematic_color": rgba("#AA66CC"), "pcb_color": rgba("#123456"), "track_width": 0.9})
+            settings["netclass_patterns"].extend([
+                {"pattern": "USB_D+", "netclass": "pcbforge:usb"},
+                {"pattern": "USB_D-", "netclass": "pcbforge:usb"}])
+            path.write_text(json.dumps(data))
+            presentation = presentation_fingerprint(project)
+            board = project / "garden-logger.kicad_pcb"
+            before = board.read_bytes()
+            generate_brief(project, tool_root=TOOL_ROOT)
+            data = json.loads(path.read_text())
+            usb = next(c for c in data["net_settings"]["classes"] if c["name"] == "pcbforge:usb")
+            self.assertEqual(usb["schematic_color"], rgba("#AA66CC"))
+            self.assertEqual(usb["pcb_color"], rgba("#123456"))
+            self.assertEqual(usb["track_width"], 0.2)
+            self.assertEqual(board.read_bytes(), before)
+            self.assertEqual(presentation, presentation_fingerprint(project))
+            self.assertIn("## Net colors", (project / BRIEF_FILENAME).read_text())
+            check_brief(project, tool_root=TOOL_ROOT)
 
     def test_spatial_and_user_class_edits_do_not_stale_brief_or_step_six(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

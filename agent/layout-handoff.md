@@ -144,6 +144,13 @@ checklist:
   - Sensitive routes have a plausible continuous return path.
 ```
 
+Net colors reside in the native `.kicad_pro` file, not in `placement.yaml`.
+Use the same class IDs as schematic capture, such as `power` and `usb`.
+The handoff preserves native colors while it updates routing dimensions.
+Classes omitted from this contract remain in the project with their assignments.
+Remove obsolete classes and assignments explicitly in KiCad.
+Use colored ratsnest lines by default so copper retains its layer colors.
+
 The schema rules are:
 
 1. Every PCB reference appears in exactly one group. No missing, extra, or

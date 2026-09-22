@@ -15,7 +15,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 import yaml
 
-OPTIONS_WITH_VALUES = {"--stage", "--note", "--fingerprint", "--probe"}
+OPTIONS_WITH_VALUES = {"--stage", "--note", "--fingerprint", "--probe", "--name", "--net", "--role", "--color"}
 SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
@@ -110,6 +110,7 @@ def project_argument(argv: Sequence[str], cwd: Path) -> Path | None:
         "init",
         "check-circuit",
         "preview-schematic",
+        "set-netclass",
         "prepare-pcb-update",
         "check-pcb-update",
         "finish-circuit",

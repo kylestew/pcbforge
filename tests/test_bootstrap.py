@@ -84,6 +84,8 @@ class BootstrapArgumentTests(unittest.TestCase):
                 "yes",
             ): cwd / "board",
             ("prepare-layout", "board"): cwd / "board",
+            ("set-netclass", "--name", "power", "--role", "power", "--net", "+3V3", "board"): cwd / "board",
+            ("set-netclass", "--name", "usb", "--color", "#AA66CC", "--net", "USB_D+", "--net", "USB_D-"): cwd,
             ("check-layout-handoff", "board"): cwd / "board",
         }
         for argv, expected in cases.items():
